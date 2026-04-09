@@ -8,8 +8,8 @@ const path     = require("path");
 const os       = require("os");
 const { exec } = require("child_process");
 const multer   = require("multer");
-const { createServer: createViteServer } = require("vite");
 const { createClient } = require("@supabase/supabase-js");
+// Vite loaded dynamically in dev mode only (see start())
 
 // ── SUPABASE ───────────────────────────────────────────────────────────────────
 const SUPABASE_URL         = process.env.SUPABASE_URL;
@@ -746,16 +746,34 @@ app.get("/health", (req, res) => res.json({ ok: true, node: process.version,
   gemini: !!process.env.GEMINI_API_KEY, kling: !!process.env.KLING_ACCESS_KEY,
   elevenlabs: !!process.env.ELEVENLABS_API_KEY }));
 
+const PORT = process.env.PORT || 3000;
+const isProd = process.env.NODE_ENV === "production";
+
 async function start() {
-  const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
-  app.use(vite.middlewares);
-  app.listen(3000, () => {
-    console.log(`\n✅  http://localhost:3000  (Node ${process.version})`);
+  if (isProd) {
+    // Production: serve pre-built static files from dist/
+    const distPath = path.join(__dirname, "dist");
+    app.use(express.static(distPath));
+    // SPA fallback — all non-API routes serve index.html
+    app.get("*", (req, res) => {
+      if (!req.path.startsWith("/api")) {
+        res.sendFile(path.join(distPath, "index.html"));
+      }
+    });
+  } else {
+    // Development: use Vite middleware (hot reload etc.)
+    const { createServer: createViteServer } = require("vite");
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+    app.use(vite.middlewares);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`\n✅  http://localhost:${PORT}  (Node ${process.version})`);
+    console.log(`   MODE      : ${isProd ? "production" : "development"}`);
     console.log(`   ANTHROPIC : ${process.env.ANTHROPIC_API_KEY  ? "✓" : "✗ not set"}`);
-    console.log(`   OPENAI    : ${process.env.OPENAI_API_KEY     ? "✓" : "✗ not set"}`);
     console.log(`   GEMINI    : ${process.env.GEMINI_API_KEY     ? "✓" : "✗ not set"}`);
     console.log(`   KLING     : ${process.env.KLING_ACCESS_KEY   ? "✓" : "✗ not set"}`);
-    console.log(`\n   Open http://localhost:3000\n`);
+    console.log(`\n   Open http://localhost:${PORT}\n`);
   });
 }
 
