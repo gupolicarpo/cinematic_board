@@ -777,4 +777,4 @@ async function start() {
   });
 }
 
-start().catc
+start().catch(console.error);
