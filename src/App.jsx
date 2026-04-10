@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, createContext, useContext } from "react";
+import React, { useState, useRef, useCallback, useEffect, createContext, useContext } from "react";
 import { Film, Video, Image as ImageIcon, Clapperboard, Camera, User, MapPin, Box, Pencil, Link2, Bot, AlertTriangle, Loader2, X, ChevronDown, Download, Sparkles, Layers, Scissors, BookOpen, Plus, FolderOpen, FileText, PanelLeft, LogOut, LogIn, Save, FolderOpen as FolderOpenIcon, ChevronRight, ScrollText, Upload, Wand2, SplitSquareVertical, LayoutTemplate, Music } from "lucide-react";
 import { supabase } from "./supabase";
 import LandingPage from "./LandingPage";
@@ -64,7 +64,8 @@ function humanizeLighting(l) { return `${l.replaceAll("-"," ")} lighting`; }
 function compileShotText(s) {
   const tags = s.entityTags?.length ? s.entityTags.join(" ") : "";
   const base = `${capitalize(s.cameraSize)} cinematic shot at ${s.when}, ${s.cameraAngle}, ${humanizeMove(s.cameraMovement)}, lens ${s.lens}, ${humanizeLighting(s.lighting)}.${tags ? " "+tags : ""} ${s.how} in ${s.where}. Visual goal: ${s.visualGoal}.`;
-  return s.directorNote ? `${base} Director's intent: ${s.directorNote}` : base;
+  const withDirector = s.directorNote ? `${base} Director's intent: ${s.directorNote}` : base;
+  return s.dialogue?.trim() ? `${withDirector} Dialogue: "${s.dialogue.trim()}"` : withDirector;
 }
 
 function getSceneShots(nodes, sceneId) {
@@ -190,10 +191,10 @@ function formatSceneMd(sceneNode, shots) {
   return lines.join("\n");
 }
 
-function mkScene() { return { id:`sc_${uid()}`, type:T.SCENE, sceneText:"", cinematicStyle:"thriller", shotCount:3, bible:[] }; }
-function mkShot(sceneId,index=1) { return { id:`sh_${uid()}`, type:T.SHOT, sceneId, index, durationSec:3, sourceAnchor:"", where:"", entityTags:[], how:"", when:"", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"natural-soft", visualGoal:"", compiledText:"", bible:[] }; }
+function mkScene() { return { id:`sc_${uid()}`, type:T.SCENE, sceneText:"", cinematicStyle:"thriller", shotCount:3, bible:[], dialogueLines:[] }; }
+function mkShot(sceneId,index=1) { return { id:`sh_${uid()}`, type:T.SHOT, sceneId, index, durationSec:3, sourceAnchor:"", where:"", entityTags:[], how:"", when:"", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"natural-soft", visualGoal:"", compiledText:"", bible:[], dialogue:"" }; }
 function mkImage(sceneId=null, shotId=null) { return { id:`im_${uid()}`, type:T.IMAGE, sceneId, shotId, prompt:"", generatedUrl:null, entityTag:"", aspect_ratio:"1:1", resolution:"1K", refImageUrl:null }; }
-function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", sound:"off", prevKlingId:null }; }
+function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", sound:"off", prevKlingId:null, voice:"none", lipsync:false }; }
 function mkVeo()   { return { id:`veo_${uid()}`, type:T.VEO, shotId:null, videoUrl:null, aspect_ratio:"16:9", duration:8, startFrameNodeId:null, endFrameNodeId:null, refNodeIds:[], useRefs:true, refType:"asset", manualPrompt:"" }; }
 function mkLlm()   { return { id:`llm_${uid()}`, type:T.LLM, targetNodeId:null, command:"", model:"claude-sonnet-4-20250514", lastResult:null }; }
 function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p" }; }
@@ -318,6 +319,7 @@ Each shot must contain exactly these fields:
 - lens
 - lighting
 - visualGoal
+- dialogue (string — the exact spoken line(s) delivered in this shot, or empty string "" if no dialogue occurs in this shot)
 
 Field rules:
 - sourceAnchor = exact or near-exact quote from the scene text that justifies this shot
@@ -328,6 +330,7 @@ Field rules:
 - lens = short technical value, e.g. 35mm, 50mm, 85mm
 - lighting = short technical description
 - visualGoal = short, filmable dramatic intention
+- dialogue = if the scene has dialogue lines, assign each line to the shot where it is spoken; use the exact wording from the script; if a shot has no spoken words, set to ""
 
 cameraSize must be ONLY one of:
 ${JSON.stringify(CAMERA_SIZES)}
@@ -372,7 +375,10 @@ Return only JSON.`;
   const critiqueBlock = versionBCritique
     ? `\n\nVERSION B — DIRECTOR CRITIQUE FROM PREVIOUS BREAKDOWN:\nThe previous breakdown had these problems. You MUST fix all of them:\n${versionBCritique}\n`
     : "";
-  const usrText = `Scene: "${scene.sceneText}"\nStyle: ${scene.cinematicStyle}\nShots: ${scene.shotCount}\nBible: ${bible}${critiqueBlock}`;
+  const dialogueBlock = (scene.dialogueLines?.length)
+    ? `\n\nDIALOGUE LINES IN THIS SCENE (assign each to the shot where it is spoken):\n${scene.dialogueLines.map((d,i) => `${i+1}. ${d.speaker}: "${d.line}"`).join("\n")}`
+    : "";
+  const usrText = `Scene: "${scene.sceneText}"\nStyle: ${scene.cinematicStyle}\nShots: ${scene.shotCount}\nBible: ${bible}${dialogueBlock}${critiqueBlock}`;
 
   // Build multimodal user content: character images first, then the text prompt
   // This lets the AI visually identify each character (age, appearance, role)
@@ -665,7 +671,7 @@ function dataUrlToBase64(dataUrl) {
 // Create a video generation task — single-shot or multi-shot
 // options: { multiShot, sceneShots, aspect_ratio, mode, sound }
 async function aiKlingCreate(shot, sceneBible = [], options = {}) {
-  const { multiShot = false, sceneShots = [], aspect_ratio = "16:9", mode = "pro", sound = "off", prevVideoUrl = null, imageRefUrls = [] } = options;
+  const { multiShot = false, sceneShots = [], aspect_ratio = "16:9", mode = "pro", sound = "off", prevVideoUrl = null, imageRefUrls = [], voice = "none" } = options;
 
   // When a previous video is used as reference, Kling limits total images+elements to 4
   const maxImages = prevVideoUrl ? 4 : 7;
@@ -772,6 +778,9 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
   }
 
   if (imageList.length > 0) body.image_list = imageList;
+
+  // Inject voice when specified (used by lipsync-aware generation)
+  if (voice && voice !== "none") body.voice = voice;
 
   // Feature-reference the previous video for visual continuity
   if (prevVideoUrl) {
@@ -1582,6 +1591,19 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
           />
         </div>
 
+        {/* ── DIALOGUE ── */}
+        <div style={{ borderTop:`1px solid ${th.b0}`, paddingTop:6 }}>
+          <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.15em", display:"block", marginBottom:3 }}>
+            DIALOGUE <span style={{ color:th.t3, fontWeight:400, letterSpacing:"0.06em" }}>— spoken lines in this shot</span>
+          </span>
+          <AutoTextarea
+            style={{ ...inp, fontStyle: node.dialogue?.trim() ? "normal" : "italic", color: node.dialogue?.trim() ? uac : th.t3 }}
+            placeholder='e.g. "I never asked for any of this."'
+            value={node.dialogue||""}
+            onChange={e=>recompile({dialogue:e.target.value})}
+          />
+        </div>
+
         {/* ── LOCAL BIBLE ── */}
         <div style={{ borderTop:`1px solid ${th.b0}`, paddingTop:6 }}>
           <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between" }}>
@@ -2132,10 +2154,55 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
         sound:        node.sound        || "off",
         prevVideoUrl,
         imageRefUrls,
+        voice:        node.voice        || "none",
       });
       setKlingTaskId(taskId);
       setKlingStatus("polling"); setKlingPollMsg("Processing…");
       const url = await aiKlingPoll(taskId, s=>setKlingPollMsg(s));
+
+      // ── LIPSYNC PASS ─────────────────────────────────────────────────────────
+      // If lipsync is enabled, a voice is selected, and shots have dialogue,
+      // run a second pass through Kling's lipsync API after the video is ready.
+      const dialogueLines = shotNodes
+        .map(sh => sh.dialogue?.trim())
+        .filter(Boolean)
+        .join(" ");
+      const shouldLipsync = node.lipsync && node.voice && node.voice !== "none" && dialogueLines;
+
+      if (shouldLipsync) {
+        setKlingPollMsg("Running lipsync…");
+        try {
+          const lsRes = await fetch("/api/kling/lipsync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ video_url: url, voice_id: node.voice, dialogue: dialogueLines }),
+          });
+          if (!lsRes.ok) throw new Error(await lsRes.text());
+          const lsData = await lsRes.json();
+          const lsTaskId = lsData.data?.task_id;
+          if (lsTaskId) {
+            // Poll lipsync task
+            for (let i = 0; i < 180; i++) {
+              await new Promise(r => setTimeout(r, 2000));
+              const pollRes = await fetch(`/api/kling/lipsync/${lsTaskId}`);
+              if (!pollRes.ok) break;
+              const pollData = await pollRes.json();
+              const status = pollData.data?.task_status;
+              if (status === "succeed") {
+                const lsUrl = pollData.data?.task_result?.videos?.[0]?.url;
+                if (lsUrl) { upd({ videoUrl: lsUrl }); setKlingStatus("done"); setKlingPollMsg(""); return; }
+                break;
+              }
+              if (status === "failed") { setKlingPollMsg("Lipsync failed — raw video saved instead."); break; }
+              setKlingPollMsg(`Lipsync: ${status || "processing"}…`);
+            }
+          }
+        } catch (lsErr) {
+          console.warn("Lipsync pass failed, keeping raw video:", lsErr.message);
+          setKlingPollMsg("Lipsync failed — raw video saved instead.");
+        }
+      }
+
       upd({ videoUrl: url });
       setKlingStatus("done"); setKlingPollMsg("");
     } catch(e) {
@@ -2285,6 +2352,55 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
               </select>
             </div>
           </div>
+
+          {/* Dialogue / Voice / Lipsync row */}
+          {(() => {
+            const hasDialogue = shotNodes.some(sh => sh.dialogue?.trim());
+            const lipsyncAc = "#a78bfa";
+            return (
+              <div style={{ borderTop:`1px solid ${th.b0}`, paddingTop:6 }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
+                  <span style={{ fontSize:6, color: hasDialogue ? lipsyncAc : th.t3, letterSpacing:"0.15em" }}>
+                    DIALOGUE & VOICE {hasDialogue ? `· ${shotNodes.filter(sh=>sh.dialogue?.trim()).length} shot(s) with lines` : "· no dialogue in shots"}
+                  </span>
+                  <button
+                    onMouseDown={e=>e.stopPropagation()}
+                    onClick={e=>{ e.stopPropagation(); upd({ lipsync: !node.lipsync }); }}
+                    disabled={!hasDialogue}
+                    title={hasDialogue ? "Auto-run lipsync after video generation" : "Add dialogue to shot nodes first"}
+                    style={{ fontSize:6, fontWeight:700, letterSpacing:"0.08em", padding:"2px 7px", borderRadius:2, border:`1px solid ${node.lipsync ? lipsyncAc+"88" : th.b0}`, background: node.lipsync ? lipsyncAc+"22" : "transparent", color: node.lipsync ? lipsyncAc : th.t3, cursor: hasDialogue ? "pointer" : "not-allowed", opacity: hasDialogue ? 1 : 0.4, fontFamily:"'Inter',system-ui,sans-serif" }}>
+                    {node.lipsync ? "✓ LIPSYNC ON" : "LIPSYNC OFF"}
+                  </button>
+                </div>
+                {node.lipsync && hasDialogue && (
+                  <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                    <div>
+                      <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.1em", display:"block", marginBottom:2 }}>VOICE</span>
+                      <select onMouseDown={e=>e.stopPropagation()} value={node.voice||"none"} onChange={e=>upd({voice:e.target.value})} style={fSel}>
+                        <option value="none">— select a voice —</option>
+                        <optgroup label="Female">
+                          <option value="female_voice_1">Female · Soft</option>
+                          <option value="female_voice_2">Female · Clear</option>
+                          <option value="female_voice_3">Female · Deep</option>
+                        </optgroup>
+                        <optgroup label="Male">
+                          <option value="male_voice_1">Male · Warm</option>
+                          <option value="male_voice_2">Male · Neutral</option>
+                          <option value="male_voice_3">Male · Gravelly</option>
+                        </optgroup>
+                      </select>
+                    </div>
+                    {node.voice === "none" && (
+                      <div style={{ fontSize:6, color:"#fbbf24", letterSpacing:"0.06em" }}>⚠ Select a voice to enable lipsync generation</div>
+                    )}
+                    <div style={{ fontSize:6, color:th.t3, lineHeight:1.5 }}>
+                      After video is generated, lipsync will run automatically using the dialogue from your shot nodes.
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Video player */}
           {node.videoUrl && (
@@ -6681,6 +6797,7 @@ export default function App() {
       sc.cinematicStyle = s.cinematicStyle || "drama";
       sc.shotCount      = s.shotCount      || 3;
       sc.sceneHeading   = s.heading        || "";
+      sc.dialogueLines  = s.dialogueLines  || [];
       newNodes.push(sc);
       newPos[sc.id] = { x: startX, y: cursor };
       cursor += 920; // scene card with content can reach ~840px; 920 gives 80px breathing gap
