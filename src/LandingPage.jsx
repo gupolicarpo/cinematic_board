@@ -322,9 +322,12 @@ export default function LandingPage({ onAuth }) {
             <span style={{ fontSize:13, fontWeight:800, letterSpacing:"0.18em", color:DARK }}>CINEMATIC GRAPH</span>
           </div>
           <nav className="lp-nav-links">
-            {[["#nodes","Node System"],["#storyboard","Scene & Shots"],["#bible","World Bible"],["#video","AI Video"],["#workflow","Script → Cut"]].map(([href,label]) => (
-              <a key={href} href={href} style={{ fontSize:13, fontWeight:500, color:MID, transition:"color 0.15s" }}
-                onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>{label}</a>
+            {[["#nodes","Node System"],["#storyboard","Scene & Shots"],["#bible","World Bible"],["#video","AI Video"],["#workflow","Script → Cut"],["#features","Features"]].map(([href,label]) => (
+              href === "#features"
+                ? <a key={href} href="/features" style={{ fontSize:13, fontWeight:500, color:MID, transition:"color 0.15s" }}
+                    onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>{label}</a>
+                : <a key={href} href={href} style={{ fontSize:13, fontWeight:500, color:MID, transition:"color 0.15s" }}
+                    onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>{label}</a>
             ))}
           </nav>
           <div className="lp-nav-actions">

@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, createContext, useContext } f
 import { Film, Video, Image as ImageIcon, Clapperboard, Camera, User, MapPin, Box, Pencil, Link2, Bot, AlertTriangle, Loader2, X, ChevronDown, Download, Sparkles, Layers, Scissors, BookOpen, Plus, FolderOpen, FileText, PanelLeft, LogOut, LogIn, Save, FolderOpen as FolderOpenIcon, ChevronRight, ScrollText, Upload, Wand2, SplitSquareVertical, LayoutTemplate, Music } from "lucide-react";
 import { supabase } from "./supabase";
 import LandingPage from "./LandingPage";
+import FeaturesPage from "./FeaturesPage";
 
 // Returns { Authorization: "Bearer <token>" } for server asset calls,
 // or {} if no session (local/dev mode falls back gracefully on the server).
@@ -7158,6 +7159,7 @@ export default function App() {
       <Ico icon={Loader2} size={28} color="#374151" style={{ animation:"spin 1s linear infinite" }}/>
     </div>
   );
+  if (window.location.pathname === "/features") return <FeaturesPage onAuth={() => window.location.href = "/"} />;
   if (!user) return <LandingPage onAuth={u => setUser(u)} />;
 
   return (

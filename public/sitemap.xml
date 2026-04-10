@@ -12,4 +12,13 @@
     <priority>1.0</priority>
   </url>
 
+
+  <!-- Features page -->
+  <url>
+    <loc>https://www.cartasis.com/features</loc>
+    <lastmod>2026-04-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
 </urlset>
