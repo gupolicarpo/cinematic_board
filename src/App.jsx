@@ -6287,6 +6287,7 @@ function makeMedievalFantasyTemplate() {
   const sc1 = {
     id:sc1id, type:T.SCENE, cinematicStyle:"epic-fantasy", shotCount:4,
     bible:[ sbEntry(eHero), sbEntry(eWizard), sbEntry(eRing), sbEntry(eForest) ],
+    dialogueLines:[ { speaker:"The Grey Wizard", line:"The ring must go back into the dark — before the dark comes for all of them." }, { speaker:"The Ranger", line:"And if I refuse?" }, { speaker:"The Grey Wizard", line:"Then there is no one else." } ],
     sceneText:`@forest at dusk. The light is failing. @wizard stands at the base of a vast oak, @ring resting in his open palm, the ancient script catching the last amber light. @ranger watches from a distance, arms crossed, unconvinced. @wizard speaks without looking up: the @ring must go back into the dark before the dark comes for all of them. @ranger takes the @ring. Closes his fist around it. A long beat — the forest holds its breath. Then he nods. They leave together, vanishing into the mist between the ancient trees.`,
     directorCoherence:{ score:96, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: world establishment → ring reveal → the decision → departure. Hold every beat longer than comfortable. This is a world that earns its silences." },
   };
@@ -6301,6 +6302,7 @@ function makeMedievalFantasyTemplate() {
   const sh1c = { ...mkShot(sc1id,3), id:`sh_${uid()}`, sceneId:sc1id, index:3,
     how:"Over @wizard's shoulder — @ranger in the middle distance, half-shadow, watching. His face unreadable. Slow push toward him as @wizard speaks off-camera", where:"@forest — between the trees, soft depth", when:"the decision", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"slow-push-in", lens:"85mm", lighting:"practical-night",
     visualGoal:"The push-in makes @ranger's silence feel like a choice being made — we arrive at his face just as he decides",
+    dialogue:`WIZARD (O.S.)\nThe ring must go back into the dark — before the dark comes for all of them.\n\nRANGER\nAnd if I refuse?\n\nWIZARD (O.S.)\nThen there is no one else.`,
     entityTags:["@ranger","@forest"], directorNote:"The push is the argument. We reach @ranger's face at the moment he takes the ring. Sync the push to the pace of @wizard's words — not too fast.", directorQuality:"good", directorIssue:"" };
   const sh1d = { ...mkShot(sc1id,4), id:`sh_${uid()}`, sceneId:sc1id, index:4,
     how:"Wide pull-back as @ranger and @wizard walk away through the mist — two silhouettes dissolving into the ancient @forest, the oak trees closing behind them", where:"@forest — wide, retreating figures", when:"departure", cameraSize:"wide", cameraAngle:"eye-level", cameraMovement:"pull-back", lens:"35mm", lighting:"practical-night",
@@ -6314,6 +6316,7 @@ function makeMedievalFantasyTemplate() {
   const sc2 = {
     id:sc2id, type:T.SCENE, cinematicStyle:"epic-fantasy", shotCount:3,
     bible:[ sbEntry(eHero), sbEntry(eWizard), sbEntry(eRing), sbEntry(eMountain) ],
+    dialogueLines:[ { speaker:"The Grey Wizard", line:"Hold on. It does not have you yet." }, { speaker:"The Ranger", line:"How do you know?" }, { speaker:"The Grey Wizard", line:"Because you are still asking." } ],
     sceneText:`@pass under a dead grey sky. @ranger leads, @wizard a step behind. Wind screams through the gap in the cliffs — both figures lean into it. Halfway through, @ranger stumbles — clutches his chest. Pulls out @ring on its chain, stares at it. The script on @ring pulses in the dark cold air of the pass. @wizard sees it and raises his staff — the pale crystal flares, and the script fades. @ranger tucks @ring away. They exchange a look. Neither speaks. They walk on.`,
     directorCoherence:{ score:94, skippedBeats:[], overlapIssues:[], recommendation:"Three-beat journey arc: hostile world → ring's pull on the bearer → recovery and resolve. The middle beat is the film's emotional core. Don't cut away from @ranger's face too quickly." },
   };
@@ -6324,6 +6327,7 @@ function makeMedievalFantasyTemplate() {
   const sh2b = { ...mkShot(sc2id,2), id:`sh_${uid()}`, sceneId:sc2id, index:2,
     how:"Close on @ranger's face and chest — hand pressed to heart, eyes tight, @ring on its chain emerging from his fist. The script on @ring pulses faintly. His breath fogs in the cold air.", where:"@pass — tight on @ranger", when:"the ring's pull", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"hard-contrast",
     visualGoal:"The @ring is pulling at him — the audience must feel its gravity before @wizard intervenes",
+    dialogue:`WIZARD\nHold on. It does not have you yet.\n\nRANGER\nHow do you know?\n\nWIZARD\nBecause you are still asking.`,
     entityTags:["@ranger","@ring","@pass"], directorNote:"Hold on his face. The pulse in @ring is practical — a prop light effect, not CG. His breath fog tells us how cold and hostile this place is. Do not cut.", directorQuality:"good", directorIssue:"" };
   const sh2c = { ...mkShot(sc2id,3), id:`sh_${uid()}`, sceneId:sc2id, index:3,
     how:"Medium two-shot — @wizard's staff crystal flaring pale light, @ranger tucking @ring away, both facing forward. A look between them. Then they walk on into the wind.", where:"@pass — two-shot, walking forward", when:"recovery and resolve", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"tracking", lens:"50mm", lighting:"hard-contrast",
@@ -6336,6 +6340,7 @@ function makeMedievalFantasyTemplate() {
   const sc3 = {
     id:sc3id, type:T.SCENE, cinematicStyle:"epic-fantasy", shotCount:4,
     bible:[ sbEntry(eHero), sbEntry(eLord), sbEntry(eRing), sbEntry(eFortress) ],
+    dialogueLines:[ { speaker:"The Ranger", line:"Not for you." } ],
     sceneText:`Inside @fortress. A vast iron hall, lit by red torchfire. @darklord stands at the far end — enormous, motionless, armour bleeding into shadow. @ranger walks the length of the hall alone. He stops thirty feet away. @darklord extends one gauntleted hand. @ranger holds @ring between two fingers. A beat — the longest beat of the film. Then @ranger closes his fist and says: not for you. @darklord moves. The red light explodes outward. The hall erupts.`,
     directorCoherence:{ score:98, skippedBeats:[], overlapIssues:[], recommendation:"Four-beat confrontation: approach → standoff → the choice → eruption. The standoff beat is the film's climax. Hold it until the audience cannot breathe." },
   };
@@ -6350,6 +6355,7 @@ function makeMedievalFantasyTemplate() {
   const sh3c = { ...mkShot(sc3id,3), id:`sh_${uid()}`, sceneId:sc3id, index:3,
     how:"Extreme close-up on @ring held between @ranger's finger and thumb — the script glowing red-gold in the fortress light, the choice visible in the trembling of his hand", where:"@fortress — tight on @ranger's hand and @ring", when:"the choice", cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"low-key",
     visualGoal:"The entire film arrives at this frame. @ring must glow. The trembling hand tells the audience everything about what it costs to refuse.",
+    dialogue:`RANGER\nNot for you.`,
     entityTags:["@ranger","@ring","@fortress"], directorNote:"This is the film's emotional apex. Maximum close-up on @ring. The tremble is not weakness — it is the weight of choice. Do not cut early.", directorQuality:"good", directorIssue:"" };
   const sh3d = { ...mkShot(sc3id,4), id:`sh_${uid()}`, sceneId:sc3id, index:4,
     how:"Wide of the entire hall as @darklord surges forward — red light erupting from his armour, @ranger bracing, the hall's iron walls trembling, torches flaring outward in a shockwave", where:"@fortress — full hall width, eruption", when:"eruption", cameraSize:"wide", cameraAngle:"low-angle", cameraMovement:"static", lens:"24mm", lighting:"hard-contrast",
