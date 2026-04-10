@@ -8,8 +8,8 @@ const path     = require("path");
 const os       = require("os");
 const { exec } = require("child_process");
 const multer   = require("multer");
-const { createServer: createViteServer } = require("vite");
 const { createClient } = require("@supabase/supabase-js");
+// Vite loaded dynamically in dev mode only (see start())
 
 // ── SUPABASE ───────────────────────────────────────────────────────────────────
 const SUPABASE_URL         = process.env.SUPABASE_URL;
@@ -119,6 +119,30 @@ app.get("/api/kling/video/:taskId", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   try {
     const r = await get("api-singapore.klingai.com", `/v1/videos/omni-video/${req.params.taskId}`,
+      { "Authorization": `Bearer ${klingJWT()}` });
+    res.status(r.status).send(r.data);
+  } catch (e) { res.status(500).send(e.message); }
+});
+
+// POST /api/kling/lipsync  — create a lipsync task (dialogue + voice applied to existing video)
+// body: { video_url, voice_id, dialogue }
+app.post("/api/kling/lipsync", async (req, res) => {
+  if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
+  const { video_url, voice_id, dialogue } = req.body;
+  if (!video_url || !voice_id || !dialogue) return res.status(400).send("video_url, voice_id, and dialogue are required");
+  try {
+    const body = { video_url, voice_id, voice_language: "en", voice_text: dialogue };
+    const r = await post("api-singapore.klingai.com", "/v1/videos/lip-sync",
+      { "Authorization": `Bearer ${klingJWT()}` }, body);
+    res.status(r.status).send(r.data);
+  } catch (e) { res.status(500).send(e.message); }
+});
+
+// GET /api/kling/lipsync/:taskId  — poll lipsync task status
+app.get("/api/kling/lipsync/:taskId", async (req, res) => {
+  if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
+  try {
+    const r = await get("api-singapore.klingai.com", `/v1/videos/lip-sync/${req.params.taskId}`,
       { "Authorization": `Bearer ${klingJWT()}` });
     res.status(r.status).send(r.data);
   } catch (e) { res.status(500).send(e.message); }
@@ -573,13 +597,16 @@ app.post("/api/script/generate", async (req, res) => {
   const prompt = `${formatGuide}\n\nIDEA: ${idea}\n\nWrite the full script now. Be vivid, cinematic, and concise.`;
 
   try {
-    const r = await post("api.anthropic.com", "/v1/messages",
-      { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      { model: "claude-opus-4-5", max_tokens: 4096,
-        messages: [{ role: "user", content: prompt }] }
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) return res.status(500).json({ error: "OPENAI_API_KEY not set" });
+    const r = await post("api.openai.com", "/v1/responses",
+      { "Authorization": `Bearer ${key}` },
+      { model: "gpt-5.4", max_output_tokens: 4096,
+        input: [{ role: "user", content: prompt }] }
     );
     const body = JSON.parse(r.data);
-    const text = body.content?.[0]?.text || "";
+    const outputBlock = body.output?.find(o => o.type === "message");
+    const text = outputBlock?.content?.find(c => c.type === "output_text")?.text || "";
     res.json({ script: text });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -594,6 +621,10 @@ app.post("/api/script/split", async (req, res) => {
 - "sceneText": a 2–4 sentence description of what happens in the scene, suitable for a storyboard brief
 - "shotCount": suggested number of shots (integer, between 2 and 6)
 - "cinematicStyle": one of: drama, thriller, action, noir, sci-fi, epic-fantasy, documentary, comedy
+- "dialogueLines": an array of objects, one per spoken line in this scene, each with:
+  - "speaker": the character name or tag (e.g. "@hero", "ELENA") — use the exact tag if it matches a @tag in the script, otherwise use the character name in ALL CAPS
+  - "line": the exact spoken line as written in the script
+  If the scene has no dialogue, return an empty array.
 
 Return ONLY valid JSON array, no markdown, no explanation.
 
@@ -601,14 +632,16 @@ SCRIPT:
 ${script}`;
 
   try {
-    const r = await post("api.anthropic.com", "/v1/messages",
-      { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      { model: "claude-opus-4-5", max_tokens: 2048,
-        messages: [{ role: "user", content: prompt }] }
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) return res.status(500).json({ error: "OPENAI_API_KEY not set" });
+    const r = await post("api.openai.com", "/v1/responses",
+      { "Authorization": `Bearer ${key}` },
+      { model: "gpt-5.4-mini", max_output_tokens: 2048,
+        input: [{ role: "user", content: prompt }] }
     );
     const body = JSON.parse(r.data);
-    let text = body.content?.[0]?.text || "[]";
-    // Strip any accidental markdown fences
+    const outputBlock = body.output?.find(o => o.type === "message");
+    let text = outputBlock?.content?.find(c => c.type === "output_text")?.text || "[]";
     text = text.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
     const scenes = JSON.parse(text);
     res.json({ scenes });
@@ -746,17 +779,35 @@ app.get("/health", (req, res) => res.json({ ok: true, node: process.version,
   gemini: !!process.env.GEMINI_API_KEY, kling: !!process.env.KLING_ACCESS_KEY,
   elevenlabs: !!process.env.ELEVENLABS_API_KEY }));
 
+const PORT = process.env.PORT || 3000;
+const isProd = process.env.NODE_ENV === "production";
+
 async function start() {
-  const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
-  app.use(vite.middlewares);
-  app.listen(3000, () => {
-    console.log(`\n✅  http://localhost:3000  (Node ${process.version})`);
+  if (isProd) {
+    // Production: serve pre-built static files from dist/
+    const distPath = path.join(__dirname, "dist");
+    app.use(express.static(distPath));
+    // SPA fallback — all non-API routes serve index.html
+    app.get("*", (req, res) => {
+      if (!req.path.startsWith("/api")) {
+        res.sendFile(path.join(distPath, "index.html"));
+      }
+    });
+  } else {
+    // Development: use Vite middleware (hot reload etc.)
+    const { createServer: createViteServer } = require("vite");
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+    app.use(vite.middlewares);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`\n✅  http://localhost:${PORT}  (Node ${process.version})`);
+    console.log(`   MODE      : ${isProd ? "production" : "development"}`);
     console.log(`   ANTHROPIC : ${process.env.ANTHROPIC_API_KEY  ? "✓" : "✗ not set"}`);
-    console.log(`   OPENAI    : ${process.env.OPENAI_API_KEY     ? "✓" : "✗ not set"}`);
     console.log(`   GEMINI    : ${process.env.GEMINI_API_KEY     ? "✓" : "✗ not set"}`);
     console.log(`   KLING     : ${process.env.KLING_ACCESS_KEY   ? "✓" : "✗ not set"}`);
-    console.log(`\n   Open http://localhost:3000\n`);
+    console.log(`\n   Open http://localhost:${PORT}\n`);
   });
 }
 
-start().catc
+start().catch(console.error);
