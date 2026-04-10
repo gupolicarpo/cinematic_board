@@ -382,15 +382,21 @@ Return only JSON.`;
 
   // Build multimodal user content: character images first, then the text prompt
   // This lets the AI visually identify each character (age, appearance, role)
-  const bibleImgs = scene.bible.filter(e => e._prev?.startsWith("data:"));
+  const bibleImgs = scene.bible.filter(e => e._prev && (e._prev.startsWith("data:") || e._prev.startsWith("/")));
 
   function buildAnthropicContent() {
     const parts = [];
     for (const e of bibleImgs) {
-      const comma = e._prev.indexOf(",");
-      const mimeType = e._prev.slice(5, e._prev.indexOf(";"));
       parts.push({ type:"text", text:`CHARACTER IMAGE — ${e.tag} (${e.name}${e.notes ? ` · ${e.notes}` : ""}):` });
-      parts.push({ type:"image", source:{ type:"base64", media_type: mimeType, data: e._prev.slice(comma+1) } });
+      if (e._prev.startsWith("data:")) {
+        const comma = e._prev.indexOf(",");
+        const mimeType = e._prev.slice(5, e._prev.indexOf(";"));
+        parts.push({ type:"image", source:{ type:"base64", media_type: mimeType, data: e._prev.slice(comma+1) } });
+      } else {
+        // Public URL path — use url source type
+        const url = e._prev.startsWith("/") ? `${window.location.origin}${e._prev}` : e._prev;
+        parts.push({ type:"image", source:{ type:"url", url } });
+      }
     }
     parts.push({ type:"text", text: usrText });
     return parts;
@@ -685,7 +691,7 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
   // Build image list AND a tag→<<<image_N>>> map so each character can be
   // referenced explicitly in the prompt (Kling ignores image_list without it)
   const bibleWithImages = sceneBible
-    .filter(e => e._prev && e._prev.startsWith("data:"))
+    .filter(e => e._prev && (e._prev.startsWith("data:") || e._prev.startsWith("http") || e._prev.startsWith("/")))
     .slice(0, maxImages - refOffset);
 
   const tagToRef = {};
@@ -694,7 +700,12 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
   // Ref images first, then bible images
   const imageList = [
     ...refSlots.map(u => ({ image_url: u.startsWith("data:") ? dataUrlToBase64(u) : u })),
-    ...bibleWithImages.map(e => ({ image_url: dataUrlToBase64(e._prev) })),
+    ...bibleWithImages.map(e => {
+      if (e._prev.startsWith("data:")) return { image_url: dataUrlToBase64(e._prev) };
+      // Convert relative public paths to absolute URLs for Kling
+      const url = e._prev.startsWith("/") ? `${window.location.origin}${e._prev}` : e._prev;
+      return { image_url: url };
+    }),
   ];
 
   // Image ref tags for the first N wired images (<<<image_1>>>, <<<image_2>>>, ...)
@@ -5612,7 +5623,7 @@ function makeActionShortFilmTemplate() {
   const eWarehouse={ id:`e_${uid()}`,kind:"location",  name:"Warehouse",     tag:"@warehouse",description:"Abandoned industrial warehouse, concrete floor, single harsh overhead light", notes:"Handoff point", _imgUrl:"", assetId:"" };
 
   // Trim to scene-bible shape (drop description)
-  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:"", assetId:"" });
+  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:e._imgUrl||e._prev||"", assetId:e.assetId||"" });
 
   // ── Scene 1: THE BRIEFING ──────────────────────────────────────────────────
   const sc1id = `sc_${uid()}`;
@@ -5713,7 +5724,7 @@ function makeHipHopCampaignTemplate() {
   const eRooftop = { id:`e_${uid()}`, kind:"location",  name:"Rooftop",          tag:"@rooftop", description:"Urban rooftop at golden hour, London skyline soft in haze, raw concrete, industrial HVAC units, open sky bleeding orange into blue", notes:"Collective / golden hour location", _imgUrl:"", assetId:"" };
   const eVenue   = { id:`e_${uid()}`, kind:"location",  name:"Underground Venue", tag:"@venue",  description:"Intimate underground music venue, low ceiling, exposed brick, warm amber and red stage lighting, wooden floor, smell of history", notes:"Night / energy location", _imgUrl:"", assetId:"" };
 
-  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:"", assetId:"" });
+  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:e._imgUrl||e._prev||"", assetId:e.assetId||"" });
 
   // ── Scene 1: HERO REVEAL ─────────────────────────────────────────────────────
   const sc1id = `sc_${uid()}`;
@@ -5889,7 +5900,7 @@ function makeJewelleryCampaignTemplate() {
   const eModel  = { id:`e_${uid()}`, kind:"character", name:"The Wearer",        tag:"@model",  description:"Understated, confident presence. Gender-neutral styling — minimal, clean clothing, neutral tones. Early 30s. The person who wears @ring is not trying to impress. They already arrived.", notes:"Never overdressed. The ring is the statement — everything else is quiet.", _imgUrl:"", assetId:"" };
   const eMarble = { id:`e_${uid()}`, kind:"location",  name:"Studio Surface",    tag:"@marble", description:"Pure white Carrara marble surface — smooth, cool, faint natural grey veining. Used as a product placement surface in studio. Always clean and uncluttered.", notes:"Hero surface — @ring is placed directly on @marble for product shots.", _imgUrl:"", assetId:"" };
 
-  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:"", assetId:"" });
+  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:e._imgUrl||e._prev||"", assetId:e.assetId||"" });
 
   // ── Scene 1: THE OBJECT ──────────────────────────────────────────────────────
   const sc1id = `sc_${uid()}`;
@@ -6061,7 +6072,7 @@ function makeTrapMusicVideoTemplate() {
   const eStudio  = { id:`e_${uid()}`, kind:"location",  name:"Recording Studio",  tag:"@studio",  description:"Small professional recording booth — acoustic foam walls, low purple and amber mood lighting from LED strips, one mic in the center, mixing desk visible through glass", notes:"Cypher / performance location", _imgUrl:"", assetId:"" };
   const eRooftop = { id:`e_${uid()}`, kind:"location",  name:"Rooftop",           tag:"@rooftop", description:"High-rise rooftop, cityscape behind. Night — city lights bleed orange into a dark sky. Parapet wall, open air, complete visual control of the skyline.", notes:"Cinematic close — final scene", _imgUrl:"", assetId:"" };
 
-  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:"", assetId:"" });
+  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:e._imgUrl||e._prev||"", assetId:e.assetId||"" });
 
   // ── Scene 1: COLD OPEN — THE BLOCK ───────────────────────────────────────────
   const sc1id = `sc_${uid()}`;
@@ -6280,7 +6291,7 @@ function makeMedievalFantasyTemplate() {
   const eMountain = { id:`e_${uid()}`, kind:"location",  name:"The Black Pass",  tag:"@pass",     description:"A narrow mountain pass between two sheer obsidian cliffs. Perpetual grey sky above — no stars, no sun. Wind screams through the gap. The path is ancient stone, cracked and tilted. Every step is a commitment. The pass feels like a throat.", notes:"Journey location — Scene 2. Wide shots emphasise the scale and hostility of the environment.", _imgUrl:"", assetId:"" };
   const eFortress = { id:`e_${uid()}`, kind:"location",  name:"The Dark Fortress", tag:"@fortress", description:"A massive iron fortress built into the side of a volcanic mountain. Towers like crooked fingers against a perpetually red sky. A moat of slow black lava. The gate is a single enormous iron door carved with screaming faces. Torchlight burns red inside every window.", notes:"Antagonist's seat of power — Scene 3 confrontation. Establish scale before going inside.", _imgUrl:"", assetId:"" };
 
-  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:"", assetId:"" });
+  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:e._imgUrl||e._prev||"", assetId:e.assetId||"" });
 
   // ── Scene 1: THE ANCIENT FOREST — DEPARTURE ───────────────────────────────
   const sc1id = `sc_${uid()}`;
@@ -6703,7 +6714,7 @@ export default function App() {
   const loadProject = async (project) => {
     const { data } = await supabase.from("projects").select("*").eq("id", project.id).single();
     if (!data) return;
-    setNodes(data.nodes?.length ? data.nodes : [mkScene()]);
+    const rawNodes = data.nodes?.length ? data.nodes : [mkScene()];
     setPos(data.positions || {});
     // Load bible — fetch remote images and convert to data URLs so generation
     // code (which filters for "data:") works immediately after reload.
@@ -6730,6 +6741,24 @@ export default function App() {
         Promise.all(bEntries.filter(e=>e.kind==="location").map(hydrate)),
       ]);
       setBible({ characters, objects, locations });
+
+      // Sync scene/shot node bible entries with the freshly hydrated global bible.
+      // Nodes store bible entries as snapshots — their _prev may be stale or empty.
+      // Build a tag → hydrated _imgUrl map and patch every matching entry in-place.
+      const tagToImg = {};
+      [...characters, ...objects, ...locations].forEach(e => {
+        if (e.tag && e._imgUrl) tagToImg[e.tag] = e._imgUrl;
+      });
+      const syncedNodes = rawNodes.map(n => {
+        if (!n.bible?.length) return n;
+        const synced = n.bible.map(b =>
+          tagToImg[b.tag] ? { ...b, _prev: tagToImg[b.tag] } : b
+        );
+        return { ...n, bible: synced };
+      });
+      setNodes(syncedNodes);
+    } else {
+      setNodes(rawNodes);
     }
     setCurrentProject({ id: project.id, name: project.name });
     setProjectPickerOpen(false);
@@ -6950,10 +6979,24 @@ export default function App() {
 
   // Save a generated image URL into a global bible entry as its visual reference
   const saveToBible = useCallback((entryId, imgUrl) => {
+    // Update global bible entry
+    let savedTag = null;
     setBible(prev => {
-      const upd = (list) => list.map(e => e.id===entryId ? { ...e, _imgUrl: imgUrl, _prev: imgUrl } : e);
+      const upd = (list) => list.map(e => {
+        if (e.id !== entryId) return e;
+        savedTag = e.tag;
+        return { ...e, _imgUrl: imgUrl, _prev: imgUrl };
+      });
       return { characters: upd(prev.characters||[]), objects: upd(prev.objects||[]), locations: upd(prev.locations||[]) };
     });
+    // Immediately sync _prev on all scene/shot nodes that reference this tag
+    if (savedTag) {
+      setNodes(prev => prev.map(n => {
+        if (!n.bible?.length) return n;
+        const synced = n.bible.map(b => b.tag === savedTag ? { ...b, _prev: imgUrl } : b);
+        return { ...n, bible: synced };
+      }));
+    }
   }, []);
   const delNode = (id) => { setNodes(prev=>prev.filter(n=>n.id!==id)); setPos(p=>{const c={...p};delete c[id];return c;}); if(selId===id)setSelId(null); };
   const moveNode = (id,x,y) => setPos(prev=>({...prev,[id]:{x,y}}));
