@@ -2088,6 +2088,19 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
   const selColor = selected ? ac : th.dark ? `${ac}44` : th.b0;
   const [savingAsset, setSavingAsset] = React.useState(false);
   const [savedAsset,  setSavedAsset]  = React.useState(false);
+  const [klingVoices, setKlingVoices] = React.useState([]);
+  const [voicesLoading, setVoicesLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setVoicesLoading(true);
+    fetch("/api/kling/voices", { headers: { "Content-Type": "application/json" } })
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(data => { if (!cancelled) setKlingVoices(data?.data?.voices || data?.voices || (Array.isArray(data) ? data : [])); })
+      .catch(err => console.warn("Could not load Kling voices:", err))
+      .finally(() => { if (!cancelled) setVoicesLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const saveToAssets = async () => {
     if (!node.videoUrl || savingAsset) return;
@@ -2388,17 +2401,22 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                     <div>
                       <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.1em", display:"block", marginBottom:2 }}>VOICE</span>
                       <select onMouseDown={e=>e.stopPropagation()} value={node.voice||"none"} onChange={e=>upd({voice:e.target.value})} style={fSel}>
-                        <option value="none">— select a voice —</option>
-                        <optgroup label="Female">
-                          <option value="female_voice_1">Female · Soft</option>
-                          <option value="female_voice_2">Female · Clear</option>
-                          <option value="female_voice_3">Female · Deep</option>
-                        </optgroup>
-                        <optgroup label="Male">
-                          <option value="male_voice_1">Male · Warm</option>
-                          <option value="male_voice_2">Male · Neutral</option>
-                          <option value="male_voice_3">Male · Gravelly</option>
-                        </optgroup>
+                        <option value="none">{voicesLoading ? "Loading voices…" : "— select a voice —"}</option>
+                        {klingVoices.length > 0
+                          ? klingVoices.map(v => (
+                              <option key={v.voice_id || v.id} value={v.voice_id || v.id}>
+                                {v.voice_name || v.name || v.voice_id || v.id}
+                              </option>
+                            ))
+                          : !voicesLoading && (
+                              <>
+                                <option value="calm_female_voice">Female · Calm</option>
+                                <option value="lively_female_voice">Female · Lively</option>
+                                <option value="gentle_male_voice">Male · Gentle</option>
+                                <option value="deep_male_voice">Male · Deep</option>
+                              </>
+                            )
+                        }
                       </select>
                     </div>
                     {node.voice === "none" && (
