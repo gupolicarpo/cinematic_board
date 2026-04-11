@@ -2448,9 +2448,14 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             if (!ttsRes.ok) throw new Error(`TTS request failed: ${ttsRes.status}`);
             const ttsData = await ttsRes.json();
             if (ttsData.code && ttsData.code !== 0) throw new Error(`TTS error ${ttsData.code}: ${ttsData.message}`);
-            const ttsTaskId = ttsData.data?.task_id;
-            if (!ttsTaskId) throw new Error("No TTS task_id returned");
-            speakerAudio[speaker] = await pollTts(ttsTaskId);
+            // Fast-path: some Kling TTS responses complete synchronously
+            if (ttsData.data?.task_status === "succeed" && ttsData.data?.task_result?.audios?.[0]) {
+              speakerAudio[speaker] = ttsData.data.task_result.audios[0];
+            } else {
+              const ttsTaskId = ttsData.data?.task_id;
+              if (!ttsTaskId) throw new Error(`No TTS task_id in response: ${JSON.stringify(ttsData).slice(0, 200)}`);
+              speakerAudio[speaker] = await pollTts(ttsTaskId);
+            }
           }
 
           // ── Step 3: identify faces in video ──────────────────────────────

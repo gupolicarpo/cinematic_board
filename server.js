@@ -131,29 +131,27 @@ app.get("/api/kling/video/:taskId", async (req, res) => {
   } catch (e) { res.status(500).send(e.message); }
 });
 
-// GET /api/kling/voices  — fetch available TTS voices from Kling
-// voice_language is required by Kling: "en" or "zh" — fetch both and merge
-app.get("/api/kling/voices", async (req, res) => {
-  if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
-  try {
-    const jwt = klingJWT();
-    const [rEn, rZh] = await Promise.all([
-      get("api-singapore.klingai.com", "/v1/videos/lip-sync/voices?voice_language=en", { "Authorization": `Bearer ${jwt}` }),
-      get("api-singapore.klingai.com", "/v1/videos/lip-sync/voices?voice_language=zh", { "Authorization": `Bearer ${jwt}` }),
-    ]);
-    console.log("[voices] en:", rEn.status, rEn.data?.slice?.(0, 300));
-    console.log("[voices] zh:", rZh.status, rZh.data?.slice?.(0, 300));
-    // Merge en + zh voices into one list
-    let voices = [];
-    if (rEn.status === 200) { try { voices = voices.concat(JSON.parse(rEn.data)?.data?.voices || []); } catch(_) {} }
-    if (rZh.status === 200) { try { voices = voices.concat(JSON.parse(rZh.data)?.data?.voices || []); } catch(_) {} }
-    if (voices.length > 0) return res.json({ code: 0, data: { voices } });
-    // Both failed — return diagnostic JSON so the frontend can display the actual error
-    const errBody = rEn.data || rZh.data || "";
-    const errStatus = rEn.status || rZh.status || 500;
-    console.error("[voices] both failed — en:", rEn.status, rEn.data, "zh:", rZh.status, rZh.data);
-    res.status(errStatus).json({ code: errStatus, message: `Kling voices error: ${errBody.slice(0, 500)}`, _raw: errBody });
-  } catch (e) { console.error("[voices] exception:", e.message); res.status(500).send(e.message); }
+// GET /api/kling/voices — return static voice list
+// Kling does NOT expose a voices-list API endpoint. Every real integration hardcodes these IDs.
+// The old attempt to call GET /v1/videos/lip-sync/voices was being routed by Kling to its
+// task-lookup handler (GET /v1/videos/lip-sync/{task_id}) → 400 "Task not found: voices".
+const KLING_VOICES = [
+  { voice_id: "commercial_lady_en_f-v1", voice_name: "Female · Commercial",  voice_language: "en", voice_gender: "female" },
+  { voice_id: "chat1_female_new-3",      voice_name: "Female · Chat",         voice_language: "en", voice_gender: "female" },
+  { voice_id: "genshin_kirara",          voice_name: "Female · Kirara",       voice_language: "en", voice_gender: "female" },
+  { voice_id: "reader_en_f-v1",          voice_name: "Female · Reader",       voice_language: "en", voice_gender: "female" },
+  { voice_id: "oversea_male1",           voice_name: "Male · Overseas",       voice_language: "en", voice_gender: "male"   },
+  { voice_id: "uk_man2",                 voice_name: "Male · UK",             voice_language: "en", voice_gender: "male"   },
+  { voice_id: "uk_boy1",                 voice_name: "Male · UK Young",       voice_language: "en", voice_gender: "male"   },
+  { voice_id: "uk_oldman3",              voice_name: "Male · UK Older",       voice_language: "en", voice_gender: "male"   },
+  { voice_id: "reader_en_m-v1",          voice_name: "Male · Reader",         voice_language: "en", voice_gender: "male"   },
+  { voice_id: "ai_shatang",              voice_name: "ZH · Shatang (F)",      voice_language: "zh", voice_gender: "female" },
+  { voice_id: "ai_kaiya",                voice_name: "ZH · Kaiya (F)",        voice_language: "zh", voice_gender: "female" },
+  { voice_id: "ai_chenjiahao_712",       voice_name: "ZH · Chenjiahao (M)",   voice_language: "zh", voice_gender: "male"   },
+  { voice_id: "ai_huangzhong_712",       voice_name: "ZH · Huangzhong (M)",   voice_language: "zh", voice_gender: "male"   },
+];
+app.get("/api/kling/voices", (req, res) => {
+  res.json({ code: 0, data: { voices: KLING_VOICES } });
 });
 
 // ── ADVANCED LIP SYNC endpoints (3-step: TTS → identify-face → advanced-lipsync) ──
