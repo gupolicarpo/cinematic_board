@@ -196,7 +196,7 @@ function mkShot(sceneId,index=1) { return { id:`sh_${uid()}`, type:T.SHOT, scene
 function mkImage(sceneId=null, shotId=null) { return { id:`im_${uid()}`, type:T.IMAGE, sceneId, shotId, prompt:"", generatedUrl:null, entityTag:"", aspect_ratio:"1:1", resolution:"1K", refImageUrl:null }; }
 function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", sound:"off", prevKlingId:null, voice:"none", lipsync:false }; }
 function mkVeo()   { return { id:`veo_${uid()}`, type:T.VEO, shotId:null, videoUrl:null, aspect_ratio:"16:9", duration:8, startFrameNodeId:null, endFrameNodeId:null, refNodeIds:[], useRefs:true, refType:"asset", manualPrompt:"" }; }
-function mkLlm()   { return { id:`llm_${uid()}`, type:T.LLM, targetNodeId:null, command:"", model:"claude-sonnet-4-20250514", lastResult:null }; }
+function mkLlm()   { return { id:`llm_${uid()}`, type:T.LLM, targetNodeIds:[], targetNodeId:null, llmMode:"edit", command:"", model:"claude-sonnet-4-20250514", lastResult:null }; }
 function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p" }; }
 function mkScript()   { return { id:`scr_${uid()}`, type:T.SCRIPT, title:"Untitled Script", script:"", idea:"", format:"screenplay", scriptMode:"write" }; }
 function mkAudio()    { return { id:`aud_${uid()}`, type:T.AUDIO, audioUrl:null, fileName:null, bpm:null, beats:[], duration:0, snapEnabled:true, videoNodeId:null }; }
@@ -581,6 +581,69 @@ RULES:
   const r = await fetch("/api/messages", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: sys, messages: [{ role: "user", content: usr }] })
+  });
+  const raw = await r.text();
+  if (!r.ok) throw new Error(`Claude ${r.status}: ${raw.slice(0, 200)}`);
+  const d = JSON.parse(raw);
+  const txt = d.content?.map(b => b.text || "").join("") || "";
+  const clean = txt.replace(/```json|```/g, "").trim();
+  const start = clean.indexOf("{"); const end = clean.lastIndexOf("}");
+  if (start === -1 || end === -1) throw new Error("No JSON in response: " + clean.slice(0, 200));
+  return JSON.parse(clean.slice(start, end + 1));
+}
+
+// ─── AI COHERENCE CHECK — multi-node scene+shot analysis ──────────────────────
+async function aiCoherenceCheck(nodes, command) {
+  const sceneNodes = nodes.filter(n => n.type === T.SCENE);
+  const shotNodes  = nodes.filter(n => n.type === T.SHOT);
+
+  // Build rich context per node
+  const context = nodes.map(n => {
+    if (n.type === T.SCENE) return {
+      id: n.id, type: "SCENE", index: n.index,
+      sceneText: n.sceneText || "",
+      cinematicStyle: n.cinematicStyle || "",
+    };
+    if (n.type === T.SHOT) return {
+      id: n.id, type: "SHOT", shotIndex: n.index,
+      sceneId: n.sceneId,
+      sourceAnchor: n.sourceAnchor || "",
+      how: n.how || "",
+      where: n.where || "",
+      when: n.when || "",
+      visualGoal: n.visualGoal || "",
+      dialogue: n.dialogue || "",
+      cameraSize: n.cameraSize, cameraAngle: n.cameraAngle,
+      cameraMovement: n.cameraMovement, lighting: n.lighting,
+    };
+    return { id: n.id, type: n.type.toUpperCase() };
+  });
+
+  const hasShotsWithoutAnchor = shotNodes.some(n => !n.sourceAnchor?.trim());
+
+  const sys = `You are a cinematic script supervisor analyzing storyboard nodes for coherence.
+
+You receive a list of SCENE and SHOT nodes. Your tasks:
+1. SOURCE ANCHOR: For every SHOT where sourceAnchor is empty or missing, write a verbatim quote (5-20 words) taken DIRECTLY from the SCENE's sceneText that best justifies this shot. If no matching scene is provided, write a short anchor based on the shot's own "how" field.
+2. VISUAL GOAL: For every SHOT where visualGoal is empty, write a concise cinematic purpose (e.g. "establish isolation", "reveal the villain's power").
+3. COHERENCE: If a SHOT's where/when/lighting conflicts with the SCENE context, suggest fixes.
+4. DIALOGUE: If a shot has dialogue but no visualGoal that references it, update visualGoal.
+5. Only return patches for nodes that actually need changes.
+
+Return a JSON object where each key is a node ID and each value is a patch object with ONLY the fields to change.
+Return ONLY raw JSON. No markdown fences, no commentary.
+
+Example:
+{
+  "sh_abc": { "sourceAnchor": "flames erupt across the stone floor", "visualGoal": "establish the scale of destruction" },
+  "sh_xyz": { "visualGoal": "reveal the character's hesitation" }
+}`;
+
+  const usr = `${command?.trim() ? `User instruction: "${command}"\n\n` : ""}Nodes to analyze:\n${JSON.stringify(context, null, 2)}`;
+
+  const r = await fetch("/api/messages", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 2000, system: sys, messages: [{ role: "user", content: usr }] })
   });
   const raw = await r.text();
   if (!r.ok) throw new Error(`Claude ${r.status}: ${raw.slice(0, 200)}`);
@@ -2829,126 +2892,259 @@ function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, o
 // ─── LLM NODE ─────────────────────────────────────────────────────────────────
 function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode }) {
   const th = useTheme();
-  const inp = mkInp(th); const sel = mkSel(th); const lbl = mkLbl(th);
   const ac = th.dark ? "#6366f1" : th.t2;
   const selColor = selected ? ac : th.dark ? `${ac}44` : th.b0;
 
-  const targetNode = node.targetNodeId ? allNodes.find(n => n.id === node.targetNodeId) : null;
+  // ── Resolve connected nodes (merge legacy targetNodeId + new targetNodeIds array) ──
+  const rawIds = node.targetNodeIds || (node.targetNodeId ? [node.targetNodeId] : []);
+  const targetNodes = rawIds.map(id => allNodes.find(n => n.id === id)).filter(Boolean);
+  const hasNodes = targetNodes.length > 0;
 
-  const [status, setStatus] = useState("idle"); // idle | running | preview | applied | failed
-  const [preview, setPreview] = useState(null);  // { patch, fields }
-  const [error, setError]   = useState("");
+  // Mode: "edit" = single-node targeted edit | "coherence" = multi-node coherence check
+  const mode = node.llmMode || "edit";
 
-  // Extract readable content from the target node
+  // In edit mode, which node is the active edit target (local selection)
+  const [activeEditId, setActiveEditId] = useState(null);
+  const editTarget = targetNodes.find(n => n.id === activeEditId) || targetNodes[0] || null;
+
+  const [status, setStatus]   = useState("idle");
+  const [preview, setPreview] = useState(null);       // edit mode: patch object
+  const [multiPrev, setMultiPrev] = useState(null);   // coherence mode: { nodeId: patch }
+  const [error, setError]     = useState("");
+
+  const NODE_COLOR = { scene:"#f87171", shot:"#38bdf8", image:"#a3e635", kling:"#f97316", veo:"#a855f7", script:"#fb923c" };
+
   const getNodeContent = (n) => {
     if (!n) return {};
-    if (n.type === T.SHOT)  return { how: n.how, where: n.where, when: n.when, cameraSize: n.cameraSize, cameraAngle: n.cameraAngle, cameraMovement: n.cameraMovement, lighting: n.lighting, lens: n.lens, visualGoal: n.visualGoal, durationSec: n.durationSec };
-    if (n.type === T.SCENE) return { sceneText: n.sceneText, cinematicStyle: n.cinematicStyle };
-    if (n.type === T.IMAGE) return { prompt: n.prompt };
-    if (n.type === T.KLING || n.type === T.VEO) return { manualPrompt: n.manualPrompt };
+    if (n.type === T.SHOT)  return { how:n.how, where:n.where, when:n.when, cameraSize:n.cameraSize, cameraAngle:n.cameraAngle, cameraMovement:n.cameraMovement, lighting:n.lighting, lens:n.lens, visualGoal:n.visualGoal, durationSec:n.durationSec, sourceAnchor:n.sourceAnchor, dialogue:n.dialogue };
+    if (n.type === T.SCENE) return { sceneText:n.sceneText, cinematicStyle:n.cinematicStyle };
+    if (n.type === T.IMAGE) return { prompt:n.prompt };
+    if (n.type === T.KLING || n.type === T.VEO) return { manualPrompt:n.manualPrompt };
     return {};
   };
 
-  const run = async () => {
-    if (!node.command?.trim() || !targetNode) return;
-    setStatus("running"); setError("");
-    try {
-      const content = getNodeContent(targetNode);
-      const patch = await aiLlm(node.command, targetNode.type, content);
-      setPreview(patch);
-      setStatus("preview");
-    } catch(e) {
-      setStatus("failed"); setError(e.message);
-    }
+  const removeNode = (id) => {
+    const newIds = rawIds.filter(i => i !== id);
+    upd({ targetNodeIds: newIds, targetNodeId: newIds[newIds.length - 1] || null });
+    if (activeEditId === id) setActiveEditId(null);
   };
 
-  const apply = () => {
-    if (!preview || !targetNode) return;
-    onUpdateNode(targetNode.id, preview);
+  // ── EDIT MODE: run command on single target ──
+  const runEdit = async () => {
+    if (!node.command?.trim() || !editTarget) return;
+    setStatus("running"); setError(""); setPreview(null);
+    try {
+      const patch = await aiLlm(node.command, editTarget.type, getNodeContent(editTarget));
+      setPreview(patch); setStatus("preview");
+    } catch(e) { setStatus("failed"); setError(e.message); }
+  };
+  const applyEdit = () => {
+    if (!preview || !editTarget) return;
+    onUpdateNode(editTarget.id, preview);
     upd({ lastResult: preview });
     setStatus("applied"); setPreview(null);
   };
 
-  const discard = () => { setStatus("idle"); setPreview(null); };
+  // ── COHERENCE MODE: run on all nodes ──
+  const runCoherence = async () => {
+    if (targetNodes.length === 0) return;
+    setStatus("running"); setError(""); setMultiPrev(null);
+    try {
+      const patches = await aiCoherenceCheck(targetNodes, node.command);
+      // Filter to only patches that have actual changes
+      const filtered = Object.fromEntries(Object.entries(patches).filter(([, v]) => Object.keys(v).length > 0));
+      setMultiPrev(filtered); setStatus("preview");
+    } catch(e) { setStatus("failed"); setError(e.message); }
+  };
+  const applyAllCoherence = () => {
+    if (!multiPrev) return;
+    let count = 0;
+    Object.entries(multiPrev).forEach(([nid, patch]) => {
+      if (Object.keys(patch).length > 0) { onUpdateNode(nid, patch); count++; }
+    });
+    upd({ lastResult: multiPrev });
+    setStatus("applied"); setMultiPrev(null);
+  };
+  const applySingleCoherence = (nid, patch) => {
+    onUpdateNode(nid, patch);
+    const remaining = Object.fromEntries(Object.entries(multiPrev).filter(([k]) => k !== nid));
+    setMultiPrev(Object.keys(remaining).length ? remaining : null);
+    if (Object.keys(remaining).length === 0) setStatus("applied");
+  };
 
-  const nodeTypeLabel = targetNode ? targetNode.type.toUpperCase() : null;
-  const nodeTypeColor = { scene:"#f87171", shot:"#38bdf8", image:"#a3e635", kling:"#f97316", veo:"#a855f7" }[targetNode?.type] || ac;
+  const discard = () => { setStatus("idle"); setPreview(null); setMultiPrev(null); };
 
-  const fSel = mkSel(th);
+  const canRun = hasNodes && (mode === "coherence" || editTarget) &&
+    (mode === "coherence" || node.command?.trim());
+  const isRunning = status === "running";
 
   return (
-    <div data-nodeid={node.id} data-nodetype={T.LLM} style={{ position:"relative", width:240 }}>
-      {/* INPUT PORT — left, receives any node type */}
+    <div data-nodeid={node.id} data-nodetype={T.LLM} style={{ position:"relative", width:270 }}>
+      {/* INPUT PORT */}
       <div style={{ position:"absolute", left:-4, top:48, width:8, height:8,
-        background:th.card, border:`1.5px solid ${targetNode ? ac : th.b0}`, borderRadius:"50%",
-        zIndex:10, pointerEvents:"none" }}>
-      </div>
+        background:th.card, border:`1.5px solid ${hasNodes ? ac : th.b0}`, borderRadius:"50%",
+        zIndex:10, pointerEvents:"none" }}/>
 
-      <div style={{ width:240, background:th.card, border:`1px solid ${selColor}`, borderRadius:16, overflow:"hidden", fontFamily:"'Inter',system-ui,sans-serif", boxShadow:`0 4px 24px ${th.sh}` }}>
+      <div style={{ width:270, background:th.card, border:`1px solid ${selColor}`, borderRadius:16, overflow:"hidden", fontFamily:"'Inter',system-ui,sans-serif", boxShadow:`0 4px 24px ${th.sh}` }}>
+
         {/* Header */}
         <div style={{ background: th.dark ? `linear-gradient(90deg,${ac}18,transparent)` : th.card, padding:"10px 12px 6px", display:"flex", alignItems:"center", gap:6, borderBottom:`1px solid ${th.dark ? ac+"22" : "transparent"}` }}>
           <Ico icon={Bot} size={11} color={ac}/>
-          <span style={{ fontSize:7, letterSpacing:"0.2em", color:ac, fontWeight:700 }}>AI COMMAND</span>
-          {targetNode && (
-            <span style={{ marginLeft:"auto", fontSize:6, letterSpacing:"0.08em", color:nodeTypeColor, background:`${nodeTypeColor}18`, padding:"1px 5px", borderRadius:3 }}>
-              → {nodeTypeLabel}
-            </span>
-          )}
+          <span style={{ fontSize:7, letterSpacing:"0.2em", color:ac, fontWeight:700 }}>AI NODE</span>
+          <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.08em", marginLeft:2 }}>
+            {targetNodes.length > 0 ? `${targetNodes.length} node${targetNodes.length>1?"s":""} connected` : "no nodes"}
+          </span>
           <button onMouseDown={e=>e.stopPropagation()} onClick={onDel}
-            style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:9, padding:"0 2px", lineHeight:1, marginLeft: targetNode ? 0 : "auto" }} title="Delete node">✕</button>
+            style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:9, padding:"0 2px", lineHeight:1, marginLeft:"auto" }} title="Delete node">✕</button>
         </div>
 
         <div style={{ padding:"8px 10px", display:"flex", flexDirection:"column", gap:6 }}>
 
-          {/* Connected target info */}
-          {targetNode ? (
-            <div style={{ background:th.bg, border:`1px solid ${nodeTypeColor}22`, borderRadius:4, padding:"5px 8px", display:"flex", alignItems:"center", gap:6 }}>
-              <div style={{ width:5, height:5, background:nodeTypeColor, borderRadius:"50%", flexShrink:0 }}/>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:6, color:nodeTypeColor, letterSpacing:"0.08em" }}>EDITING {nodeTypeLabel} NODE</div>
-                <div style={{ fontSize:6, color:th.t3, marginTop:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                  {targetNode.type===T.SHOT ? targetNode.how||"(empty)" : targetNode.type===T.SCENE ? (targetNode.sceneText||"(empty)").slice(0,40)+"…" : targetNode.type===T.IMAGE ? (targetNode.prompt||"(empty)").slice(0,40) : (targetNode.manualPrompt||"(empty)").slice(0,40)}
-                </div>
-              </div>
-              <button onMouseDown={e=>e.stopPropagation()} onClick={()=>upd({targetNodeId:null})}
-                style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:9, padding:"0 2px", lineHeight:1 }} title="Unlink">✕</button>
+          {/* Mode toggle */}
+          <div style={{ display:"flex", gap:3 }}>
+            {[["edit","✏ EDIT"],["coherence","⚡ COHERENCE"]].map(([m, label]) => (
+              <button key={m} onMouseDown={e=>e.stopPropagation()}
+                onClick={()=>{ upd({llmMode:m}); setStatus("idle"); setPreview(null); setMultiPrev(null); }}
+                style={{ flex:1, fontSize:6, fontWeight:700, letterSpacing:"0.1em", padding:"4px 6px", borderRadius:3,
+                  border:`1px solid ${mode===m ? ac+"88" : th.b0}`,
+                  background: mode===m ? `${ac}22` : "transparent",
+                  color: mode===m ? ac : th.t3, cursor:"pointer",
+                  fontFamily:"'Inter',system-ui,sans-serif" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Connected nodes list */}
+          {targetNodes.length > 0 ? (
+            <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+              <span style={{ fontSize:5, color:th.t3, letterSpacing:"0.15em" }}>CONNECTED NODES</span>
+              {targetNodes.map((n) => {
+                const nc = NODE_COLOR[n.type] || ac;
+                const isActive = mode==="edit" && editTarget?.id === n.id;
+                const preview_ = n.type===T.SHOT ? n.how||"(empty shot)" :
+                  n.type===T.SCENE ? (n.sceneText||"(empty scene)").slice(0,40)+"…" :
+                  n.type===T.IMAGE ? (n.prompt||"(empty)").slice(0,35) :
+                  (n.manualPrompt||"(empty)").slice(0,35);
+                return (
+                  <div key={n.id}
+                    onMouseDown={e=>e.stopPropagation()}
+                    onClick={mode==="edit" ? ()=>setActiveEditId(n.id) : undefined}
+                    style={{ display:"flex", alignItems:"center", gap:5, background: isActive ? `${nc}18` : th.bg,
+                      border:`1px solid ${isActive ? nc+"66" : nc+"22"}`,
+                      borderRadius:3, padding:"3px 6px",
+                      cursor: mode==="edit" ? "pointer" : "default",
+                      transition:"border-color 0.1s" }}>
+                    <div style={{ width:4, height:4, background:nc, borderRadius:"50%", flexShrink:0 }}/>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <span style={{ fontSize:5, color:nc, letterSpacing:"0.1em", fontWeight:700 }}>{n.type.toUpperCase()}</span>
+                      {n.type===T.SHOT && !n.sourceAnchor?.trim() && (
+                        <span style={{ fontSize:5, color:"#fbbf24", marginLeft:4 }}>⚠ no anchor</span>
+                      )}
+                      <div style={{ fontSize:5, color:th.t3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                        {preview_}
+                      </div>
+                    </div>
+                    {mode==="edit" && isActive && <span style={{ fontSize:5, color:nc }}>●</span>}
+                    <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();removeNode(n.id);}}
+                      style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:8, padding:"0 2px", lineHeight:1, flexShrink:0 }}>✕</button>
+                  </div>
+                );
+              })}
             </div>
           ) : (
-            <div style={{ background:th.bg, border:`1px dashed ${th.b0}`, borderRadius:4, padding:"8px", textAlign:"center" }}>
-              <div style={{ fontSize:6, color:th.t3, letterSpacing:"0.1em" }}>WIRE ANY NODE → HERE</div>
-              <div style={{ fontSize:6, color:th.t4, marginTop:2 }}>to select editing target</div>
+            <div style={{ background:th.bg, border:`1px dashed ${th.b0}`, borderRadius:4, padding:"10px", textAlign:"center" }}>
+              <div style={{ fontSize:6, color:th.t3, letterSpacing:"0.1em" }}>WIRE NODES → HERE</div>
+              <div style={{ fontSize:5, color:th.t4, marginTop:2 }}>connect scenes, shots, images — any combination</div>
             </div>
           )}
 
-          {/* Command input */}
+          {/* EDIT mode: show active target hint */}
+          {mode==="edit" && targetNodes.length > 1 && (
+            <div style={{ fontSize:5, color:th.t3, letterSpacing:"0.06em", textAlign:"center" }}>
+              {editTarget ? `Editing: ${editTarget.type.toUpperCase()} — click a node above to switch` : "Click a node above to select edit target"}
+            </div>
+          )}
+
+          {/* COHERENCE mode: explain what it does */}
+          {mode==="coherence" && targetNodes.length > 0 && status === "idle" && (
+            <div style={{ fontSize:5, color:th.t3, lineHeight:1.6, letterSpacing:"0.04em", background:th.bg, borderRadius:3, padding:"5px 7px" }}>
+              AI will check all {targetNodes.length} node{targetNodes.length>1?"s":""} together: fill missing sourceAnchors, fix incoherent fields, add visualGoals.
+              {targetNodes.filter(n=>n.type===T.SHOT && !n.sourceAnchor?.trim()).length > 0 && (
+                <span style={{ color:"#fbbf24" }}> {targetNodes.filter(n=>n.type===T.SHOT && !n.sourceAnchor?.trim()).length} shot{targetNodes.filter(n=>n.type===T.SHOT && !n.sourceAnchor?.trim()).length>1?"s":""} missing source anchor.</span>
+              )}
+            </div>
+          )}
+
+          {/* Command textarea */}
           <div>
-            <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.15em", display:"block", marginBottom:2 }}>COMMAND</span>
-            <textarea onMouseDown={e=>e.stopPropagation()} rows={3}
+            <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.15em", display:"block", marginBottom:2 }}>
+              {mode==="coherence" ? "EXTRA INSTRUCTIONS (optional)" : "COMMAND"}
+            </span>
+            <textarea onMouseDown={e=>e.stopPropagation()} rows={mode==="coherence" ? 2 : 3}
               style={{ background:th.bg, border:`1px solid ${node.command?.trim() ? ac+"44" : th.b0}`, color:th.t0, fontFamily:"'Inter',system-ui,sans-serif", fontSize:7, padding:"5px 7px", resize:"none", width:"100%", boxSizing:"border-box", borderRadius:3, outline:"none" }}
-              placeholder={`E.g. "make this shot more dramatic" or "shorten to 3s and add tension"…`}
+              placeholder={mode==="coherence"
+                ? `Optional: "focus on the throne room scene" or "prioritize dialogue shots"…`
+                : `E.g. "make this shot more dramatic" or "shorten to 3s"…`}
               value={node.command||""} onChange={e=>upd({command:e.target.value})} />
           </div>
 
-          {/* Preview panel */}
-          {status==="preview" && preview && (
+          {/* ── EDIT MODE PREVIEW ── */}
+          {mode==="edit" && status==="preview" && preview && (
             <div style={{ background:th.bg, border:`1px solid ${ac}44`, borderRadius:4, padding:"6px 8px" }}>
-              <div style={{ fontSize:6, color:ac, letterSpacing:"0.1em", marginBottom:4 }}>PREVIEW CHANGES</div>
+              <div style={{ fontSize:6, color:ac, letterSpacing:"0.1em", marginBottom:4 }}>PREVIEW — {editTarget?.type?.toUpperCase()}</div>
               {Object.entries(preview).map(([k, v]) => (
                 <div key={k} style={{ display:"flex", gap:6, marginBottom:3, alignItems:"flex-start" }}>
-                  <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.06em", flexShrink:0, minWidth:60 }}>{k}</span>
+                  <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.06em", flexShrink:0, minWidth:70 }}>{k}</span>
                   <span style={{ fontSize:6, color:th.t0, lineHeight:1.5, wordBreak:"break-word" }}>{String(v)}</span>
                 </div>
               ))}
               <div style={{ display:"flex", gap:4, marginTop:6 }}>
-                <button onMouseDown={e=>e.stopPropagation()} onClick={apply}
-                  style={{ flex:1, background:`${ac}cc`, border:"none", color:"#fff", fontFamily:"'Inter',system-ui,sans-serif", fontWeight:700, fontSize:7, padding:"6px", borderRadius:3, cursor:"pointer", letterSpacing:"0.1em" }}>
-                  APPLY
-                </button>
+                <button onMouseDown={e=>e.stopPropagation()} onClick={applyEdit}
+                  style={{ flex:1, background:`${ac}cc`, border:"none", color:"#fff", fontFamily:"'Inter',system-ui,sans-serif", fontWeight:700, fontSize:7, padding:"6px", borderRadius:3, cursor:"pointer", letterSpacing:"0.1em" }}>APPLY</button>
                 <button onMouseDown={e=>e.stopPropagation()} onClick={discard}
-                  style={{ flex:1, background:"transparent", border:`1px solid ${th.b1}`, color:th.t2, fontFamily:"'Inter',system-ui,sans-serif", fontSize:7, padding:"6px", borderRadius:3, cursor:"pointer", letterSpacing:"0.1em" }}>
-                  DISCARD
+                  style={{ flex:1, background:"transparent", border:`1px solid ${th.b1}`, color:th.t2, fontFamily:"'Inter',system-ui,sans-serif", fontSize:7, padding:"6px", borderRadius:3, cursor:"pointer", letterSpacing:"0.1em" }}>DISCARD</button>
+              </div>
+            </div>
+          )}
+
+          {/* ── COHERENCE MODE PREVIEW ── */}
+          {mode==="coherence" && status==="preview" && multiPrev && (
+            <div style={{ background:th.bg, border:`1px solid ${ac}44`, borderRadius:4, padding:"6px 8px" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:5 }}>
+                <span style={{ fontSize:6, color:ac, letterSpacing:"0.1em" }}>COHERENCE REPORT — {Object.keys(multiPrev).length} node{Object.keys(multiPrev).length>1?"s":""} to fix</span>
+                <button onMouseDown={e=>e.stopPropagation()} onClick={applyAllCoherence}
+                  style={{ fontSize:6, fontWeight:700, letterSpacing:"0.1em", padding:"3px 8px", borderRadius:2, border:`1px solid ${ac}88`, background:`${ac}22`, color:ac, cursor:"pointer", fontFamily:"'Inter',system-ui,sans-serif" }}>
+                  APPLY ALL
                 </button>
               </div>
+              {Object.entries(multiPrev).map(([nid, patch]) => {
+                const n = allNodes.find(x => x.id === nid);
+                const nc = NODE_COLOR[n?.type] || ac;
+                return (
+                  <div key={nid} style={{ marginBottom:5, borderLeft:`2px solid ${nc}55`, paddingLeft:6 }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:2 }}>
+                      <span style={{ fontSize:5, color:nc, letterSpacing:"0.1em", fontWeight:700 }}>
+                        {n?.type?.toUpperCase()} {n?.type===T.SHOT ? `#${n.index||""}` : ""}
+                      </span>
+                      <button onMouseDown={e=>e.stopPropagation()} onClick={()=>applySingleCoherence(nid, patch)}
+                        style={{ fontSize:5, padding:"2px 6px", borderRadius:2, border:`1px solid ${nc}55`, background:`${nc}18`, color:nc, cursor:"pointer", fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em" }}>
+                        APPLY
+                      </button>
+                    </div>
+                    {Object.entries(patch).map(([k, v]) => (
+                      <div key={k} style={{ display:"flex", gap:5, marginBottom:2, alignItems:"flex-start" }}>
+                        <span style={{ fontSize:5, color:th.t3, letterSpacing:"0.06em", flexShrink:0, minWidth:65 }}>{k}</span>
+                        <span style={{ fontSize:5, color:th.t0, lineHeight:1.5, wordBreak:"break-word", fontStyle: k==="sourceAnchor"?"italic":"normal" }}>
+                          {k==="sourceAnchor" ? `"${v}"` : String(v)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+              <button onMouseDown={e=>e.stopPropagation()} onClick={discard}
+                style={{ width:"100%", marginTop:3, background:"transparent", border:`1px solid ${th.b1}`, color:th.t3, fontFamily:"'Inter',system-ui,sans-serif", fontSize:6, padding:"4px", borderRadius:3, cursor:"pointer", letterSpacing:"0.1em" }}>DISCARD ALL</button>
             </div>
           )}
 
@@ -2956,19 +3152,29 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode }) {
           {status==="applied" && (
             <div style={{ fontSize:6, color:"#a3e635", letterSpacing:"0.1em", textAlign:"center" }}>✓ APPLIED — run again to refine</div>
           )}
-          {status==="failed" && (
+          {status==="failed" && error && (
             <div style={{ fontSize:6, color:"#f87171", letterSpacing:"0.06em", lineHeight:1.5 }}>
               <Ico icon={AlertTriangle} size={7} color="#f87171"/> {error}
             </div>
           )}
 
           {/* Run button */}
-          <button onMouseDown={e=>e.stopPropagation()} onClick={run}
-            disabled={status==="running" || !targetNode || !node.command?.trim()}
-            style={{ width:"100%", background: (status==="running"||!targetNode||!node.command?.trim()) ? th.card4 : `linear-gradient(90deg,${ac}cc,${ac}88)`, border:"none", color: (status==="running"||!targetNode||!node.command?.trim()) ? th.t3 : "#fff", fontFamily:"'Inter',system-ui,sans-serif", fontWeight:700, fontSize:8, padding:"8px", borderRadius:3, cursor: (status==="running"||!targetNode||!node.command?.trim()) ? "not-allowed" : "pointer", letterSpacing:"0.15em", display:"flex", alignItems:"center", justifyContent:"center", gap:5 }}>
-            {status==="running"
+          <button onMouseDown={e=>e.stopPropagation()}
+            onClick={mode==="coherence" ? runCoherence : runEdit}
+            disabled={isRunning || !canRun}
+            style={{ width:"100%",
+              background: (isRunning||!canRun) ? th.card4 : `linear-gradient(90deg,${ac}cc,${ac}88)`,
+              border:"none",
+              color: (isRunning||!canRun) ? th.t3 : "#fff",
+              fontFamily:"'Inter',system-ui,sans-serif", fontWeight:700, fontSize:8,
+              padding:"8px", borderRadius:3,
+              cursor: (isRunning||!canRun) ? "not-allowed" : "pointer",
+              letterSpacing:"0.15em", display:"flex", alignItems:"center", justifyContent:"center", gap:5 }}>
+            {isRunning
               ? <><Ico icon={Loader2} size={9} style={{animation:"spin 0.7s linear infinite"}}/> THINKING…</>
-              : <><Ico icon={Sparkles} size={9}/> RUN</>}
+              : mode==="coherence"
+                ? <><Ico icon={Sparkles} size={9}/> CHECK COHERENCE</>
+                : <><Ico icon={Sparkles} size={9}/> RUN</>}
           </button>
         </div>
       </div>
@@ -6971,8 +7177,13 @@ export default function App() {
             return {...n, refNodeIds: [...ids, fromId]};
           }));
         } else if (targetType === T.LLM) {
-          // Any node can wire into an LLM node as its target
-          setNodes(prev => prev.map(n => n.id === targetId ? {...n, targetNodeId: fromId} : n));
+          // Append to targetNodeIds array (no duplicates); keep legacy targetNodeId for compat
+          setNodes(prev => prev.map(n => {
+            if (n.id !== targetId) return n;
+            const ids = n.targetNodeIds || [];
+            if (ids.includes(fromId)) return n;
+            return { ...n, targetNodeIds: [...ids, fromId], targetNodeId: fromId };
+          }));
         } else if ((fromType === T.VEO || fromType === T.KLING) && targetType === T.VIDEOEDIT) {
           // Add video node to VideoEdit's clip list (no duplicates)
           setNodes(prev => prev.map(n => {
