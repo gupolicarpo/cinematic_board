@@ -2237,10 +2237,19 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
   React.useEffect(() => {
     let cancelled = false;
     setVoicesLoading(true);
-    fetch("/api/kling/voices", { headers: { "Content-Type": "application/json" } })
-      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    fetch("/api/kling/voices")
+      .then(async r => {
+        const body = await r.json().catch(() => null);
+        if (!r.ok) {
+          // Server now returns JSON with `message` field even on error
+          const msg = body?.message || body?._raw || `HTTP ${r.status}`;
+          console.error("[voices] Kling error:", msg);
+          throw new Error(msg);
+        }
+        return body;
+      })
       .then(data => { if (!cancelled) setKlingVoices(data?.data?.voices || data?.voices || (Array.isArray(data) ? data : [])); })
-      .catch(err => console.warn("Could not load Kling voices:", err))
+      .catch(err => console.warn("Could not load Kling voices:", err.message || err))
       .finally(() => { if (!cancelled) setVoicesLoading(false); });
     return () => { cancelled = true; };
   }, []);

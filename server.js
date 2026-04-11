@@ -106,8 +106,9 @@ function klingJWT() {
 
 // Kling task_id values are 18-digit integers — beyond JS MAX_SAFE_INTEGER.
 // JSON.parse() silently corrupts them. Convert to strings before sending to client.
+// Covers both snake_case (task_id, element_id) and camelCase (taskId, elementId) — matching official Kling skill.
 function protectBigInts(text) {
-  return String(text || "").replace(/"(task_id|element_id)":\s*(\d{15,})/g, '"$1":"$2"');
+  return String(text || "").replace(/"(task_id|element_id|taskId|elementId)":\s*(\d{15,})/g, '"$1":"$2"');
 }
 
 // POST /api/kling/video  — create video generation task
@@ -131,31 +132,28 @@ app.get("/api/kling/video/:taskId", async (req, res) => {
 });
 
 // GET /api/kling/voices  — fetch available TTS voices from Kling
-// voice_language is required: "en" or "zh" (default en; fetch both and merge)
+// voice_language is required by Kling: "en" or "zh" — fetch both and merge
 app.get("/api/kling/voices", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   try {
+    const jwt = klingJWT();
     const [rEn, rZh] = await Promise.all([
-      get("api-singapore.klingai.com", "/v1/videos/lip-sync/voices?voice_language=en",
-        { "Authorization": `Bearer ${klingJWT()}` }),
-      get("api-singapore.klingai.com", "/v1/videos/lip-sync/voices?voice_language=zh",
-        { "Authorization": `Bearer ${klingJWT()}` }),
+      get("api-singapore.klingai.com", "/v1/videos/lip-sync/voices?voice_language=en", { "Authorization": `Bearer ${jwt}` }),
+      get("api-singapore.klingai.com", "/v1/videos/lip-sync/voices?voice_language=zh", { "Authorization": `Bearer ${jwt}` }),
     ]);
-    // Merge en + zh voices into one list; fall back to whichever succeeds
+    console.log("[voices] en:", rEn.status, rEn.data?.slice?.(0, 300));
+    console.log("[voices] zh:", rZh.status, rZh.data?.slice?.(0, 300));
+    // Merge en + zh voices into one list
     let voices = [];
-    if (rEn.status === 200) {
-      try { voices = voices.concat(JSON.parse(rEn.data)?.data?.voices || []); } catch(_) {}
-    }
-    if (rZh.status === 200) {
-      try { voices = voices.concat(JSON.parse(rZh.data)?.data?.voices || []); } catch(_) {}
-    }
-    if (voices.length > 0) {
-      res.json({ code: 0, data: { voices } });
-    } else {
-      // Both failed — return whichever has a body for debugging
-      res.status(rEn.status || rZh.status).send(rEn.data || rZh.data);
-    }
-  } catch (e) { res.status(500).send(e.message); }
+    if (rEn.status === 200) { try { voices = voices.concat(JSON.parse(rEn.data)?.data?.voices || []); } catch(_) {} }
+    if (rZh.status === 200) { try { voices = voices.concat(JSON.parse(rZh.data)?.data?.voices || []); } catch(_) {} }
+    if (voices.length > 0) return res.json({ code: 0, data: { voices } });
+    // Both failed — return diagnostic JSON so the frontend can display the actual error
+    const errBody = rEn.data || rZh.data || "";
+    const errStatus = rEn.status || rZh.status || 500;
+    console.error("[voices] both failed — en:", rEn.status, rEn.data, "zh:", rZh.status, rZh.data);
+    res.status(errStatus).json({ code: errStatus, message: `Kling voices error: ${errBody.slice(0, 500)}`, _raw: errBody });
+  } catch (e) { console.error("[voices] exception:", e.message); res.status(500).send(e.message); }
 });
 
 // ── ADVANCED LIP SYNC endpoints (3-step: TTS → identify-face → advanced-lipsync) ──
@@ -168,23 +166,28 @@ app.post("/api/kling/tts", async (req, res) => {
   const { text, voice_id, voice_language = "en", voice_speed = 1.0 } = req.body;
   if (!text || !voice_id) return res.status(400).send("text and voice_id required");
   const body = { text: text.slice(0, 1000), voice_id, voice_language, voice_speed };
-  console.log("[tts] speaker text length:", text.length, "voice:", voice_id);
+  console.log("[tts] text len:", text.length, "voice:", voice_id, "lang:", voice_language);
   try {
     const r = await post("api-singapore.klingai.com", "/v1/audio/tts",
       { "Authorization": `Bearer ${klingJWT()}` }, body);
-    console.log("[tts] response:", r.status, r.data?.slice?.(0, 200));
+    console.log("[tts] create response:", r.status, r.data?.slice?.(0, 300));
+    if (r.status !== 200) console.error("[tts] create FAILED:", r.status, r.data);
     res.status(r.status).send(protectBigInts(r.data));
-  } catch (e) { res.status(500).send(e.message); }
+  } catch (e) { console.error("[tts] exception:", e.message); res.status(500).send(e.message); }
 });
 
 // GET /api/kling/tts/:taskId — poll TTS task
 app.get("/api/kling/tts/:taskId", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
+  const taskId = req.params.taskId;
+  console.log("[tts-poll] taskId:", taskId);
   try {
-    const r = await get("api-singapore.klingai.com", `/v1/audio/tts/${req.params.taskId}`,
+    const r = await get("api-singapore.klingai.com", `/v1/audio/tts/${taskId}`,
       { "Authorization": `Bearer ${klingJWT()}` });
+    console.log("[tts-poll]", r.status, r.data?.slice?.(0, 300));
+    if (r.status !== 200) console.error("[tts-poll] FAILED:", r.status, r.data);
     res.status(r.status).send(protectBigInts(r.data));
-  } catch (e) { res.status(500).send(e.message); }
+  } catch (e) { console.error("[tts-poll] exception:", e.message); res.status(500).send(e.message); }
 });
 
 // POST /api/kling/identify-face — step 2: scan video to get face_data + session_id
