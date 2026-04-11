@@ -1487,13 +1487,15 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
   const inp = mkInp(th); const sel = mkSel(th); const lbl = mkLbl(th);
   const ac = th.dark ? "#38bdf8" : th.t2;
   const uac = th.dark ? ac : th.t0;
-  const recompile = (patch) => { const n={...node,...patch}; upd({...patch,compiledText:compileShotText(n)}); };
+  // recompile rebuilds compiledText from fields — skipped when user has manually overridden the prompt
+  const recompile = (patch) => { const n={...node,...patch}; upd({ ...patch, ...(node.promptOverride ? {} : { compiledText: compileShotText(n) }) }); };
 
   // local bible state
   const fRefs = useRef({});
   const [aiPr, setAiPr] = useState({});
   const [genId, setGenId] = useState(null);
   const [bibleOpen, setBibleOpen] = useState(false);
+  const [promptEdit, setPromptEdit] = useState(false);
 
 
   const localBible = node.bible || [];
@@ -1775,6 +1777,12 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
                         : <div style={{ fontSize:6,color:th.t3,letterSpacing:"0.07em" }}>⚠ needs image ref</div>}
                     </div>
                   </div>
+                  {/* Description / notes — sent to AI so it understands appearance, role */}
+                  <textarea onMouseDown={e2=>e2.stopPropagation()} rows={2}
+                    style={{ ...mkFBase(th),fontSize:7,padding:"4px 6px",resize:"none",width:"100%",boxSizing:"border-box",borderRadius:2,marginBottom:4,lineHeight:1.5 }}
+                    placeholder={e.kind==="character" ? "Describe: age, role, appearance… e.g. 'ranger, early 30s, worn leather armour'" : e.kind==="location" ? "Describe: space, lighting, atmosphere…" : "Describe: what it is, its role here…"}
+                    value={e.notes||""}
+                    onChange={e2=>updB(e.id,"notes",e2.target.value)} />
                   {/* Image source */}
                   <div style={{ display:"flex",gap:4,alignItems:"center" }}>
                     <button onMouseDown={e2=>e2.stopPropagation()} onClick={e2=>{e2.stopPropagation();fRefs.current[e.id]?.click();}}
@@ -1798,8 +1806,40 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
           )}
         </div>
 
-        {node.compiledText&&(
-          <div style={{ background:th.card,border:`1px solid ${th.b0}`,borderRadius:3,padding:"5px 7px",fontSize:7,color:th.t3,lineHeight:1.7,letterSpacing:"0.02em" }}>{compileShotText(node)}</div>
+        {/* ── COMPILED PROMPT — editable override ── */}
+        {node.compiledText && (
+          <div style={{ borderTop:`1px solid ${th.b0}`, paddingTop:6 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:3 }}>
+              <span style={{ fontSize:6, color: node.promptOverride ? uac : th.t3, letterSpacing:"0.15em" }}>
+                {node.promptOverride ? "✎ PROMPT OVERRIDE" : "COMPILED PROMPT"}
+              </span>
+              <div style={{ display:"flex", gap:4 }}>
+                {node.promptOverride && (
+                  <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation(); upd({ compiledText: compileShotText(node), promptOverride: false }); setPromptEdit(false);}}
+                    title="Revert to auto-compiled prompt"
+                    style={{ background:"transparent", border:`1px solid #f8717144`, color:"#f87171", fontFamily:"'Inter',system-ui,sans-serif", fontSize:6, padding:"2px 5px", borderRadius:2, cursor:"pointer", letterSpacing:"0.06em" }}>
+                    ↺ RESET
+                  </button>
+                )}
+                <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation(); setPromptEdit(o=>!o);}}
+                  title={promptEdit ? "Collapse prompt" : "Edit prompt directly"}
+                  style={{ background: promptEdit ? `${uac}22` : "transparent", border:`1px solid ${promptEdit ? uac+"44" : th.b0}`, color: promptEdit ? uac : th.t2, fontFamily:"'Inter',system-ui,sans-serif", fontSize:6, padding:"2px 5px", borderRadius:2, cursor:"pointer", letterSpacing:"0.06em" }}>
+                  <Ico icon={Pencil} size={7}/> {promptEdit ? "CLOSE" : "EDIT"}
+                </button>
+              </div>
+            </div>
+            {promptEdit
+              ? <textarea onMouseDown={e=>e.stopPropagation()} rows={5}
+                  style={{ ...mkFBase(th), fontSize:7, padding:"5px 7px", resize:"vertical", width:"100%", boxSizing:"border-box", lineHeight:1.7, borderRadius:3, borderColor: node.promptOverride ? uac+"55" : th.b0 }}
+                  value={node.compiledText}
+                  onChange={e=>upd({ compiledText: e.target.value, promptOverride: true })}
+                />
+              : <div style={{ background:th.card, border:`1px solid ${node.promptOverride ? uac+"33" : th.b0}`, borderRadius:3, padding:"5px 7px", fontSize:7, color: node.promptOverride ? uac : th.t3, lineHeight:1.7, letterSpacing:"0.02em", cursor:"text" }}
+                  onClick={() => setPromptEdit(true)}>
+                  {node.compiledText}
+                </div>
+            }
+          </div>
         )}
 
         {/* Kling video generation → use the dedicated KLING NODE */}
