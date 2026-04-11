@@ -61,11 +61,46 @@ function humanizeMove(m) {
 }
 function humanizeLighting(l) { return `${l.replaceAll("-"," ")} lighting`; }
 
+// Strip screenplay speaker names (ALL-CAPS lines, parentheticals) from dialogue text
+// e.g. "WIZARD (O.S.)\nLine here.\nRANGER\nAnd if I refuse?" → "Line here. And if I refuse?"
+function stripSpeakerNames(text) {
+  if (!text) return "";
+  return text
+    .split('\n')
+    .filter(line => {
+      const t = line.trim();
+      if (!t) return false;
+      // Screenplay speaker name: all-caps word(s), optional parenthetical suffix
+      if (/^[A-Z][A-Z0-9\s.'"\-]+(\s*\([^)]*\))?\s*$/.test(t)) return false;
+      // Stage direction on its own line: (beat), (pause), etc.
+      if (/^\([^)]+\)$/.test(t)) return false;
+      return true;
+    })
+    .join(' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+// Detect distinct speakers in raw screenplay dialogue block
+// Returns array of speaker names found
+function detectSpeakers(text) {
+  if (!text) return [];
+  const speakers = new Set();
+  text.split('\n').forEach(line => {
+    const t = line.trim();
+    if (/^[A-Z][A-Z0-9\s.'"\-]+(\s*\([^)]*\))?\s*$/.test(t)) {
+      speakers.add(t.replace(/\s*\([^)]*\)\s*$/, '').trim());
+    }
+  });
+  return [...speakers];
+}
+
 function compileShotText(s) {
   const tags = s.entityTags?.length ? s.entityTags.join(" ") : "";
   const base = `${capitalize(s.cameraSize)} cinematic shot at ${s.when}, ${s.cameraAngle}, ${humanizeMove(s.cameraMovement)}, lens ${s.lens}, ${humanizeLighting(s.lighting)}.${tags ? " "+tags : ""} ${s.how} in ${s.where}. Visual goal: ${s.visualGoal}.`;
   const withDirector = s.directorNote ? `${base} Director's intent: ${s.directorNote}` : base;
-  return s.dialogue?.trim() ? `${withDirector} Dialogue: "${s.dialogue.trim()}"` : withDirector;
+  const cleanDialogue = stripSpeakerNames(s.dialogue);
+  return cleanDialogue ? `${withDirector} Dialogue: "${cleanDialogue}"` : withDirector;
 }
 
 function getSceneShots(nodes, sceneId) {
@@ -2252,7 +2287,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
       // If lipsync is enabled, a voice is selected, and shots have dialogue,
       // run a second pass through Kling's lipsync API after the video is ready.
       const dialogueLines = shotNodes
-        .map(sh => sh.dialogue?.trim())
+        .map(sh => stripSpeakerNames(sh.dialogue))
         .filter(Boolean)
         .join(" ");
       const shouldLipsync = node.lipsync && node.voice && node.voice !== "none" && dialogueLines;
@@ -2470,13 +2505,16 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                   </button>
                 </div>
                 {node.lipsync && hasDialogue && (() => {
-                  // Build the exact text that will be sent to Kling lipsync
+                  // Build the exact text that will be sent to Kling lipsync (speaker names stripped)
                   const lipsyncPreviewFull = shotNodes
-                    .map(sh => sh.dialogue?.trim())
+                    .map(sh => stripSpeakerNames(sh.dialogue))
                     .filter(Boolean)
                     .join(" ");
                   const lipsyncPreview = lipsyncPreviewFull.slice(0, 120);
                   const isTruncated = lipsyncPreviewFull.length > 120;
+                  // Detect multiple speakers across all linked shots
+                  const allSpeakers = [...new Set(shotNodes.flatMap(sh => detectSpeakers(sh.dialogue || "")))];
+                  const hasMultiSpeaker = allSpeakers.length > 1;
                   return (
                   <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
                     <div>
@@ -2522,6 +2560,12 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                       <div style={{ fontSize:6, color:th.t1, lineHeight:1.6, fontStyle:"italic", wordBreak:"break-word" }}>
                         "{lipsyncPreview}"
                       </div>
+                      {hasMultiSpeaker && (
+                        <div style={{ fontSize:5, color:"#f87171", marginTop:3, letterSpacing:"0.06em", lineHeight:1.5 }}>
+                          ✕ Multiple speakers detected: {allSpeakers.join(", ")}.<br/>
+                          Kling lipsync uses ONE voice. Create a separate Kling node per character.
+                        </div>
+                      )}
                       {isTruncated && (
                         <div style={{ fontSize:5, color:"#fbbf24", marginTop:3, letterSpacing:"0.06em" }}>
                           ⚠ Kling limits audio to 120 chars. Shorten your dialogue or split into multiple Kling nodes.
