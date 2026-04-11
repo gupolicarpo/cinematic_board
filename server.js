@@ -124,16 +124,38 @@ app.get("/api/kling/video/:taskId", async (req, res) => {
   } catch (e) { res.status(500).send(e.message); }
 });
 
-// POST /api/kling/lipsync  — create a lipsync task (dialogue + voice applied to existing video)
-// body: { video_url, voice_id, dialogue }
+// GET /api/kling/voices  — fetch available TTS voices from Kling
+app.get("/api/kling/voices", async (req, res) => {
+  if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
+  try {
+    const r = await get("api-singapore.klingai.com", "/v1/videos/lip-sync/voices",
+      { "Authorization": `Bearer ${klingJWT()}` });
+    res.status(r.status).send(r.data);
+  } catch (e) { res.status(500).send(e.message); }
+});
+
+// POST /api/kling/lipsync  — create a lipsync task (text2video mode)
+// body: { video_url, voice_id, dialogue, voice_language? }
 app.post("/api/kling/lipsync", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
-  const { video_url, voice_id, dialogue } = req.body;
+  const { video_url, voice_id, dialogue, voice_language = "en" } = req.body;
   if (!video_url || !voice_id || !dialogue) return res.status(400).send("video_url, voice_id, and dialogue are required");
+  const textPayload = dialogue.slice(0, 120);
+  const body = {
+    input: {
+      mode: "text2video",
+      video_url,
+      voice_id,
+      voice_language,
+      voice_speed: 1.0,
+      text: textPayload,
+    }
+  };
+  console.log("[lipsync] Sending to Kling:", JSON.stringify({ voice_id, voice_language, text: textPayload }));
   try {
-    const body = { video_url, voice_id, voice_language: "en", voice_text: dialogue };
     const r = await post("api-singapore.klingai.com", "/v1/videos/lip-sync",
       { "Authorization": `Bearer ${klingJWT()}` }, body);
+    console.log("[lipsync] Kling response:", r.status, r.data?.slice?.(0, 300));
     res.status(r.status).send(r.data);
   } catch (e) { res.status(500).send(e.message); }
 });

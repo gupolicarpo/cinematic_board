@@ -2136,9 +2136,10 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
 
   // Generation state
   const [klingStatus, setKlingStatus]   = useState("idle");
-  const [klingTaskId, setKlingTaskId]   = useState(null);
-  const [klingPollMsg, setKlingPollMsg] = useState("");
-  const [klingError, setKlingError]     = useState("");
+  const [klingTaskId, setKlingTaskId]     = useState(null);
+  const [klingPollMsg, setKlingPollMsg]   = useState("");
+  const [klingError, setKlingError]       = useState("");
+  const [klingLipsyncErr, setKlingLipsyncErr] = useState("");
 
   const removeShot = (shotId) => upd({ shotIds: (node.shotIds||[]).filter(id=>id!==shotId) });
 
@@ -2195,35 +2196,44 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
 
       if (shouldLipsync) {
         setKlingPollMsg("Running lipsync…");
+        setKlingLipsyncErr("");
         try {
           const lsRes = await fetch("/api/kling/lipsync", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ video_url: url, voice_id: node.voice, dialogue: dialogueLines }),
           });
-          if (!lsRes.ok) throw new Error(await lsRes.text());
-          const lsData = await lsRes.json();
+          const lsText = await lsRes.text();
+          if (!lsRes.ok) throw new Error(lsText);
+          let lsData;
+          try { lsData = JSON.parse(lsText); } catch { throw new Error(`Bad JSON from lipsync: ${lsText.slice(0,200)}`); }
+          // Kling wraps errors in code field even on 200
+          if (lsData.code && lsData.code !== 0) throw new Error(`Kling lipsync error ${lsData.code}: ${lsData.message}`);
           const lsTaskId = lsData.data?.task_id;
-          if (lsTaskId) {
-            // Poll lipsync task
-            for (let i = 0; i < 180; i++) {
-              await new Promise(r => setTimeout(r, 2000));
-              const pollRes = await fetch(`/api/kling/lipsync/${lsTaskId}`);
-              if (!pollRes.ok) break;
-              const pollData = await pollRes.json();
-              const status = pollData.data?.task_status;
-              if (status === "succeed") {
-                const lsUrl = pollData.data?.task_result?.videos?.[0]?.url;
-                if (lsUrl) { upd({ videoUrl: lsUrl }); setKlingStatus("done"); setKlingPollMsg(""); return; }
-                break;
-              }
-              if (status === "failed") { setKlingPollMsg("Lipsync failed — raw video saved instead."); break; }
-              setKlingPollMsg(`Lipsync: ${status || "processing"}…`);
+          if (!lsTaskId) throw new Error(`No task_id in lipsync response: ${lsText.slice(0,200)}`);
+          // Poll lipsync task
+          for (let i = 0; i < 180; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            const pollRes = await fetch(`/api/kling/lipsync/${lsTaskId}`);
+            if (!pollRes.ok) { setKlingLipsyncErr(`Poll failed: ${pollRes.status}`); break; }
+            const pollData = await pollRes.json();
+            if (pollData.code && pollData.code !== 0) { setKlingLipsyncErr(`Kling lipsync failed: ${pollData.message}`); break; }
+            const status = pollData.data?.task_status;
+            if (status === "succeed") {
+              const lsUrl = pollData.data?.task_result?.videos?.[0]?.url;
+              if (lsUrl) { upd({ videoUrl: lsUrl }); setKlingStatus("done"); setKlingPollMsg(""); return; }
+              break;
             }
+            if (status === "failed") {
+              const failMsg = pollData.data?.task_status_msg || "unknown error";
+              setKlingLipsyncErr(`Lipsync task failed: ${failMsg}`);
+              break;
+            }
+            setKlingPollMsg(`Lipsync: ${status || "processing"}…`);
           }
         } catch (lsErr) {
-          console.warn("Lipsync pass failed, keeping raw video:", lsErr.message);
-          setKlingPollMsg("Lipsync failed — raw video saved instead.");
+          console.warn("Lipsync pass failed:", lsErr.message);
+          setKlingLipsyncErr(`Lipsync error: ${lsErr.message}`);
         }
       }
 
@@ -2409,11 +2419,18 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                               </option>
                             ))
                           : !voicesLoading && (
+                              /* Real Kling voice IDs (fallback when API is unreachable) */
                               <>
-                                <option value="calm_female_voice">Female · Calm</option>
-                                <option value="lively_female_voice">Female · Lively</option>
-                                <option value="gentle_male_voice">Male · Gentle</option>
-                                <option value="deep_male_voice">Male · Deep</option>
+                                <optgroup label="Female">
+                                  <option value="commercial_lady_en_f-v1">Female · Commercial</option>
+                                  <option value="chat1_female_new-3">Female · Chat</option>
+                                  <option value="genshin_kirara">Female · Kirara</option>
+                                </optgroup>
+                                <optgroup label="Male">
+                                  <option value="oversea_male1">Male · Overseas</option>
+                                  <option value="uk_man2">Male · UK</option>
+                                  <option value="uk_boy1">Male · UK Young</option>
+                                </optgroup>
                               </>
                             )
                         }
@@ -2454,6 +2471,15 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
           {klingStatus==="failed" && klingError && (
             <div style={{ fontSize:6, color:"#f87171", background:"#1a0a0a", border:"1px solid #f8717133", borderRadius:3, padding:"4px 7px", letterSpacing:"0.04em", lineHeight:1.6 }}>
               ✕ {klingError}
+            </div>
+          )}
+
+          {/* Lipsync error (non-fatal — video was saved, but lipsync failed) */}
+          {klingLipsyncErr && (
+            <div style={{ fontSize:6, color:"#fb923c", background:"#1a0e06", border:"1px solid #fb923c44", borderRadius:3, padding:"4px 7px", letterSpacing:"0.04em", lineHeight:1.6, display:"flex", gap:5 }}>
+              <span>⚠</span>
+              <span style={{ flex:1 }}>{klingLipsyncErr}<br/>Video saved without lipsync — check voice ID and retry.</span>
+              <button onMouseDown={e=>e.stopPropagation()} onClick={()=>setKlingLipsyncErr("")} style={{ background:"transparent", border:"none", color:"#fb923c", cursor:"pointer", fontSize:8, padding:0, flexShrink:0 }}>✕</button>
             </div>
           )}
 
