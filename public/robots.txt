@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://www.cartasis.com/sitemap.xml
+
+# Block internal app routes from indexing
+Disallow: /api/
