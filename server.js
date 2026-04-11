@@ -104,13 +104,19 @@ function klingJWT() {
   return `${header}.${payload}.${sig}`;
 }
 
+// Kling task_id values are 18-digit integers — beyond JS MAX_SAFE_INTEGER.
+// JSON.parse() silently corrupts them. Convert to strings before sending to client.
+function protectBigInts(text) {
+  return String(text || "").replace(/"(task_id|element_id)":\s*(\d{15,})/g, '"$1":"$2"');
+}
+
 // POST /api/kling/video  — create video generation task
 app.post("/api/kling/video", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   try {
     const r = await post("api-singapore.klingai.com", "/v1/videos/omni-video",
       { "Authorization": `Bearer ${klingJWT()}` }, req.body);
-    res.status(r.status).send(r.data);
+    res.status(r.status).send(protectBigInts(r.data));
   } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -120,17 +126,35 @@ app.get("/api/kling/video/:taskId", async (req, res) => {
   try {
     const r = await get("api-singapore.klingai.com", `/v1/videos/omni-video/${req.params.taskId}`,
       { "Authorization": `Bearer ${klingJWT()}` });
-    res.status(r.status).send(r.data);
+    res.status(r.status).send(protectBigInts(r.data));
   } catch (e) { res.status(500).send(e.message); }
 });
 
 // GET /api/kling/voices  — fetch available TTS voices from Kling
+// voice_language is required: "en" or "zh" (default en; fetch both and merge)
 app.get("/api/kling/voices", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   try {
-    const r = await get("api-singapore.klingai.com", "/v1/videos/lip-sync/voices",
-      { "Authorization": `Bearer ${klingJWT()}` });
-    res.status(r.status).send(r.data);
+    const [rEn, rZh] = await Promise.all([
+      get("api-singapore.klingai.com", "/v1/videos/lip-sync/voices?voice_language=en",
+        { "Authorization": `Bearer ${klingJWT()}` }),
+      get("api-singapore.klingai.com", "/v1/videos/lip-sync/voices?voice_language=zh",
+        { "Authorization": `Bearer ${klingJWT()}` }),
+    ]);
+    // Merge en + zh voices into one list; fall back to whichever succeeds
+    let voices = [];
+    if (rEn.status === 200) {
+      try { voices = voices.concat(JSON.parse(rEn.data)?.data?.voices || []); } catch(_) {}
+    }
+    if (rZh.status === 200) {
+      try { voices = voices.concat(JSON.parse(rZh.data)?.data?.voices || []); } catch(_) {}
+    }
+    if (voices.length > 0) {
+      res.json({ code: 0, data: { voices } });
+    } else {
+      // Both failed — return whichever has a body for debugging
+      res.status(rEn.status || rZh.status).send(rEn.data || rZh.data);
+    }
   } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -149,7 +173,7 @@ app.post("/api/kling/tts", async (req, res) => {
     const r = await post("api-singapore.klingai.com", "/v1/audio/tts",
       { "Authorization": `Bearer ${klingJWT()}` }, body);
     console.log("[tts] response:", r.status, r.data?.slice?.(0, 200));
-    res.status(r.status).send(r.data);
+    res.status(r.status).send(protectBigInts(r.data));
   } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -159,7 +183,7 @@ app.get("/api/kling/tts/:taskId", async (req, res) => {
   try {
     const r = await get("api-singapore.klingai.com", `/v1/audio/tts/${req.params.taskId}`,
       { "Authorization": `Bearer ${klingJWT()}` });
-    res.status(r.status).send(r.data);
+    res.status(r.status).send(protectBigInts(r.data));
   } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -176,7 +200,7 @@ app.post("/api/kling/identify-face", async (req, res) => {
     const r = await post("api-singapore.klingai.com", "/v1/videos/identify-face",
       { "Authorization": `Bearer ${klingJWT()}` }, body);
     console.log("[identify-face] response:", r.status, r.data?.slice?.(0, 300));
-    res.status(r.status).send(r.data);
+    res.status(r.status).send(protectBigInts(r.data));
   } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -191,7 +215,7 @@ app.post("/api/kling/advanced-lipsync", async (req, res) => {
     const r = await post("api-singapore.klingai.com", "/v1/videos/advanced-lip-sync",
       { "Authorization": `Bearer ${klingJWT()}` }, req.body);
     console.log("[advanced-lipsync] response:", r.status, r.data?.slice?.(0, 300));
-    res.status(r.status).send(r.data);
+    res.status(r.status).send(protectBigInts(r.data));
   } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -201,7 +225,7 @@ app.get("/api/kling/advanced-lipsync/:taskId", async (req, res) => {
   try {
     const r = await get("api-singapore.klingai.com", `/v1/videos/advanced-lip-sync/${req.params.taskId}`,
       { "Authorization": `Bearer ${klingJWT()}` });
-    res.status(r.status).send(r.data);
+    res.status(r.status).send(protectBigInts(r.data));
   } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -216,7 +240,7 @@ app.post("/api/kling/lipsync", async (req, res) => {
   try {
     const r = await post("api-singapore.klingai.com", "/v1/videos/lip-sync",
       { "Authorization": `Bearer ${klingJWT()}` }, body);
-    res.status(r.status).send(r.data);
+    res.status(r.status).send(protectBigInts(r.data));
   } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -226,7 +250,7 @@ app.get("/api/kling/lipsync/:taskId", async (req, res) => {
   try {
     const r = await get("api-singapore.klingai.com", `/v1/videos/lip-sync/${req.params.taskId}`,
       { "Authorization": `Bearer ${klingJWT()}` });
-    res.status(r.status).send(r.data);
+    res.status(r.status).send(protectBigInts(r.data));
   } catch (e) { res.status(500).send(e.message); }
 });
 
