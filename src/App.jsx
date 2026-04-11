@@ -1033,7 +1033,7 @@ function F({ label, children, th }) {
 }
 
 // ─── SCENE NODE ───────────────────────────────────────────────────────────────
-function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected, onStartWire, nodePos, model, sceneStats, onExport }) {
+function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected, onStartWire, nodePos, model, sceneStats, onExport, globalBible = [] }) {
   const th = useTheme();
   const ac = th.dark ? (styleColor[node.cinematicStyle]||"#c084fc") : th.t2;
   const uac = th.dark ? ac : th.t0;
@@ -1048,6 +1048,9 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
   const [expanded, setExpanded] = useState(false);
   const [atMention, setAtMention] = useState({ active: false, query: "", start: -1 });
   const [savingE, setSavingE] = useState({});
+
+  // Resolve entity image: local _prev first, fall back to matching world-bible entry
+  const eImg = (e) => e._prev || globalBible.find(g => g.tag === e.tag)?._prev || "";
 
   const cardWidth = expanded ? 580 : 310;
 
@@ -1112,18 +1115,20 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
   const delE = (id) => upd({ bible:node.bible.filter(e=>e.id!==id) });
 
   const downloadEntityImage = (entry) => {
-    if (!entry._prev) return;
+    const src = eImg(entry);
+    if (!src) return;
     const a = document.createElement("a");
-    a.href = entry._prev;
+    a.href = src;
     a.download = `${entry.kind}_${entry.name.replace(/\s+/g,"_")}.png`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
   const saveEntityImage = async (entry) => {
-    if (!entry._prev || savingE[entry.id]) return;
+    const src = eImg(entry);
+    if (!src || savingE[entry.id]) return;
     setSavingE(s => ({...s, [entry.id]: true}));
     try {
-      const res  = await fetch(entry._prev);
+      const res  = await fetch(src);
       const blob = await res.blob();
       const form = new FormData();
       form.append("file", blob, `${entry.kind}_${entry.name.replace(/\s+/g,"_")}.png`);
@@ -1233,8 +1238,8 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
                     onMouseLeave={ev => ev.currentTarget.style.background = i===0 ? th.b1 : "transparent"}
                   >
                     <div style={{ width:26, height:26, borderRadius:3, overflow:"hidden", flexShrink:0, background:th.card4, border:`1px solid ${th.b0}`, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                      {e._prev
-                        ? <img src={e._prev} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                      {eImg(e)
+                        ? <img src={eImg(e)} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
                         : <KindIcon kind={e.kind} size={13} />
                       }
                     </div>
@@ -1293,7 +1298,7 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
               <div style={{ display:"flex",gap:7,marginBottom:6 }}>
                 <div style={{ width:44,height:44,background:th.card4,border:`1px solid ${e.assetId?ac+"44":th.b0}`,borderRadius:3,flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center" }}>
                   {genId===e.id?<Ico icon={Loader2} size={16} color="#3a4a22" style={{animation:"spin 0.7s linear infinite"}}/>
-                    :e._prev?<img src={e._prev} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} />
+                    :eImg(e)?<img src={eImg(e)} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} />
                     :<KindIcon kind={e.kind} size={16} />}
                 </div>
                 <div style={{ flex:1,display:"flex",flexDirection:"column",gap:4 }}>
@@ -1302,7 +1307,7 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
                     <input onMouseDown={e2=>e2.stopPropagation()} style={{ ...inp,flex:1,fontSize:8,color:uac }} placeholder="@tag" value={e.tag} onChange={e2=>updateTag(e.id, e.tag, e2.target.value)} />
                     <button onMouseDown={e2=>e2.stopPropagation()} onClick={e2=>{e2.stopPropagation();delE(e.id);}} style={{ background:"transparent",border:`1px solid ${th.b0}`,color:th.t3,cursor:"pointer",fontSize:9,padding:"2px 5px",borderRadius:2 }}>✕</button>
                   </div>
-                  {e.assetId?<div style={{ fontSize:7,color:uac,letterSpacing:"0.08em" }}>✓ {e.tag} · {e.kind.toUpperCase()}</div>
+                  {(e.assetId||eImg(e))?<div style={{ fontSize:7,color:uac,letterSpacing:"0.08em" }}>✓ {e.tag} · {e.kind.toUpperCase()}</div>
                     :<div style={{ fontSize:7,color:th.t3,letterSpacing:"0.07em" }}>⚠ image ref required</div>}
                 </div>
               </div>
@@ -1330,7 +1335,7 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
                 </button>
               </div>
               {/* Save / Download row — only when image exists */}
-              {e._prev && (
+              {eImg(e) && (
                 <div style={{ display:"flex",gap:4,alignItems:"center",marginTop:4,paddingTop:4,borderTop:`1px solid ${th.b0}` }}>
                   <button onMouseDown={e2=>e2.stopPropagation()} onClick={e2=>{e2.stopPropagation();downloadEntityImage(e);}}
                     title="Download image to computer"
@@ -7824,7 +7829,7 @@ export default function App() {
               const imgLinkedScene = n.type===T.IMAGE ? (nodes.find(x=>x.id===(n.sceneId||(imgLinkedShot && imgLinkedShot.sceneId)))||null) : null;
               return (
                 <Drag key={n.id} id={n.id} x={p.x} y={p.y} onMove={moveNode} z={z} zoom={zoom} onFocus={()=>{setSelId(n.id);front(n.id);}}>
-                  {n.type===T.SCENE&&<SceneCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onGenShots={onGenShots} onGenVersionB={onGenVersionB} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={p} model={shotModel} sceneStats={getSceneShotStats(nodes,n.id)} onExport={()=>exportScene(n)} />}
+                  {n.type===T.SCENE&&<SceneCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onGenShots={onGenShots} onGenVersionB={onGenVersionB} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={p} model={shotModel} sceneStats={getSceneShotStats(nodes,n.id)} onExport={()=>exportScene(n)} globalBible={globalBibleFlat} />}
                   {n.type===T.SHOT&&<ShotCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} sceneBible={nodes.find(x=>x.id===n.sceneId)?.bible||[]} linkedScene={nodes.find(x=>x.id===n.sceneId)||null} onLink={sceneId=>linkShot(n.id,sceneId)} onStartWire={startWire} nodePos={p} sceneStats={getSceneShotStats(nodes,n.sceneId)} globalBible={globalBibleFlat} onRetrySingleShot={onRetrySingleShot} />}
                   {n.type===T.IMAGE&&<ImageCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} linkedShot={imgLinkedShot} linkedScene={imgLinkedScene} onUnlinkShot={()=>updNode(n.id,{shotId:null,prompt:""})} onStartWire={startWire} nodePos={p} globalBible={globalBibleFlat} onSaveToBible={saveToBible} />}
                   {n.type===T.KLING&&<KlingCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={p} globalBible={globalBibleFlat} />}
