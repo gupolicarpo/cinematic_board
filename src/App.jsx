@@ -141,6 +141,22 @@ function validateShot(shot, scene) {
   if (shot.durationSec > 15)
     issues.push({ code:"SHOT_TOO_LONG", level:"error", msg:"Shot exceeds Kling max of 15s" });
 
+  // Dialogue-duration check: estimate spoken length (~13 chars/sec for TTS pacing)
+  // and warn if the shot is likely too short to fit the audio.
+  if (shot.dialogue?.trim()) {
+    const spokenText = stripSpeakerNames(shot.dialogue).replace(/\s+/g, " ").trim();
+    if (spokenText.length > 0) {
+      const estimatedSecs = Math.ceil(spokenText.length / 13);
+      if (estimatedSecs > (shot.durationSec || 1)) {
+        issues.push({
+          code: "DIALOGUE_TOO_LONG",
+          level: "warn",
+          msg: `Dialogue needs ~${estimatedSecs}s but shot is ${shot.durationSec || 1}s — lipsync may be clipped`,
+        });
+      }
+    }
+  }
+
   if (shot.entityTags?.length === 0)
     issues.push({ code:"NO_TAGS", level:"warn", msg:"No entity tags — who is in this shot?" });
 
@@ -907,7 +923,7 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
   return d.data?.task_id;
 }
 
-// Poll until succeed/failed — returns video URL on success
+// Poll until succeed/failed — returns { url, durationMs } on success
 async function aiKlingPoll(taskId, onStatus) {
   for (let i = 0; i < 180; i++) {   // max ~6 min polling
     await new Promise(r => setTimeout(r, 2000));
@@ -920,7 +936,8 @@ async function aiKlingPoll(taskId, onStatus) {
     if (status === "succeed") {
       const url = d.data?.task_result?.videos?.[0]?.url;
       if (!url) throw new Error("Task succeeded but no video URL found");
-      return url;
+      const durationMs = Math.round(parseFloat(d.data?.task_result?.videos?.[0]?.duration || 0) * 1000);
+      return { url, durationMs };
     }
     if (status === "failed") throw new Error(`Task failed: ${d.data?.task_status_msg || "unknown reason"}`);
   }
@@ -2362,7 +2379,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
       });
       setKlingTaskId(taskId);
       setKlingStatus("polling"); setKlingPollMsg("Processing…");
-      const url = await aiKlingPoll(taskId, s=>setKlingPollMsg(s));
+      const { url, durationMs: videoDurationMs } = await aiKlingPoll(taskId, s=>setKlingPollMsg(s));
 
       // ── ADVANCED LIPSYNC PASS ────────────────────────────────────────────────
       // 3-step: TTS per speaker → identify faces → advanced-lipsync per face.
@@ -2492,13 +2509,21 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             const faceIdx = visualIdx >= 0 ? visualIdx : fallbackIdx;
             const face = faces[faceIdx] || faces[0];
             const audio = speakerAudio[speaker];
+            const audioDurationMs = Math.max(2000, Math.round(parseFloat(audio.duration) * 1000));
+            // sound_insert_time must be >= face.start_time so the audio overlaps the face by >=2000ms.
+            // We never move it earlier — we only cap the audio END so it doesn't exceed the video.
+            const insertTime = face.start_time;
+            const availableMs = videoDurationMs - insertTime;   // ms remaining from face appearance
+            const soundEndTime = Math.min(audioDurationMs, Math.max(2000, availableMs));
             return {
               speaker,
               face_id: face.face_id,
               audio_id: audio.id,
               sound_start_time: 0,
-              sound_end_time: Math.max(2000, Math.round(parseFloat(audio.duration) * 1000)),
-              sound_insert_time: face.start_time,
+              sound_end_time: soundEndTime,
+              sound_insert_time: insertTime,
+              _audioDurationMs: audioDurationMs,
+              _videoDurationMs: videoDurationMs,
             };
           });
 
@@ -2543,6 +2568,11 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             // Pick the face at same index position in the new video
             const face = currentFaces[idx] || currentFaces[0];
             const faceId = face?.face_id ?? a.face_id;
+            // Recalculate timing with the fresh face start_time (may have shifted after prior lipsync pass).
+            // Insert at face.start_time — never earlier — then cap audio end to video boundary.
+            const newInsertTime = face?.start_time ?? a.sound_insert_time;
+            const newAvailableMs = a._videoDurationMs - newInsertTime;
+            const newSoundEndTime = Math.min(a._audioDurationMs, Math.max(2000, newAvailableMs));
             setKlingPollMsg(`Lipsync: applying ${a.speaker}'s voice to face ${faceId}…`);
             const lsRes = await fetch("/api/kling/advanced-lipsync", {
               method: "POST", headers: { "Content-Type": "application/json" },
@@ -2551,9 +2581,9 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                 face_choose: [{
                   face_id: faceId,
                   audio_id: a.audio_id,
-                  sound_start_time: a.sound_start_time,
-                  sound_end_time: a.sound_end_time,
-                  sound_insert_time: face?.start_time ?? a.sound_insert_time,
+                  sound_start_time: 0,
+                  sound_end_time: newSoundEndTime,
+                  sound_insert_time: newInsertTime,
                 }],
               }),
             });
