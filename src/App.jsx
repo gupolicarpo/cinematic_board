@@ -939,40 +939,63 @@ function dataUrlToVeo(dataUrl) {
 
 // Start a Veo 3.1 generation — returns the operation name for polling
 // options: { aspect_ratio, duration, startFrame, endFrame, referenceImages }
-//   startFrame / endFrame — data URLs resolved from wired IMAGE nodes in VeoCard
-//   referenceImages — [{ dataUrl, referenceType }] from Shot bible
+//   startFrame       — data URL from IMAGE node assigned role "startFrame" in VeoCard
+//   endFrame         — data URL from IMAGE node assigned role "endFrame" (only when startFrame set)
+//   referenceImages  — [{ dataUrl, referenceType }] from IMAGE nodes with role "ref" OR shot bible
+//
+// NOTE: reference mode and frame mode are MUTUALLY EXCLUSIVE. If referenceImages is non-empty,
+// startFrame/endFrame are ignored and veo-3.1-generate-preview is used instead of veo-3.1-generate-001.
 async function aiVeoCreate(shot, options = {}) {
   const { aspect_ratio = "16:9", duration = 8, startFrame = null, endFrame = null, referenceImages = [] } = options;
+
+  // ── Veo has two MUTUALLY EXCLUSIVE generation modes ───────────────────────
+  //
+  //  MODE A — veo-3.1-generate-001  (frame-guided)
+  //    T2V:           prompt only
+  //    I2V:           prompt + instances[0].image  (start frame)
+  //    First+Last:    prompt + instances[0].image  + parameters.lastFrame
+  //
+  //  MODE B — veo-3.1-generate-preview  (reference-guided)
+  //    Ref images:    prompt + parameters.referenceImages  (asset / style refs)
+  //    — referenceImages and frame fields CANNOT be combined in the same call
+  //
+  // When both are wired (refs + start frame), REFERENCE mode wins and the
+  // frame fields are intentionally omitted.
+  // ──────────────────────────────────────────────────────────────────────────
+  const refs = referenceImages.filter(r => r.dataUrl?.startsWith("data:")).slice(0, 3);
+  const hasRefs  = refs.length > 0;
+  const veoModel = hasRefs ? "veo-3.1-generate-preview" : "veo-3.1-generate-001";
 
   const instance = {
     prompt: (shot.compiledText || `${shot.how || ""} in ${shot.where || ""}`).trim().slice(0, 2000) || "Cinematic shot",
   };
 
-  // Start frame (first frame)
-  if (startFrame?.startsWith("data:")) {
-    instance.image = dataUrlToVeo(startFrame);
-  }
+  const parameters = {
+    aspectRatio:     aspect_ratio,
+    durationSeconds: Number(duration),
+  };
 
-  // End frame — only valid when a start frame is also set
-  if (endFrame?.startsWith("data:") && startFrame?.startsWith("data:")) {
-    instance.lastFrame = dataUrlToVeo(endFrame);
-  }
-
-  // Reference images (elements/subjects/style) — max 3
-  const refs = referenceImages.filter(r => r.dataUrl?.startsWith("data:")).slice(0, 3);
-  if (refs.length > 0) {
-    instance.referenceImages = refs.map(r => ({
+  if (hasRefs) {
+    // MODE B — reference-guided: refs go in parameters, no frame fields
+    parameters.referenceImages = refs.map(r => ({
       image: dataUrlToVeo(r.dataUrl),
       referenceType: r.referenceType || "asset",
     }));
+  } else {
+    // MODE A — frame-guided: start frame in instances[0].image, end frame in parameters.lastFrame
+    if (startFrame?.startsWith("data:")) {
+      instance.image = dataUrlToVeo(startFrame);
+      // End frame only valid when start frame is also set
+      if (endFrame?.startsWith("data:")) {
+        parameters.lastFrame = dataUrlToVeo(endFrame);
+      }
+    }
   }
 
   const body = {
+    _veoModel: veoModel,   // stripped server-side before forwarding to Google
     instances: [instance],
-    parameters: {
-      aspectRatio:     aspect_ratio,
-      durationSeconds: Number(duration),
-    },
+    parameters,
   };
 
   const r = await fetch("/api/veo/video", {
@@ -1928,7 +1951,11 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
       const wiredRefs = refNodes
         .filter(n => n.generatedUrl)
         .map(n => ({ dataUrl: n.generatedUrl, referenceType: (node.refTypes||{})[n.id] || "asset" }));
-      const bibleRefs = (bibleMsgs.length > 0 && wiredRefs.length === 0)
+      // Bible fallback: only kicks in when NO explicit ref IMAGE nodes AND NO start frame node.
+      // If a start frame is wired, we're in frame mode (veo-3.1-generate-001) — bible images
+      // must NOT be included as referenceImages or they would force the preview model and
+      // silently discard the start frame.
+      const bibleRefs = (bibleMsgs.length > 0 && wiredRefs.length === 0 && !startFrameNode)
         ? bibleMsgs.map(e => ({ dataUrl: e._prev, referenceType: "asset" }))
         : [];
       const referenceImages = [...wiredRefs, ...bibleRefs].slice(0, 3);

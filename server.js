@@ -317,9 +317,15 @@ app.post("/api/veo/video", async (req, res) => {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(500).send("GEMINI_API_KEY not set");
   try {
+    // Extract and strip the model hint added by the client
+    const { _veoModel, ...payload } = req.body;
+    // Route to correct model:
+    //   veo-3.1-generate-preview  — reference images (asset/style consistency)
+    //   veo-3.1-generate-001      — T2V, I2V (start frame), first+last frames
+    const model = _veoModel || "veo-3.1-generate-001";
     const r = await post("generativelanguage.googleapis.com",
-      `/v1beta/models/veo-3.1-generate-preview:predictLongRunning?key=${key}`,
-      {}, req.body);
+      `/v1beta/models/${model}:predictLongRunning?key=${key}`,
+      {}, payload);
     res.status(r.status).send(r.data);
   } catch (e) { res.status(500).send(e.message); }
 });
