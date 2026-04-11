@@ -2406,7 +2406,15 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                     {node.lipsync ? "✓ LIPSYNC ON" : "LIPSYNC OFF"}
                   </button>
                 </div>
-                {node.lipsync && hasDialogue && (
+                {node.lipsync && hasDialogue && (() => {
+                  // Build the exact text that will be sent to Kling lipsync
+                  const lipsyncPreviewFull = shotNodes
+                    .map(sh => sh.dialogue?.trim())
+                    .filter(Boolean)
+                    .join(" ");
+                  const lipsyncPreview = lipsyncPreviewFull.slice(0, 120);
+                  const isTruncated = lipsyncPreviewFull.length > 120;
+                  return (
                   <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
                     <div>
                       <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.1em", display:"block", marginBottom:2 }}>VOICE</span>
@@ -2439,11 +2447,32 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                     {node.voice === "none" && (
                       <div style={{ fontSize:6, color:"#fbbf24", letterSpacing:"0.06em" }}>⚠ Select a voice to enable lipsync generation</div>
                     )}
-                    <div style={{ fontSize:6, color:th.t3, lineHeight:1.5 }}>
-                      After video is generated, lipsync will run automatically using the dialogue from your shot nodes.
+
+                    {/* DIALOGUE PREVIEW — exact text that will be synthesized */}
+                    <div style={{ background:`${lipsyncAc}0d`, border:`1px solid ${lipsyncAc}33`, borderRadius:3, padding:"5px 7px" }}>
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:3 }}>
+                        <span style={{ fontSize:5, letterSpacing:"0.15em", color:lipsyncAc, fontWeight:700 }}>AUDIO SCRIPT PREVIEW</span>
+                        <span style={{ fontSize:5, color: isTruncated ? "#fbbf24" : th.t3, letterSpacing:"0.08em" }}>
+                          {lipsyncPreview.length}/120 chars{isTruncated ? " ⚠ TRUNCATED" : ""}
+                        </span>
+                      </div>
+                      <div style={{ fontSize:6, color:th.t1, lineHeight:1.6, fontStyle:"italic", wordBreak:"break-word" }}>
+                        "{lipsyncPreview}"
+                      </div>
+                      {isTruncated && (
+                        <div style={{ fontSize:5, color:"#fbbf24", marginTop:3, letterSpacing:"0.06em" }}>
+                          ⚠ Kling limits audio to 120 chars. Shorten your dialogue or split into multiple Kling nodes.
+                        </div>
+                      )}
+                      {shotNodes.filter(sh=>sh.dialogue?.trim()).length > 1 && (
+                        <div style={{ fontSize:5, color:th.t3, marginTop:3, letterSpacing:"0.06em" }}>
+                          Combined from {shotNodes.filter(sh=>sh.dialogue?.trim()).length} shots
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
+                  );
+                })()}
               </div>
             );
           })()}
