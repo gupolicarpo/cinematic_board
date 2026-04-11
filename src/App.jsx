@@ -2332,7 +2332,12 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
       // 3-step: TTS per speaker → identify faces → advanced-lipsync per face.
       // Each speaker in the linked shots gets their own TTS audio, then matched
       // to a detected face in the video by time-order.
-      const shouldLipsync = node.lipsync && node.voice && node.voice !== "none";
+      // Lipsync is enabled when: lipsync toggle on AND either a global voice is set OR
+      // at least one character has a voice assigned in characterVoices
+      const charVoicesMap = node.characterVoices || {};
+      const hasAnyVoice = (node.voice && node.voice !== "none") ||
+        Object.values(charVoicesMap).some(v => v && v !== "none");
+      const shouldLipsync = node.lipsync && hasAnyVoice;
       if (shouldLipsync) {
         setKlingLipsyncErr("");
         try {
@@ -2357,6 +2362,29 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
           const speakers = Object.keys(speakerLines);
           if (speakers.length === 0) { upd({ videoUrl: url }); setKlingStatus("done"); setKlingPollMsg(""); return; }
 
+          // ── Map speaker names → bible tags (e.g. "WIZARD" → "@WIZARD") ──
+          // Normalise by uppercasing and stripping non-alphanumeric chars for fuzzy match
+          const normTag = s => s.toUpperCase().replace(/^@/, '').replace(/[^A-Z0-9]/g, '');
+          const allBibleEntries = shotNodes.flatMap(sh => {
+            const sceneBible = allNodes.find(n => n.id === sh.sceneId)?.bible || [];
+            return [...(sh.bible || []), ...sceneBible];
+          });
+          // speaker → matching bible entry (used to get reference image or other metadata)
+          const speakerBibleMap = {};
+          for (const speaker of speakers) {
+            const match = allBibleEntries.find(e => normTag(e.tag) === normTag(speaker));
+            if (match) speakerBibleMap[speaker] = match;
+          }
+
+          // ── Resolve per-speaker voice ID ─────────────────────────────────
+          // Priority: characterVoices[speaker] → node.voice (global fallback)
+          const charVoices = node.characterVoices || {};
+          const resolveVoice = (speaker) => {
+            const v = charVoices[speaker];
+            if (v && v !== "none") return v;
+            return node.voice || "none";
+          };
+
           // ── Step 2: TTS for each speaker ─────────────────────────────────
           const pollTts = async (taskId) => {
             for (let i = 0; i < 60; i++) {
@@ -2373,11 +2401,13 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
 
           const speakerAudio = {}; // speaker → { id, url, duration (s) }
           for (const speaker of speakers) {
+            const voice_id = resolveVoice(speaker);
+            if (!voice_id || voice_id === "none") throw new Error(`No voice assigned for speaker: ${speaker}`);
             const text = speakerLines[speaker].join(' ').slice(0, 1000);
             setKlingPollMsg(`TTS: generating voice for ${speaker}…`);
             const ttsRes = await fetch("/api/kling/tts", {
               method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ text, voice_id: node.voice, voice_language: "en" }),
+              body: JSON.stringify({ text, voice_id, voice_language: "en" }),
             });
             if (!ttsRes.ok) throw new Error(`TTS request failed: ${ttsRes.status}`);
             const ttsData = await ttsRes.json();
@@ -2401,10 +2431,25 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
           if (!sessionId) throw new Error("No session_id from identify-face");
           if (faces.length === 0) throw new Error("No faces detected in video — can't lipsync");
 
-          // ── Step 4: match speakers to faces (by time order) ──────────────
-          // Each speaker maps to the face closest in order of appearance.
-          const assignments = speakers.map((speaker, i) => {
-            const face = faces[i] || faces[0]; // fallback to first face if fewer faces than speakers
+          // ── Step 4: match speakers to faces ──────────────────────────────
+          // Build visual character order from entityTags across shots (first appearance wins).
+          // This reflects who appears ON SCREEN, which matches how Kling orders detected faces.
+          const visualOrder = [];
+          for (const sh of shotNodes) {
+            for (const tag of (sh.entityTags || [])) {
+              const key = normTag(tag);
+              if (!visualOrder.includes(key)) visualOrder.push(key);
+            }
+          }
+
+          const assignments = speakers.map((speaker) => {
+            // Find this speaker's position in the visual character order
+            const speakerKey = normTag(speaker);
+            const visualIdx = visualOrder.indexOf(speakerKey);
+            // Use visual order index to pick the face; fall back to dialogue order
+            const fallbackIdx = speakers.indexOf(speaker);
+            const faceIdx = visualIdx >= 0 ? visualIdx : fallbackIdx;
+            const face = faces[faceIdx] || faces[0];
             const audio = speakerAudio[speaker];
             return {
               speaker,
@@ -2659,74 +2704,116 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                   </button>
                 </div>
                 {node.lipsync && hasDialogue && (() => {
-                  // Build the exact text that will be sent to Kling lipsync (speaker names stripped)
-                  const lipsyncPreviewFull = shotNodes
-                    .map(sh => stripSpeakerNames(sh.dialogue))
-                    .filter(Boolean)
-                    .join(" ");
-                  const lipsyncPreview = lipsyncPreviewFull.slice(0, 120);
-                  const isTruncated = lipsyncPreviewFull.length > 120;
-                  // Detect multiple speakers across all linked shots
+                  // Detect speakers and build per-speaker line previews
                   const allSpeakers = [...new Set(shotNodes.flatMap(sh => detectSpeakers(sh.dialogue || "")))];
                   const hasMultiSpeaker = allSpeakers.length > 1;
-                  return (
-                  <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
-                    <div>
-                      <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.1em", display:"block", marginBottom:2 }}>VOICE</span>
-                      <select onMouseDown={e=>e.stopPropagation()} value={node.voice||"none"} onChange={e=>upd({voice:e.target.value})} style={fSel}>
-                        <option value="none">{voicesLoading ? "Loading voices…" : "— select a voice —"}</option>
-                        {klingVoices.length > 0
-                          ? klingVoices.map(v => (
-                              <option key={v.voice_id || v.id} value={v.voice_id || v.id}>
-                                {v.voice_name || v.name || v.voice_id || v.id}
-                              </option>
-                            ))
-                          : !voicesLoading && (
-                              /* Real Kling voice IDs (fallback when API is unreachable) */
-                              <>
-                                <optgroup label="Female">
-                                  <option value="commercial_lady_en_f-v1">Female · Commercial</option>
-                                  <option value="chat1_female_new-3">Female · Chat</option>
-                                  <option value="genshin_kirara">Female · Kirara</option>
-                                </optgroup>
-                                <optgroup label="Male">
-                                  <option value="oversea_male1">Male · Overseas</option>
-                                  <option value="uk_man2">Male · UK</option>
-                                  <option value="uk_boy1">Male · UK Young</option>
-                                </optgroup>
-                              </>
-                            )
+
+                  // Per-speaker text preview (max 1000 chars each — TTS API limit)
+                  const speakerPreview = allSpeakers.map(spk => {
+                    const lines = [];
+                    for (const sh of shotNodes) {
+                      if (!sh.dialogue?.trim()) continue;
+                      let cur = null;
+                      for (const raw of sh.dialogue.split('\n')) {
+                        const t = raw.trim();
+                        if (!t) continue;
+                        if (/^[A-Z][A-Z0-9\s.'"\\-]+(\s*\([^)]*\))?\s*$/.test(t)) {
+                          cur = t.replace(/\s*\([^)]*\)\s*$/, '').trim();
+                        } else if (/^\([^)]+\)$/.test(t)) {
+                          // skip stage direction
+                        } else if (cur === spk) {
+                          lines.push(t);
                         }
-                      </select>
-                    </div>
-                    {node.voice === "none" && (
-                      <div style={{ fontSize:6, color:"#fbbf24", letterSpacing:"0.06em" }}>⚠ Select a voice to enable lipsync generation</div>
+                      }
+                    }
+                    const full = lines.join(' ');
+                    return { speaker: spk, text: full, truncated: full.length > 1000 };
+                  });
+
+                  // Voice selector helper — renders a <select> for a given value/onChange
+                  const VoiceSelect = ({ value, onChange }) => (
+                    <select onMouseDown={e=>e.stopPropagation()} value={value||"none"} onChange={onChange} style={fSel}>
+                      <option value="none">{voicesLoading ? "Loading…" : "— select voice —"}</option>
+                      {klingVoices.length > 0
+                        ? klingVoices.map(v => (
+                            <option key={v.voice_id||v.id} value={v.voice_id||v.id}>
+                              {v.voice_name||v.name||v.voice_id||v.id}
+                            </option>
+                          ))
+                        : !voicesLoading && (<>
+                            <optgroup label="Female">
+                              <option value="commercial_lady_en_f-v1">Female · Commercial</option>
+                              <option value="chat1_female_new-3">Female · Chat</option>
+                              <option value="genshin_kirara">Female · Kirara</option>
+                            </optgroup>
+                            <optgroup label="Male">
+                              <option value="oversea_male1">Male · Overseas</option>
+                              <option value="uk_man2">Male · UK</option>
+                              <option value="uk_boy1">Male · UK Young</option>
+                            </optgroup>
+                          </>)
+                      }
+                    </select>
+                  );
+
+                  const charVoices = node.characterVoices || {};
+
+                  return (
+                  <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+
+                    {/* ── VOICE ASSIGNMENT ── */}
+                    {hasMultiSpeaker ? (
+                      <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                        <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.1em" }}>VOICES PER CHARACTER</span>
+                        {allSpeakers.map(spk => (
+                          <div key={spk} style={{ display:"flex", alignItems:"center", gap:4 }}>
+                            <span style={{ fontSize:6, color:lipsyncAc, fontWeight:700, minWidth:60, letterSpacing:"0.05em" }}>{spk}</span>
+                            <div style={{ flex:1 }}>
+                              <VoiceSelect
+                                value={charVoices[spk] || "none"}
+                                onChange={e => { e.stopPropagation(); upd({ characterVoices: { ...charVoices, [spk]: e.target.value } }); }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                        {allSpeakers.some(spk => !charVoices[spk] || charVoices[spk] === "none") && (
+                          <div style={{ fontSize:6, color:"#fbbf24", letterSpacing:"0.06em" }}>⚠ Assign a voice to every character to enable lipsync</div>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.1em", display:"block", marginBottom:2 }}>VOICE</span>
+                        <VoiceSelect value={node.voice||"none"} onChange={e=>{e.stopPropagation();upd({voice:e.target.value});}} />
+                        {(!node.voice || node.voice === "none") && (
+                          <div style={{ fontSize:6, color:"#fbbf24", letterSpacing:"0.06em", marginTop:2 }}>⚠ Select a voice to enable lipsync generation</div>
+                        )}
+                      </div>
                     )}
 
-                    {/* DIALOGUE PREVIEW — exact text that will be synthesized */}
+                    {/* ── PER-SPEAKER AUDIO PREVIEW ── */}
                     <div style={{ background:`${lipsyncAc}0d`, border:`1px solid ${lipsyncAc}33`, borderRadius:3, padding:"5px 7px" }}>
-                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:3 }}>
-                        <span style={{ fontSize:5, letterSpacing:"0.15em", color:lipsyncAc, fontWeight:700 }}>AUDIO SCRIPT PREVIEW</span>
-                        <span style={{ fontSize:5, color: isTruncated ? "#fbbf24" : th.t3, letterSpacing:"0.08em" }}>
-                          {lipsyncPreview.length}/120 chars{isTruncated ? " ⚠ TRUNCATED" : ""}
-                        </span>
-                      </div>
-                      <div style={{ fontSize:6, color:th.t1, lineHeight:1.6, fontStyle:"italic", wordBreak:"break-word" }}>
-                        "{lipsyncPreview}"
-                      </div>
-                      {hasMultiSpeaker && (
-                        <div style={{ fontSize:5, color:"#f87171", marginTop:3, letterSpacing:"0.06em", lineHeight:1.5 }}>
-                          ✕ Multiple speakers detected: {allSpeakers.join(", ")}.<br/>
-                          Kling lipsync uses ONE voice. Create a separate Kling node per character.
+                      <span style={{ fontSize:5, letterSpacing:"0.15em", color:lipsyncAc, fontWeight:700, display:"block", marginBottom:4 }}>
+                        AUDIO SCRIPT {hasMultiSpeaker ? `— ${allSpeakers.length} SPEAKERS` : "PREVIEW"}
+                      </span>
+                      {speakerPreview.map(({ speaker, text, truncated }) => (
+                        <div key={speaker} style={{ marginBottom:4 }}>
+                          {hasMultiSpeaker && (
+                            <span style={{ fontSize:5, color:lipsyncAc, fontWeight:700, letterSpacing:"0.1em", display:"block", marginBottom:1 }}>
+                              {speaker}
+                            </span>
+                          )}
+                          <div style={{ fontSize:6, color:th.t1, lineHeight:1.6, fontStyle:"italic", wordBreak:"break-word" }}>
+                            "{text.slice(0,120)}{text.length>120?"…":""}"
+                          </div>
+                          {truncated && (
+                            <div style={{ fontSize:5, color:"#fbbf24", marginTop:1, letterSpacing:"0.06em" }}>
+                              ⚠ {text.length}/1000 chars — truncated for TTS
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {isTruncated && (
-                        <div style={{ fontSize:5, color:"#fbbf24", marginTop:3, letterSpacing:"0.06em" }}>
-                          ⚠ Kling limits audio to 120 chars. Shorten your dialogue or split into multiple Kling nodes.
-                        </div>
-                      )}
+                      ))}
                       {shotNodes.filter(sh=>sh.dialogue?.trim()).length > 1 && (
-                        <div style={{ fontSize:5, color:th.t3, marginTop:3, letterSpacing:"0.06em" }}>
+                        <div style={{ fontSize:5, color:th.t3, marginTop:2, letterSpacing:"0.06em" }}>
                           Combined from {shotNodes.filter(sh=>sh.dialogue?.trim()).length} shots
                         </div>
                       )}
