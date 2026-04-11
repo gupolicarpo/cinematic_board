@@ -2288,54 +2288,163 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
       setKlingStatus("polling"); setKlingPollMsg("Processing…");
       const url = await aiKlingPoll(taskId, s=>setKlingPollMsg(s));
 
-      // ── LIPSYNC PASS ─────────────────────────────────────────────────────────
-      // If lipsync is enabled, a voice is selected, and shots have dialogue,
-      // run a second pass through Kling's lipsync API after the video is ready.
-      const dialogueLines = shotNodes
-        .map(sh => stripSpeakerNames(sh.dialogue))
-        .filter(Boolean)
-        .join(" ");
-      const shouldLipsync = node.lipsync && node.voice && node.voice !== "none" && dialogueLines;
-
+      // ── ADVANCED LIPSYNC PASS ────────────────────────────────────────────────
+      // 3-step: TTS per speaker → identify faces → advanced-lipsync per face.
+      // Each speaker in the linked shots gets their own TTS audio, then matched
+      // to a detected face in the video by time-order.
+      const shouldLipsync = node.lipsync && node.voice && node.voice !== "none";
       if (shouldLipsync) {
-        setKlingPollMsg("Running lipsync…");
         setKlingLipsyncErr("");
         try {
-          const lsRes = await fetch("/api/kling/lipsync", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ video_url: url, voice_id: node.voice, dialogue: dialogueLines }),
-          });
-          const lsText = await lsRes.text();
-          if (!lsRes.ok) throw new Error(lsText);
-          let lsData;
-          try { lsData = JSON.parse(lsText); } catch { throw new Error(`Bad JSON from lipsync: ${lsText.slice(0,200)}`); }
-          // Kling wraps errors in code field even on 200
-          if (lsData.code && lsData.code !== 0) throw new Error(`Kling lipsync error ${lsData.code}: ${lsData.message}`);
-          const lsTaskId = lsData.data?.task_id;
-          if (!lsTaskId) throw new Error(`No task_id in lipsync response: ${lsText.slice(0,200)}`);
-          // Poll lipsync task
-          for (let i = 0; i < 180; i++) {
-            await new Promise(r => setTimeout(r, 2000));
-            const pollRes = await fetch(`/api/kling/lipsync/${lsTaskId}`);
-            if (!pollRes.ok) { setKlingLipsyncErr(`Poll failed: ${pollRes.status}`); break; }
-            const pollData = await pollRes.json();
-            if (pollData.code && pollData.code !== 0) { setKlingLipsyncErr(`Kling lipsync failed: ${pollData.message}`); break; }
-            const status = pollData.data?.task_status;
-            if (status === "succeed") {
-              const lsUrl = pollData.data?.task_result?.videos?.[0]?.url;
-              if (lsUrl) { upd({ videoUrl: lsUrl }); setKlingStatus("done"); setKlingPollMsg(""); return; }
-              break;
+          // ── Step 1: parse per-speaker dialogue from all linked shots ──────
+          const speakerLines = {}; // { "WIZARD": ["line1", "line2"], ... }
+          for (const sh of shotNodes) {
+            if (!sh.dialogue?.trim()) continue;
+            let curSpeaker = null;
+            for (const rawLine of sh.dialogue.split('\n')) {
+              const t = rawLine.trim();
+              if (!t) continue;
+              if (/^[A-Z][A-Z0-9\s.'"\\-]+(\s*\([^)]*\))?\s*$/.test(t)) {
+                curSpeaker = t.replace(/\s*\([^)]*\)\s*$/, '').trim();
+                if (!speakerLines[curSpeaker]) speakerLines[curSpeaker] = [];
+              } else if (/^\([^)]+\)$/.test(t)) {
+                // stage direction — skip
+              } else if (curSpeaker) {
+                speakerLines[curSpeaker].push(t);
+              }
             }
-            if (status === "failed") {
-              const failMsg = pollData.data?.task_status_msg || "unknown error";
-              setKlingLipsyncErr(`Lipsync task failed: ${failMsg}`);
-              break;
-            }
-            setKlingPollMsg(`Lipsync: ${status || "processing"}…`);
           }
+          const speakers = Object.keys(speakerLines);
+          if (speakers.length === 0) { upd({ videoUrl: url }); setKlingStatus("done"); setKlingPollMsg(""); return; }
+
+          // ── Step 2: TTS for each speaker ─────────────────────────────────
+          const pollTts = async (taskId) => {
+            for (let i = 0; i < 60; i++) {
+              await new Promise(r => setTimeout(r, 2000));
+              const r = await fetch(`/api/kling/tts/${taskId}`);
+              if (!r.ok) throw new Error(`TTS poll HTTP ${r.status}`);
+              const d = await r.json();
+              const st = d.data?.task_status;
+              if (st === "succeed") return d.data.task_result.audios[0]; // { id, url, duration }
+              if (st === "failed") throw new Error(`TTS failed: ${d.data?.task_status_msg || "unknown"}`);
+            }
+            throw new Error("TTS timeout");
+          };
+
+          const speakerAudio = {}; // speaker → { id, url, duration (s) }
+          for (const speaker of speakers) {
+            const text = speakerLines[speaker].join(' ').slice(0, 1000);
+            setKlingPollMsg(`TTS: generating voice for ${speaker}…`);
+            const ttsRes = await fetch("/api/kling/tts", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text, voice_id: node.voice, voice_language: "en" }),
+            });
+            if (!ttsRes.ok) throw new Error(`TTS request failed: ${ttsRes.status}`);
+            const ttsData = await ttsRes.json();
+            if (ttsData.code && ttsData.code !== 0) throw new Error(`TTS error ${ttsData.code}: ${ttsData.message}`);
+            const ttsTaskId = ttsData.data?.task_id;
+            if (!ttsTaskId) throw new Error("No TTS task_id returned");
+            speakerAudio[speaker] = await pollTts(ttsTaskId);
+          }
+
+          // ── Step 3: identify faces in video ──────────────────────────────
+          setKlingPollMsg("Identifying faces in video…");
+          const faceRes = await fetch("/api/kling/identify-face", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ video_url: url }),
+          });
+          if (!faceRes.ok) throw new Error(`Identify-face HTTP ${faceRes.status}`);
+          const faceData = await faceRes.json();
+          if (faceData.code && faceData.code !== 0) throw new Error(`Identify-face error ${faceData.code}: ${faceData.message}`);
+          const sessionId = faceData.data?.session_id;
+          const faces = (faceData.data?.face_data || []).sort((a, b) => a.start_time - b.start_time);
+          if (!sessionId) throw new Error("No session_id from identify-face");
+          if (faces.length === 0) throw new Error("No faces detected in video — can't lipsync");
+
+          // ── Step 4: match speakers to faces (by time order) ──────────────
+          // Each speaker maps to the face closest in order of appearance.
+          const assignments = speakers.map((speaker, i) => {
+            const face = faces[i] || faces[0]; // fallback to first face if fewer faces than speakers
+            const audio = speakerAudio[speaker];
+            return {
+              speaker,
+              face_id: face.face_id,
+              audio_id: audio.id,
+              sound_start_time: 0,
+              sound_end_time: Math.max(2000, Math.round(parseFloat(audio.duration) * 1000)),
+              sound_insert_time: face.start_time,
+            };
+          });
+
+          // ── Step 5: chain advanced-lipsync one face at a time ────────────
+          // Kling only supports one-person lipsync per call. For multi-speaker:
+          // apply lipsync → get new video URL → re-identify faces → repeat.
+          const pollAdv = async (taskId, label) => {
+            for (let i = 0; i < 180; i++) {
+              await new Promise(r => setTimeout(r, 2000));
+              const pr = await fetch(`/api/kling/advanced-lipsync/${taskId}`);
+              if (!pr.ok) throw new Error(`Advanced-lipsync poll HTTP ${pr.status}`);
+              const pd = await pr.json();
+              const st = pd.data?.task_status;
+              if (st === "succeed") return pd.data?.task_result?.videos?.[0]?.url;
+              if (st === "failed") throw new Error(`Lipsync failed for ${label}: ${pd.data?.task_status_msg || "unknown"}`);
+              setKlingPollMsg(`Lipsync ${label}: ${st || "processing"}…`);
+            }
+            throw new Error(`Lipsync timeout for ${label}`);
+          };
+
+          let currentVideoUrl = url;
+          let currentSessionId = sessionId;
+          let currentFaces = faces;
+
+          for (let idx = 0; idx < assignments.length; idx++) {
+            const a = assignments[idx];
+            // For the 2nd+ speaker, re-identify faces on the updated video
+            if (idx > 0) {
+              setKlingPollMsg(`Re-identifying faces for ${a.speaker}…`);
+              const reFaceRes = await fetch("/api/kling/identify-face", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ video_url: currentVideoUrl }),
+              });
+              if (reFaceRes.ok) {
+                const rfd = await reFaceRes.json();
+                if (!rfd.code || rfd.code === 0) {
+                  currentSessionId = rfd.data?.session_id || currentSessionId;
+                  currentFaces = (rfd.data?.face_data || []).sort((a2, b2) => a2.start_time - b2.start_time);
+                }
+              }
+            }
+            // Pick the face at same index position in the new video
+            const face = currentFaces[idx] || currentFaces[0];
+            const faceId = face?.face_id ?? a.face_id;
+            setKlingPollMsg(`Lipsync: applying ${a.speaker}'s voice to face ${faceId}…`);
+            const lsRes = await fetch("/api/kling/advanced-lipsync", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                session_id: currentSessionId,
+                face_choose: [{
+                  face_id: faceId,
+                  audio_id: a.audio_id,
+                  sound_start_time: a.sound_start_time,
+                  sound_end_time: a.sound_end_time,
+                  sound_insert_time: face?.start_time ?? a.sound_insert_time,
+                }],
+              }),
+            });
+            if (!lsRes.ok) throw new Error(`Advanced-lipsync HTTP ${lsRes.status}`);
+            const lsData = await lsRes.json();
+            if (lsData.code && lsData.code !== 0) throw new Error(`Advanced-lipsync error ${lsData.code}: ${lsData.message}`);
+            const lsTaskId = lsData.data?.task_id;
+            if (!lsTaskId) throw new Error("No task_id from advanced-lipsync");
+            const newUrl = await pollAdv(lsTaskId, a.speaker);
+            if (newUrl) currentVideoUrl = newUrl;
+          }
+
+          upd({ videoUrl: currentVideoUrl });
+          setKlingStatus("done"); setKlingPollMsg(""); return;
+
         } catch (lsErr) {
-          console.warn("Lipsync pass failed:", lsErr.message);
+          console.warn("Advanced lipsync pass failed:", lsErr.message);
           setKlingLipsyncErr(`Lipsync error: ${lsErr.message}`);
         }
       }
