@@ -104,24 +104,11 @@ function klingJWT() {
   return `${header}.${payload}.${sig}`;
 }
 
-// Kling API base — defaults to Global (Singapore); set KLING_API_BASE=cn for China region.
-// CN: api-beijing.klingai.com  |  Global: api-singapore.klingai.com
-const KLING_HOST = (() => {
-  const raw = (process.env.KLING_API_BASE || "").trim().toLowerCase();
-  if (raw === "cn" || raw === "beijing" || raw === "api-beijing.klingai.com") return "api-beijing.klingai.com";
-  if (raw && raw !== "global" && raw !== "singapore" && raw !== "api-singapore.klingai.com") {
-    // allow a full hostname to be set directly
-    return raw.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-  }
-  return "api-singapore.klingai.com";
-})();
-console.log(`[kling] API host: ${KLING_HOST}`);
-
 // POST /api/kling/video  — create video generation task
 app.post("/api/kling/video", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   try {
-    const r = await post(KLING_HOST, "/v1/videos/omni-video",
+    const r = await post("api-singapore.klingai.com", "/v1/videos/omni-video",
       { "Authorization": `Bearer ${klingJWT()}` }, req.body);
     res.status(r.status).send(r.data);
   } catch (e) { res.status(500).send(e.message); }
@@ -131,7 +118,7 @@ app.post("/api/kling/video", async (req, res) => {
 app.get("/api/kling/video/:taskId", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   try {
-    const r = await get(KLING_HOST, `/v1/videos/omni-video/${req.params.taskId}`,
+    const r = await get("api-singapore.klingai.com", `/v1/videos/omni-video/${req.params.taskId}`,
       { "Authorization": `Bearer ${klingJWT()}` });
     res.status(r.status).send(r.data);
   } catch (e) { res.status(500).send(e.message); }
@@ -141,7 +128,7 @@ app.get("/api/kling/video/:taskId", async (req, res) => {
 app.get("/api/kling/voices", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   try {
-    const r = await get(KLING_HOST, "/v1/videos/lip-sync/voices",
+    const r = await get("api-singapore.klingai.com", "/v1/videos/lip-sync/voices",
       { "Authorization": `Bearer ${klingJWT()}` });
     res.status(r.status).send(r.data);
   } catch (e) { res.status(500).send(e.message); }
@@ -159,7 +146,7 @@ app.post("/api/kling/tts", async (req, res) => {
   const body = { text: text.slice(0, 1000), voice_id, voice_language, voice_speed };
   console.log("[tts] speaker text length:", text.length, "voice:", voice_id);
   try {
-    const r = await post(KLING_HOST, "/v1/audio/tts",
+    const r = await post("api-singapore.klingai.com", "/v1/audio/tts",
       { "Authorization": `Bearer ${klingJWT()}` }, body);
     console.log("[tts] response:", r.status, r.data?.slice?.(0, 200));
     res.status(r.status).send(r.data);
@@ -170,7 +157,7 @@ app.post("/api/kling/tts", async (req, res) => {
 app.get("/api/kling/tts/:taskId", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   try {
-    const r = await get(KLING_HOST, `/v1/audio/tts/${req.params.taskId}`,
+    const r = await get("api-singapore.klingai.com", `/v1/audio/tts/${req.params.taskId}`,
       { "Authorization": `Bearer ${klingJWT()}` });
     res.status(r.status).send(r.data);
   } catch (e) { res.status(500).send(e.message); }
@@ -186,7 +173,7 @@ app.post("/api/kling/identify-face", async (req, res) => {
   const body = video_id ? { video_id } : { video_url };
   console.log("[identify-face] video_url:", video_url?.slice?.(0, 80));
   try {
-    const r = await post(KLING_HOST, "/v1/videos/identify-face",
+    const r = await post("api-singapore.klingai.com", "/v1/videos/identify-face",
       { "Authorization": `Bearer ${klingJWT()}` }, body);
     console.log("[identify-face] response:", r.status, r.data?.slice?.(0, 300));
     res.status(r.status).send(r.data);
@@ -201,7 +188,7 @@ app.post("/api/kling/advanced-lipsync", async (req, res) => {
   if (!session_id || !face_choose?.length) return res.status(400).send("session_id and face_choose required");
   console.log("[advanced-lipsync] session:", session_id, "faces:", face_choose.map(f=>f.face_id));
   try {
-    const r = await post(KLING_HOST, "/v1/videos/advanced-lip-sync",
+    const r = await post("api-singapore.klingai.com", "/v1/videos/advanced-lip-sync",
       { "Authorization": `Bearer ${klingJWT()}` }, req.body);
     console.log("[advanced-lipsync] response:", r.status, r.data?.slice?.(0, 300));
     res.status(r.status).send(r.data);
@@ -212,7 +199,7 @@ app.post("/api/kling/advanced-lipsync", async (req, res) => {
 app.get("/api/kling/advanced-lipsync/:taskId", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   try {
-    const r = await get(KLING_HOST, `/v1/videos/advanced-lip-sync/${req.params.taskId}`,
+    const r = await get("api-singapore.klingai.com", `/v1/videos/advanced-lip-sync/${req.params.taskId}`,
       { "Authorization": `Bearer ${klingJWT()}` });
     res.status(r.status).send(r.data);
   } catch (e) { res.status(500).send(e.message); }
@@ -227,7 +214,7 @@ app.post("/api/kling/lipsync", async (req, res) => {
   const body = { input: { mode: "text2video", video_url, voice_id, voice_language, voice_speed: 1.0, text: textPayload } };
   console.log("[lipsync-legacy] text:", textPayload);
   try {
-    const r = await post(KLING_HOST, "/v1/videos/lip-sync",
+    const r = await post("api-singapore.klingai.com", "/v1/videos/lip-sync",
       { "Authorization": `Bearer ${klingJWT()}` }, body);
     res.status(r.status).send(r.data);
   } catch (e) { res.status(500).send(e.message); }
@@ -237,7 +224,7 @@ app.post("/api/kling/lipsync", async (req, res) => {
 app.get("/api/kling/lipsync/:taskId", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   try {
-    const r = await get(KLING_HOST, `/v1/videos/lip-sync/${req.params.taskId}`,
+    const r = await get("api-singapore.klingai.com", `/v1/videos/lip-sync/${req.params.taskId}`,
       { "Authorization": `Bearer ${klingJWT()}` });
     res.status(r.status).send(r.data);
   } catch (e) { res.status(500).send(e.message); }
