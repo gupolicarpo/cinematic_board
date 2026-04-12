@@ -2373,16 +2373,60 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
       setKlingStatus("polling"); setKlingPollMsg("Processing…");
       const { url, durationMs: videoDurationMs } = await aiKlingPoll(taskId, s=>setKlingPollMsg(s));
 
-      // ── ADVANCED LIPSYNC PASS ────────────────────────────────────────────────
-      // 3-step: TTS per speaker → identify faces → advanced-lipsync per face.
-      // Each speaker in the linked shots gets their own TTS audio, then matched
-      // to a detected face in the video by time-order.
-      // Lipsync is enabled when: lipsync toggle on AND either a global voice is set OR
-      // at least one character has a voice assigned in characterVoices
+      // ── LIPSYNC PASS ────────────────────────────────────────────────────────
+      // Two modes:
+      //  A) SIMPLE (text2video): no speaker names in dialogue, or advanced fails.
+      //     Uses /api/kling/lipsync with stripped plain text. Max 120 chars.
+      //  B) ADVANCED (TTS→face→lipsync): screenplay dialogue with speaker names.
+      //     Tries TTS + identify-face + advanced-lipsync. Falls back to A on error.
       const charVoicesMap = node.characterVoices || {};
       const hasAnyVoice = (node.voice && node.voice !== "none") ||
         Object.values(charVoicesMap).some(v => v && v !== "none");
-      const shouldLipsync = node.lipsync && hasAnyVoice;
+
+      // Plain stripped text (used by simple path)
+      const simpleLipsyncText = shotNodes
+        .map(sh => stripSpeakerNames(sh.dialogue))
+        .filter(Boolean)
+        .join(" ");
+      const voiceForSimple = (node.voice && node.voice !== "none")
+        ? node.voice
+        : Object.values(charVoicesMap).find(v => v && v !== "none") || "none";
+
+      // Simple lipsync helper — reusable for both primary and fallback
+      const runSimpleLipsync = async (videoUrl) => {
+        if (!simpleLipsyncText || voiceForSimple === "none") {
+          upd({ videoUrl }); setKlingStatus("done"); setKlingPollMsg(""); return;
+        }
+        setKlingPollMsg("Running lipsync…");
+        const lsRes = await fetch("/api/kling/lipsync", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ video_url: videoUrl, voice_id: voiceForSimple, dialogue: simpleLipsyncText }),
+        });
+        const lsText = await lsRes.text();
+        if (!lsRes.ok) throw new Error(lsText);
+        let lsData;
+        try { lsData = JSON.parse(lsText); } catch { throw new Error(`Bad JSON: ${lsText.slice(0,200)}`); }
+        if (lsData.code && lsData.code !== 0) throw new Error(`Kling lipsync ${lsData.code}: ${lsData.message}`);
+        const lsTaskId = lsData.data?.task_id;
+        if (!lsTaskId) throw new Error(`No task_id in lipsync response`);
+        for (let i = 0; i < 180; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          const pr = await fetch(`/api/kling/lipsync/${lsTaskId}`);
+          if (!pr.ok) break;
+          const pd = await pr.json();
+          const st = pd.data?.task_status;
+          if (st === "succeed") {
+            const lsUrl = pd.data?.task_result?.videos?.[0]?.url;
+            if (lsUrl) { upd({ videoUrl: lsUrl }); setKlingStatus("done"); setKlingPollMsg(""); return; }
+            break;
+          }
+          if (st === "failed") throw new Error(`Lipsync task failed: ${pd.data?.task_status_msg || "unknown"}`);
+          setKlingPollMsg(`Lipsync: ${st || "processing"}…`);
+        }
+        upd({ videoUrl }); setKlingStatus("done"); setKlingPollMsg("");
+      };
+
+      const shouldLipsync = node.lipsync && hasAnyVoice && simpleLipsyncText;
       if (shouldLipsync) {
         setKlingLipsyncErr("");
         try {
@@ -2405,7 +2449,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             }
           }
           const speakers = Object.keys(speakerLines);
-          if (speakers.length === 0) { upd({ videoUrl: url }); setKlingStatus("done"); setKlingPollMsg(""); return; }
+          if (speakers.length === 0) { await runSimpleLipsync(url); return; }
 
           // ── Map speaker names → bible tags (e.g. "WIZARD" → "@WIZARD") ──
           // Normalise by uppercasing and stripping non-alphanumeric chars for fuzzy match
@@ -2592,8 +2636,15 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
           setKlingStatus("done"); setKlingPollMsg(""); return;
 
         } catch (lsErr) {
-          console.warn("Advanced lipsync pass failed:", lsErr.message);
-          setKlingLipsyncErr(`Lipsync error: ${lsErr.message}`);
+          console.warn("Advanced lipsync failed, falling back to simple:", lsErr.message);
+          setKlingLipsyncErr(`Advanced lipsync failed (${lsErr.message.slice(0,80)}), trying simple lipsync…`);
+          try {
+            await runSimpleLipsync(url);
+          } catch (simpleErr) {
+            setKlingLipsyncErr(`Lipsync error: ${simpleErr.message}`);
+            upd({ videoUrl: url }); setKlingStatus("done"); setKlingPollMsg("");
+          }
+          return;
         }
       }
 
