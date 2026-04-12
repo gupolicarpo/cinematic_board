@@ -6448,12 +6448,12 @@ function EscListener({ cb }) {
 
 function makeActionShortFilmTemplate() {
   // ── Shared entity definitions ──────────────────────────────────────────────
-  const eHero    = { id:`e_${uid()}`, kind:"character", name:"Alex Mercer",  tag:"@hero",    description:"Field operative, mid-30s, black tactical clothing, intense focus", notes:"Protagonist", _imgUrl:"/character_Alex_Mercer.png", _prev:"/character_Alex_Mercer.png", assetId:"ref" };
-  const eVillain = { id:`e_${uid()}`, kind:"character", name:"Viktor Rask",   tag:"@villain", description:"Arms dealer, 50s, grey coat, commanding presence",                notes:"Antagonist", _imgUrl:"", assetId:"" };
-  const eDrive   = { id:`e_${uid()}`, kind:"object",    name:"Encrypted Drive",tag:"@drive",   description:"Small black biometric case containing classified data",           notes:"MacGuffin",  _imgUrl:"/object_Encrypted_Drive.png", _prev:"/object_Encrypted_Drive.png", assetId:"ref" };
-  const eBunker  = { id:`e_${uid()}`, kind:"location",  name:"Control Room",  tag:"@bunker",  description:"Underground government bunker, dim red lighting, monitors everywhere", notes:"",       _imgUrl:"/location_Control_Room.png", _prev:"/location_Control_Room.png", assetId:"ref" };
-  const eStreets = { id:`e_${uid()}`, kind:"location",  name:"City Streets",  tag:"@streets", description:"Rain-slicked city streets at night, neon reflections on wet asphalt", notes:"",       _imgUrl:"", assetId:"" };
-  const eWarehouse={ id:`e_${uid()}`,kind:"location",  name:"Warehouse",     tag:"@warehouse",description:"Abandoned industrial warehouse, concrete floor, single harsh overhead light", notes:"Handoff point", _imgUrl:"", assetId:"" };
+  const eHero    = { id:`e_${uid()}`, kind:"character", name:"Adrian Vale",   tag:"@hero",    description:"Professional killer, late 30s, black tailored suit, disciplined posture, unreadable face, economical movement", notes:"Protagonist", _imgUrl:"/character_Alex_Mercer.png", _prev:"/character_Alex_Mercer.png", assetId:"ref" };
+  const eVillain = { id:`e_${uid()}`, kind:"character", name:"Gregor Sane",   tag:"@villain", description:"Crime broker, 50s, immaculate charcoal overcoat, calm authority, predatory stillness", notes:"Antagonist", _imgUrl:"", assetId:"" };
+  const eDrive   = { id:`e_${uid()}`, kind:"object",    name:"Brass Marker",  tag:"@drive",   description:"Heavy brass blood-oath marker with engraved crest, small enough to vanish in a palm, priceless in the underworld", notes:"MacGuffin",  _imgUrl:"/object_Encrypted_Drive.png", _prev:"/object_Encrypted_Drive.png", assetId:"ref" };
+  const eBunker  = { id:`e_${uid()}`, kind:"location",  name:"Hotel Lounge",  tag:"@bunker",  description:"Private hotel lounge with amber lamps, dark wood, velvet booths, hushed luxury, old-money menace", notes:"", _imgUrl:"/location_Control_Room.png", _prev:"/location_Control_Room.png", assetId:"ref" };
+  const eStreets = { id:`e_${uid()}`, kind:"location",  name:"Neon Streets",  tag:"@streets", description:"Rain-slick city streets at night, neon reflections, steam vents, black cars, sodium-vapor spill on wet asphalt", notes:"", _imgUrl:"", assetId:"" };
+  const eWarehouse={ id:`e_${uid()}`,kind:"location",  name:"Parking Garage", tag:"@warehouse",description:"Concrete parking garage, low ceiling, strip lights, echoing gunshots, pillars and parked sedans shaping the fight", notes:"Ambush point", _imgUrl:"", assetId:"" };
 
   // Trim to scene-bible shape (drop description)
   const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:e._imgUrl||e._prev||"", assetId:e.assetId||"" });
@@ -6463,7 +6463,7 @@ function makeActionShortFilmTemplate() {
   const sc1 = {
     id:sc1id, type:T.SCENE, cinematicStyle:"thriller", shotCount:2,
     bible:[ sbEntry(eHero), sbEntry(eDrive), sbEntry(eBunker) ],
-    sceneText:`@hero sits across from his handler in the @bunker. The mission is simple: deliver the @drive to a contact on the other side of the city before midnight, or the operation is compromised. @hero studies the file, memorizes the route, and pockets the @drive. No backup. No second chances.`,
+    sceneText:`@hero sits alone in a velvet booth inside the @bunker. A waiter places the @drive on the table without a word and disappears. @hero opens it, sees the crest inside, and understands exactly who has called him back into the world he tried to leave. He closes his hand around the @drive, rises, and walks out before the music changes.`,
     directorCoherence:{ score:94, skippedBeats:[], overlapIssues:[], recommendation:"Scene establishes mission stakes cleanly. Both beats — briefing tension and departure resolve — are covered. Coherence is strong." },
   };
   const sh1a = { ...mkShot(sc1id,1), id:`sh_${uid()}`, sceneId:sc1id, index:1, how:"@hero leans forward over the mission dossier, jaw tight, eyes scanning every detail", where:"@bunker — briefing table under low red light", when:"pre-mission, final minutes", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"hard-contrast", visualGoal:"trap the audience inside his concentration — no escape, no comfort", entityTags:["@hero","@drive","@bunker"], directorNote:"Open on stillness — the danger is internal, not yet physical. Let the red light and tight frame do the threatening.", directorQuality:"good", directorIssue:"" };
@@ -6539,6 +6539,97 @@ function makeActionShortFilmTemplate() {
     characters: [ eHero, eVillain ],
     objects:    [ eDrive ],
     locations:  [ eBunker, eStreets, eWarehouse ],
+  };
+
+  return { nodes, pos, bible };
+}
+
+function makeActionNeoNoirShortFilmTemplate() {
+  const eHero = { id:`e_${uid()}`, kind:"character", name:"Adrian Vale", tag:"@hero", description:"Professional killer, late 30s, black tailored suit, disciplined posture, unreadable face, economical movement", notes:"Protagonist", _imgUrl:"/character_Alex_Mercer.png", _prev:"/character_Alex_Mercer.png", assetId:"ref" };
+  const eVillain = { id:`e_${uid()}`, kind:"character", name:"Gregor Sane", tag:"@villain", description:"Crime broker, 50s, immaculate charcoal overcoat, calm authority, predatory stillness", notes:"Antagonist", _imgUrl:"", assetId:"" };
+  const eDrive = { id:`e_${uid()}`, kind:"object", name:"Brass Marker", tag:"@drive", description:"Heavy brass blood-oath marker with engraved crest, small enough to vanish in a palm, priceless in the underworld", notes:"MacGuffin", _imgUrl:"/object_Encrypted_Drive.png", _prev:"/object_Encrypted_Drive.png", assetId:"ref" };
+  const eBunker = { id:`e_${uid()}`, kind:"location", name:"Hotel Lounge", tag:"@bunker", description:"Private hotel lounge with amber lamps, dark wood, velvet booths, hushed luxury, old-money menace", notes:"", _imgUrl:"/location_Control_Room.png", _prev:"/location_Control_Room.png", assetId:"ref" };
+  const eStreets = { id:`e_${uid()}`, kind:"location", name:"Neon Streets", tag:"@streets", description:"Rain-slick city streets at night, neon reflections, steam vents, black cars, sodium-vapor spill on wet asphalt", notes:"", _imgUrl:"", assetId:"" };
+  const eWarehouse = { id:`e_${uid()}`, kind:"location", name:"Parking Garage", tag:"@warehouse", description:"Concrete parking garage, low ceiling, strip lights, echoing gunshots, pillars and parked sedans shaping the fight", notes:"Ambush point", _imgUrl:"", assetId:"" };
+
+  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:e._imgUrl||e._prev||"", assetId:e.assetId||"" });
+
+  const sc1id = `sc_${uid()}`;
+  const sc1 = {
+    id:sc1id, type:T.SCENE, cinematicStyle:"thriller", shotCount:2,
+    bible:[ sbEntry(eHero), sbEntry(eDrive), sbEntry(eBunker) ],
+    sceneText:`@hero sits alone in a velvet booth inside the @bunker. A waiter places the @drive on the table without a word and disappears. @hero opens it, sees the crest inside, and understands exactly who has called him back into the world he tried to leave. He closes his hand around the @drive, rises, and walks out before the music changes.`,
+    directorCoherence:{ score:95, skippedBeats:[], overlapIssues:[], recommendation:"Scene establishes the code, the history, and the point of no return with clean economy. The stillness is doing the work." },
+  };
+  const sh1a = { ...mkShot(sc1id,1), id:`sh_${uid()}`, sceneId:sc1id, index:1, how:"@hero studies the opened @drive in silence, amber lamp glow catching the brass while his expression barely changes", where:"@bunker - private booth beneath warm lamp light", when:"summons received", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"practical-warm", visualGoal:"make the ritual feel intimate and dangerous - all the history is inside one object and one face", entityTags:["@hero","@drive","@bunker"], directorNote:"Open on stillness and control. This world should feel luxurious and lethal at the same time. Let the brass and the eyes carry the tension.", directorQuality:"good", directorIssue:"" };
+  const sh1b = { ...mkShot(sc1id,2), id:`sh_${uid()}`, sceneId:sc1id, index:2, how:"@hero closes the @drive, slips it inside his jacket, rises from the booth, and crosses the lounge without looking back", where:"@bunker - dark wood lounge toward the exit", when:"the decision is made", cameraSize:"medium", cameraAngle:"slight-low", cameraMovement:"slow-push-in", lens:"50mm", lighting:"practical-warm", visualGoal:"show commitment without speech - the body decides before the mind can hesitate", entityTags:["@hero","@drive","@bunker"], directorNote:"The push should feel like fate tightening. No flourish, no rush - just total commitment in one clean movement.", directorQuality:"good", directorIssue:"" };
+  sh1a.compiledText = compileShotText(sh1a); sh1b.compiledText = compileShotText(sh1b);
+
+  const sc2id = `sc_${uid()}`;
+  const sc2 = {
+    id:sc2id, type:T.SCENE, cinematicStyle:"action", shotCount:3,
+    bible:[ sbEntry(eHero), sbEntry(eDrive), sbEntry(eStreets) ],
+    sceneText:`@hero exits onto the @streets, @drive hidden inside his jacket. A black sedan rolls past too slowly. Two shooters step out under neon and begin to close the distance. @hero does not panic. He changes direction once, cuts through a narrow service alley, and turns the chase into a series of controlled collisions through the wet city night.`,
+    directorCoherence:{ score:92, skippedBeats:[], overlapIssues:[], recommendation:"The pursuit escalates through decision and geometry rather than generic running. Good bridge into the garage ambush." },
+  };
+  const sh2a = { ...mkShot(sc2id,1), id:`sh_${uid()}`, sceneId:sc2id, index:1, how:"@hero moves through the wet @streets at controlled speed, clocking the black sedan in the reflection before the shooters appear behind him", where:"@streets - neon storefronts and wet asphalt", when:"pursuit begins", cameraSize:"over-shoulder", cameraAngle:"eye-level", cameraMovement:"tracking", lens:"35mm", lighting:"neon-lit", visualGoal:"put the audience inside his tactical awareness - danger arrives first as reflection and rhythm", entityTags:["@hero","@streets"], directorNote:"Track close and steady. The city should feel elegant and hostile, and the realization should happen before the audience fully catches up.", directorQuality:"good", directorIssue:"" };
+  const sh2b = { ...mkShot(sc2id,2), id:`sh_${uid()}`, sceneId:sc2id, index:2, how:"@hero cuts into a narrow service alley, one shooter following tight while another tries to flank from the far mouth", where:"@streets - tight alley framed by pipes, steam, and wet brick", when:"geometry closes", cameraSize:"wide", cameraAngle:"eye-level", cameraMovement:"tracking", lens:"24mm", lighting:"available-light", visualGoal:"make the environment part of the fight - the alley is a tactical diagram closing around him", entityTags:["@hero","@streets"], directorNote:"The wide frame should clarify the trap, not scramble it. This is pressure through space, not just speed.", directorQuality:"good", directorIssue:"" };
+  const sh2c = { ...mkShot(sc2id,3), id:`sh_${uid()}`, sceneId:sc2id, index:3, how:"@hero slams one pursuer into a metal shutter, redirects his momentum, and keeps moving without breaking stride", where:"@streets - service alley mouth back into the avenue", when:"precision violence", cameraSize:"full", cameraAngle:"slight-low", cameraMovement:"tracking", lens:"35mm", lighting:"hard-contrast", visualGoal:"show elegant brutality in motion - one efficient impact buys him one more second of life", entityTags:["@hero","@streets"], directorNote:"Treat the hit as choreography, not chaos. The motion should feel brutally clean and immediately useful.", directorQuality:"good", directorIssue:"" };
+  sh2a.compiledText = compileShotText(sh2a); sh2b.compiledText = compileShotText(sh2b); sh2c.compiledText = compileShotText(sh2c);
+
+  const sc3id = `sc_${uid()}`;
+  const sc3 = {
+    id:sc3id, type:T.SCENE, cinematicStyle:"thriller", shotCount:3,
+    bible:[ sbEntry(eHero), sbEntry(eVillain), sbEntry(eDrive), sbEntry(eWarehouse) ],
+    sceneText:`@hero enters the @warehouse and immediately understands the mistake. The upper level lights flicker on one bank at a time. @villain is already there, leaning against a black sedan as if he has been waiting all night. Two gunmen hold the exits. @villain wants the @drive, but what he really wants is @hero back under his control. No one raises a weapon yet. The silence is the threat.`,
+    directorCoherence:{ score:96, skippedBeats:[], overlapIssues:[], recommendation:"The ambush lands through stillness, hierarchy, and geography. The pause before violence makes the breakout hit harder." },
+  };
+  const sh3a = { ...mkShot(sc3id,1), id:`sh_${uid()}`, sceneId:sc3id, index:1, how:"@hero stops between concrete pillars as the lights rise in stages and reveal @villain waiting beside a black sedan", where:"@warehouse - open garage floor with pillars and parked cars", when:"ambush revealed", cameraSize:"wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"24mm", lighting:"hard-contrast", visualGoal:"let the space, the cars, and the distance establish the rules of the coming fight", entityTags:["@hero","@villain","@warehouse"], directorNote:"Stay wide and exact. The audience must understand the geometry before anyone moves.", directorQuality:"good", directorIssue:"" };
+  const sh3b = { ...mkShot(sc3id,2), id:`sh_${uid()}`, sceneId:sc3id, index:2, how:"@villain pushes off the sedan and steps into the strip light, calm enough to seem almost bored", where:"@warehouse - under cold ceiling light near the sedan", when:"control is asserted", cameraSize:"medium", cameraAngle:"slight-low", cameraMovement:"static", lens:"85mm", lighting:"hard-contrast", visualGoal:"make his stillness more intimidating than a shouted threat", entityTags:["@villain","@warehouse"], directorNote:"He should feel untouchable here. The power is in the lack of hurry.", directorQuality:"good", directorIssue:"" };
+  const sh3c = { ...mkShot(sc3id,3), id:`sh_${uid()}`, sceneId:sc3id, index:3, how:"@hero's hand settles over the @drive inside his jacket while his eyes measure the pillars, exits, and nearest body", where:"@warehouse - tight on jacket line and hand", when:"decision point", cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"hard-contrast", visualGoal:"compress strategy, fear, and commitment into one tiny controlled gesture", entityTags:["@hero","@drive","@warehouse"], directorNote:"Hold until the audience feels the calculation. This is the breath before the storm.", directorQuality:"good", directorIssue:"" };
+  sh3a.compiledText = compileShotText(sh3a); sh3b.compiledText = compileShotText(sh3b); sh3c.compiledText = compileShotText(sh3c);
+
+  const sc4id = `sc_${uid()}`;
+  const sc4 = {
+    id:sc4id, type:T.SCENE, cinematicStyle:"action", shotCount:3,
+    bible:[ sbEntry(eHero), sbEntry(eVillain), sbEntry(eWarehouse), sbEntry(eStreets) ],
+    sceneText:`@hero moves first. He flashes the @drive just long enough to pull every eye toward his hand, then crashes into the nearest gunman and turns the garage into a close-quarters maze of bodies, pillars, and muzzle flashes. One man drops. Another loses his weapon. @villain fires late. @hero uses the confusion to break for the ramp and burst back onto the wet @streets, leaving the echo of the fight behind him.`,
+    directorCoherence:{ score:93, skippedBeats:[], overlapIssues:[], recommendation:"The breakout pays off the garage geometry and lands in precise close-quarters violence instead of generic panic. Strong tonal finish." },
+  };
+  const sh4a = { ...mkShot(sc4id,1), id:`sh_${uid()}`, sceneId:sc4id, index:1, how:"@hero crashes into the nearest gunman, traps the weapon arm, redirects the body, and turns the first shot into cover", where:"@warehouse interior - close quarters between pillars and sedan", when:"breakout begins", cameraSize:"medium-close", cameraAngle:"eye-level", cameraMovement:"tracking", lens:"35mm", lighting:"hard-contrast", visualGoal:"show elegant brutality - one precise chain of movement changes the whole room", entityTags:["@hero","@villain","@warehouse"], directorNote:"This should feel choreographed, not messy. Every beat must read: trap, turn, fire, release.", directorQuality:"good", directorIssue:"" };
+  const sh4b = { ...mkShot(sc4id,2), id:`sh_${uid()}`, sceneId:sc4id, index:2, how:"@hero moves low and fast through the garage ramp while muzzle flashes burst behind him and concrete chips off the pillars", where:"@warehouse - ramp to street level", when:"escape in motion", cameraSize:"wide", cameraAngle:"eye-level", cameraMovement:"tracking", lens:"24mm", lighting:"available-light", visualGoal:"make the route out feel long, exact, and barely survivable", entityTags:["@hero","@warehouse"], directorNote:"Keep orientation crystal clear. The audience should understand exactly how he is using the space to stay alive.", directorQuality:"good", directorIssue:"" };
+  const sh4c = { ...mkShot(sc4id,3), id:`sh_${uid()}`, sceneId:sc4id, index:3, how:"@hero bursts back onto the rain-slicked @streets, slows only once, and disappears into the neon darkness", where:"@streets - empty avenue washed in neon and sodium light", when:"escape complete", cameraSize:"extreme-wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"natural-soft", visualGoal:"end on lonely professionalism - the city takes him back like it was waiting", entityTags:["@hero","@streets"], directorNote:"Cut to stillness the instant he clears the ramp. Let the release come from distance, silence, and wet light.", directorQuality:"good", directorIssue:"" };
+  sh4a.compiledText = compileShotText(sh4a); sh4b.compiledText = compileShotText(sh4b); sh4c.compiledText = compileShotText(sh4c);
+
+  const nodes = [ sc1, sc2, sc3, sc4, sh1a, sh1b, sh2a, sh2b, sh2c, sh3a, sh3b, sh3c, sh4a, sh4b, sh4c ];
+
+  const sceneX = 80;
+  const shotStart = sceneX + 310 + 70;
+  const shotGapX = 340;
+  const sceneGapY = 920;
+  const rowY = (row) => 80 + row * sceneGapY;
+  const pos = {
+    [sc1id]: { x:sceneX, y:rowY(0) },
+    [sc2id]: { x:sceneX, y:rowY(1) },
+    [sc3id]: { x:sceneX, y:rowY(2) },
+    [sc4id]: { x:sceneX, y:rowY(3) },
+    [sh1a.id]: { x:shotStart, y:rowY(0) },
+    [sh1b.id]: { x:shotStart + shotGapX, y:rowY(0) },
+    [sh2a.id]: { x:shotStart, y:rowY(1) },
+    [sh2b.id]: { x:shotStart + shotGapX, y:rowY(1) },
+    [sh2c.id]: { x:shotStart + shotGapX * 2, y:rowY(1) },
+    [sh3a.id]: { x:shotStart, y:rowY(2) },
+    [sh3b.id]: { x:shotStart + shotGapX, y:rowY(2) },
+    [sh3c.id]: { x:shotStart + shotGapX * 2, y:rowY(2) },
+    [sh4a.id]: { x:shotStart, y:rowY(3) },
+    [sh4b.id]: { x:shotStart + shotGapX, y:rowY(3) },
+    [sh4c.id]: { x:shotStart + shotGapX * 2, y:rowY(3) },
+  };
+
+  const bible = {
+    characters: [ eHero, eVillain ],
+    objects: [ eDrive ],
+    locations: [ eBunker, eStreets, eWarehouse ],
   };
 
   return { nodes, pos, bible };
@@ -7337,9 +7428,9 @@ const TEMPLATES = [
     id:          "action-short-film",
     label:       "Action Short Film",
     emoji:       "🎬",
-    description: "4-scene action thriller — briefing, pursuit, trap, escape. 11 shots pre-generated with Director annotations. Edit or generate images directly.",
+    description: "4-scene neo-noir action template - summons, pursuit, ambush, breakout. 11 shots pre-generated with Director annotations in a precise close-quarters style. Edit or generate images directly.",
     tags:        ["4 SCENES","11 SHOTS","WORLD BIBLE","READY TO GENERATE"],
-    make:        makeActionShortFilmTemplate,
+    make:        makeActionNeoNoirShortFilmTemplate,
   },
   {
     id:          "hip-hop-campaign",
