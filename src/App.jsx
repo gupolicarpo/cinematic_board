@@ -961,27 +961,19 @@ function dataUrlToVeo(dataUrl) {
 //   referenceImages  — [{ dataUrl, referenceType }] from IMAGE nodes with role "ref" OR shot bible
 //
 // NOTE: reference mode and frame mode are MUTUALLY EXCLUSIVE. If referenceImages is non-empty,
-// startFrame/endFrame are ignored and veo-3.1-generate-preview is used instead of veo-3.1-generate-001.
+// startFrame/endFrame are ignored. All modes use veo-3.1-generate-preview (only valid Gemini API model).
 async function aiVeoCreate(shot, options = {}) {
   const { aspect_ratio = "16:9", duration = 8, startFrame = null, endFrame = null, referenceImages = [] } = options;
 
-  // ── Veo has two MUTUALLY EXCLUSIVE generation modes ───────────────────────
+  // veo-3.1-generate-preview is the only valid Gemini API model for Veo 3.1.
+  // It supports all modes: T2V, I2V (start frame), first+last frame, reference images.
+  // veo-3.1-generate-001 does not exist in the Gemini API.
   //
-  //  MODE A — veo-3.1-generate-001  (frame-guided)
-  //    T2V:           prompt only
-  //    I2V:           prompt + instances[0].image  (start frame)
-  //    First+Last:    prompt + instances[0].image  + parameters.lastFrame
-  //
-  //  MODE B — veo-3.1-generate-preview  (reference-guided)
-  //    Ref images:    prompt + parameters.referenceImages  (asset / style refs)
-  //    — referenceImages and frame fields CANNOT be combined in the same call
-  //
-  // When both are wired (refs + start frame), REFERENCE mode wins and the
-  // frame fields are intentionally omitted.
-  // ──────────────────────────────────────────────────────────────────────────
+  // MUTUALLY EXCLUSIVE: referenceImages and frame fields cannot be combined.
+  // When both are wired (refs + start frame), REFERENCE mode wins.
   const refs = referenceImages.filter(r => r.dataUrl?.startsWith("data:")).slice(0, 3);
   const hasRefs  = refs.length > 0;
-  const veoModel = hasRefs ? "veo-3.1-generate-preview" : "veo-3.1-generate-001";
+  const veoModel = "veo-3.1-generate-preview";
 
   const instance = {
     prompt: (shot.compiledText || `${shot.how || ""} in ${shot.where || ""}`).trim().slice(0, 2000) || "Cinematic shot",
