@@ -122,6 +122,16 @@ function recommendSceneConfig(sceneText) {
   return              { shots:5, secs:15 };
 }
 
+function estimateSpeechSeconds(text="") {
+  const cleaned = (text || "").replace(/\s+/g, " ").trim();
+  if (!cleaned) return 0;
+  const words = cleaned.split(" ").filter(Boolean).length;
+  const sentencePauses = (cleaned.match(/[.!?]/g) || []).length;
+  const minorPauses = (cleaned.match(/[,:;—-]/g) || []).length;
+  const secs = (words / 2.6) + (sentencePauses * 0.28) + (minorPauses * 0.12);
+  return Math.max(0.8, secs);
+}
+
 // ─── CONTINUITY VALIDATOR ────────────────────────────────────────────────────
 // Returns array of { code, msg, level:"error"|"warn" }
 function validateShot(shot, scene) {
@@ -146,12 +156,19 @@ function validateShot(shot, scene) {
   if (shot.dialogue?.trim()) {
     const spokenText = stripSpeakerNames(shot.dialogue).replace(/\s+/g, " ").trim();
     if (spokenText.length > 0) {
-      const estimatedSecs = Math.ceil(spokenText.length / 13);
+      const estimatedSecs = estimateSpeechSeconds(spokenText);
+      if (estimatedSecs < 2) {
+        issues.push({
+          code: "LIPSYNC_AUDIO_TOO_SHORT",
+          level: "warn",
+          msg: `Estimated speech is ~${estimatedSecs.toFixed(1)}s — Kling advanced lipsync requires at least 2.0s of audio`,
+        });
+      }
       if (estimatedSecs > (shot.durationSec || 1)) {
         issues.push({
           code: "DIALOGUE_TOO_LONG",
           level: "warn",
-          msg: `Dialogue needs ~${estimatedSecs}s but shot is ${shot.durationSec || 1}s — lipsync may be clipped`,
+          msg: `Dialogue needs ~${estimatedSecs.toFixed(1)}s but shot is ${shot.durationSec || 1}s — lipsync may be clipped`,
         });
       }
     }
@@ -2432,6 +2449,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
         setKlingLipsyncErr("");
         try {
           const computeAdvancedTiming = ({ faceStartMs, faceEndMs, audioDurationMs, videoDurationMs, speaker }) => {
+            const SAFETY_MS = 120;
             if (!Number.isFinite(audioDurationMs) || audioDurationMs < 2000) {
               throw new Error(`Audio for ${speaker} is shorter than 2s, which Kling advanced lipsync rejects`);
             }
@@ -2442,13 +2460,14 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
               throw new Error(`Missing face timing for ${speaker}`);
             }
 
-            const clipDurationMs = Math.min(audioDurationMs, videoDurationMs);
+            const maxClipDurationMs = Math.max(0, videoDurationMs - SAFETY_MS);
+            const clipDurationMs = Math.min(audioDurationMs, maxClipDurationMs);
             if (clipDurationMs < 2000) {
               throw new Error(`Cropped audio for ${speaker} would be shorter than 2s`);
             }
 
             const minInsertTime = Math.max(0, faceStartMs - (clipDurationMs - 2000));
-            const maxInsertTime = Math.min(videoDurationMs - clipDurationMs, faceEndMs - 2000);
+            const maxInsertTime = Math.min(maxClipDurationMs - clipDurationMs, faceEndMs - 2000);
             if (maxInsertTime < minInsertTime) {
               throw new Error(`Face for ${speaker} is not visible long enough for a 2s lipsync overlap`);
             }
@@ -2462,9 +2481,11 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
           };
           // ── Step 1: parse per-speaker dialogue from all linked shots ──────
           const speakerLines = {}; // { "WIZARD": ["line1", "line2"], ... }
+          const speakerShotBudgetSec = {}; // { "WIZARD": 4, ... } summed speaking-shot duration
           for (const sh of shotNodes) {
             if (!sh.dialogue?.trim()) continue;
             let curSpeaker = null;
+            const speakersInShot = new Set();
             for (const rawLine of sh.dialogue.split('\n')) {
               const t = rawLine.trim();
               if (!t) continue;
@@ -2475,7 +2496,11 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                 // stage direction — skip
               } else if (curSpeaker) {
                 speakerLines[curSpeaker].push(t);
+                speakersInShot.add(curSpeaker);
               }
+            }
+            for (const spk of speakersInShot) {
+              speakerShotBudgetSec[spk] = (speakerShotBudgetSec[spk] || 0) + (sh.durationSec || 0);
             }
           }
           const speakers = Object.keys(speakerLines);
@@ -2504,6 +2529,21 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             return node.voice || "none";
           };
 
+          const speakerPlans = speakers.map((speaker) => {
+            const voice_id = resolveVoice(speaker);
+            if (!voice_id || voice_id === "none") throw new Error(`No voice assigned for speaker: ${speaker}`);
+            const text = speakerLines[speaker].join(' ').slice(0, 1000);
+            const estimatedSpeechSecs = estimateSpeechSeconds(text);
+            const speakerBudgetSecs = speakerShotBudgetSec[speaker] || 0;
+            if (estimatedSpeechSecs > 0 && estimatedSpeechSecs < 2) {
+              throw new Error(`[lipsync-precheck] Estimated speech for ${speaker} is ~${estimatedSpeechSecs.toFixed(1)}s; Kling advanced lipsync requires at least 2.0s of audio`);
+            }
+            if (speakerBudgetSecs > 0 && estimatedSpeechSecs > speakerBudgetSecs) {
+              throw new Error(`[lipsync-precheck] Dialogue for ${speaker} needs ~${estimatedSpeechSecs.toFixed(1)}s but speaking shots total ${speakerBudgetSecs.toFixed(1)}s`);
+            }
+            return { speaker, voice_id, text };
+          });
+
           // ── Step 2: TTS for each speaker ─────────────────────────────────
           const pollTts = async (taskId) => {
             for (let i = 0; i < 60; i++) {
@@ -2519,10 +2559,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
           };
 
           const speakerAudio = {}; // speaker → { id, url, duration (s) }
-          for (const speaker of speakers) {
-            const voice_id = resolveVoice(speaker);
-            if (!voice_id || voice_id === "none") throw new Error(`No voice assigned for speaker: ${speaker}`);
-            const text = speakerLines[speaker].join(' ').slice(0, 1000);
+          for (const { speaker, voice_id, text } of speakerPlans) {
             setKlingPollMsg(`TTS: generating voice for ${speaker}…`);
             const ttsRes = await fetch("/api/kling/tts", {
               method: "POST", headers: { "Content-Type": "application/json" },
@@ -2534,7 +2571,6 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             }
             const ttsData = await ttsRes.json();
             if (ttsData.code && ttsData.code !== 0) throw new Error(`TTS error ${ttsData.code}: ${ttsData.message}`);
-            // Fast-path: some Kling TTS responses complete synchronously
             if (ttsData.data?.task_status === "succeed" && ttsData.data?.task_result?.audios?.[0]) {
               speakerAudio[speaker] = ttsData.data.task_result.audios[0];
             } else {
@@ -2680,6 +2716,14 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
           setKlingStatus("done"); setKlingPollMsg(""); return;
 
         } catch (lsErr) {
+          const isPrecheckFailure = lsErr?.message?.startsWith?.("[lipsync-precheck]");
+          const cleanMsg = isPrecheckFailure ? lsErr.message.replace("[lipsync-precheck] ", "") : lsErr.message;
+          if (isPrecheckFailure) {
+            console.warn("Advanced lipsync skipped by precheck:", cleanMsg);
+            setKlingLipsyncErr(`Advanced lipsync skipped: ${cleanMsg}`);
+            upd({ videoUrl: url }); setKlingStatus("done"); setKlingPollMsg("");
+            return;
+          }
           console.warn("Advanced lipsync failed, falling back to simple:", lsErr.message);
           setKlingLipsyncErr(`Advanced lipsync failed (${lsErr.message.slice(0,80)}), trying simple lipsync…`);
           try {
@@ -2869,9 +2913,11 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                   // Per-speaker text preview (max 1000 chars each — TTS API limit)
                   const speakerPreview = allSpeakers.map(spk => {
                     const lines = [];
+                    let shotBudgetSec = 0;
                     for (const sh of shotNodes) {
                       if (!sh.dialogue?.trim()) continue;
                       let cur = null;
+                      let hasLineInShot = false;
                       for (const raw of sh.dialogue.split('\n')) {
                         const t = raw.trim();
                         if (!t) continue;
@@ -2881,11 +2927,22 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                           // skip stage direction
                         } else if (cur === spk) {
                           lines.push(t);
+                          hasLineInShot = true;
                         }
                       }
+                      if (hasLineInShot) shotBudgetSec += (sh.durationSec || 0);
                     }
                     const full = lines.join(' ');
-                    return { speaker: spk, text: full, truncated: full.length > 1000 };
+                    const estimatedSecs = estimateSpeechSeconds(full);
+                    return {
+                      speaker: spk,
+                      text: full,
+                      truncated: full.length > 1000,
+                      estimatedSecs,
+                      shotBudgetSec,
+                      tooShortForAdvanced: estimatedSecs > 0 && estimatedSecs < 2,
+                      tooLongForShots: shotBudgetSec > 0 && estimatedSecs > shotBudgetSec,
+                    };
                   });
 
                   // Voice selector helper — renders a <select> for a given value/onChange
@@ -2953,16 +3010,29 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                       <span style={{ fontSize:5, letterSpacing:"0.15em", color:lipsyncAc, fontWeight:700, display:"block", marginBottom:4 }}>
                         AUDIO SCRIPT {hasMultiSpeaker ? `— ${allSpeakers.length} SPEAKERS` : "PREVIEW"}
                       </span>
-                      {speakerPreview.map(({ speaker, text, truncated }) => (
+                      {speakerPreview.map(({ speaker, text, truncated, estimatedSecs, shotBudgetSec, tooShortForAdvanced, tooLongForShots }) => (
                         <div key={speaker} style={{ marginBottom:4 }}>
                           {hasMultiSpeaker && (
                             <span style={{ fontSize:5, color:lipsyncAc, fontWeight:700, letterSpacing:"0.1em", display:"block", marginBottom:1 }}>
                               {speaker}
                             </span>
                           )}
+                          <div style={{ fontSize:5, color:th.t3, letterSpacing:"0.06em", marginBottom:1 }}>
+                            est. speech {estimatedSecs.toFixed(1)}s {shotBudgetSec > 0 ? `· shot time ${shotBudgetSec.toFixed(1)}s` : ""}
+                          </div>
                           <div style={{ fontSize:6, color:th.t1, lineHeight:1.6, fontStyle:"italic", wordBreak:"break-word" }}>
                             "{text.slice(0,120)}{text.length>120?"…":""}"
                           </div>
+                          {tooShortForAdvanced && (
+                            <div style={{ fontSize:5, color:"#fbbf24", marginTop:1, letterSpacing:"0.06em" }}>
+                              ⚠ Advanced lipsync needs at least 2.0s of speech for this speaker
+                            </div>
+                          )}
+                          {tooLongForShots && (
+                            <div style={{ fontSize:5, color:"#fbbf24", marginTop:1, letterSpacing:"0.06em" }}>
+                              ⚠ Increase shot duration — estimated speech exceeds the speaking shots for this character
+                            </div>
+                          )}
                           {truncated && (
                             <div style={{ fontSize:5, color:"#fbbf24", marginTop:1, letterSpacing:"0.06em" }}>
                               ⚠ {text.length}/1000 chars — truncated for TTS
