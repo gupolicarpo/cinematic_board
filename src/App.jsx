@@ -1026,14 +1026,11 @@ function dataUrlToVeo(dataUrl) {
 //   referenceImages  — [{ dataUrl, referenceType }] from IMAGE nodes with role "ref" OR shot bible
 //
 // NOTE: reference mode and frame mode are MUTUALLY EXCLUSIVE. If referenceImages is non-empty,
-// startFrame/endFrame are ignored. All modes use veo-3.1-generate-preview (only valid Gemini API model).
+// startFrame/endFrame are ignored. Gemini API frame-guided generation uses veo-3.1-generate-preview
+// with both image and lastFrame on the same instance payload.
 async function aiVeoCreate(shot, options = {}) {
   const { aspect_ratio = "16:9", duration = 8, startFrame = null, endFrame = null, referenceImages = [] } = options;
 
-  // veo-3.1-generate-preview is the only valid Gemini API model for Veo 3.1.
-  // It supports all modes: T2V, I2V (start frame), first+last frame, reference images.
-  // veo-3.1-generate-001 does not exist in the Gemini API.
-  //
   // MUTUALLY EXCLUSIVE: referenceImages and frame fields cannot be combined.
   // When both are wired (refs + start frame), REFERENCE mode wins.
   const refs = referenceImages.filter(r => r.dataUrl?.startsWith("data:")).slice(0, 3);
@@ -1061,7 +1058,7 @@ async function aiVeoCreate(shot, options = {}) {
       instance.image = dataUrlToVeo(startFrame);
       // End frame only valid when start frame is also set
       if (endFrame?.startsWith("data:")) {
-        parameters.lastFrame = dataUrlToVeo(endFrame);
+        instance.lastFrame = dataUrlToVeo(endFrame);
       }
     }
   }
