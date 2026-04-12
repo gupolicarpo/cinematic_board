@@ -39,6 +39,18 @@ const useTheme = () => useContext(ThemeCtx);
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const CINEMATIC_STYLES = ["drama","thriller","action","noir","sci-fi","epic-fantasy","documentary","comedy"];
+const VISUAL_STYLE_PRESETS = {
+  none: { label:"None", prompt:"" },
+  "black-and-white": { label:"Black & White", prompt:"Monochrome black-and-white treatment, rich tonal separation, deep contrast, subtle silver-grain texture. Preserve identity, wardrobe, pose, composition, and lighting intent." },
+  "70s-film": { label:"70s Film", prompt:"1970s motion-picture look, analog film stock, warm halation, soft grain, restrained contrast, vintage color bias. Preserve subject identity, wardrobe, and scene composition." },
+  "anime-cel": { label:"Anime Cel", prompt:"Anime cel-shaded stylization, clean line work, graphic shapes, expressive color blocking, polished 2D finish. Preserve character identity, silhouette, costume, and camera composition." },
+  "graphic-novel": { label:"Graphic Novel", prompt:"Graphic novel treatment with inked contours, bold contrast, selective color accents, and cinematic panel energy. Preserve identity, staging, wardrobe, and environment geometry." },
+  "stylized-3d": { label:"Stylized 3D", prompt:"Stylized 3D animated feature look, polished materials, expressive shapes, soft global illumination, premium animation-art finish. Preserve facial identity, costume design, and shot composition." },
+  "watercolor": { label:"Watercolor", prompt:"Painterly watercolor illustration, layered washes, soft edges, textured paper feel, elegant color bleed. Preserve identity, silhouette, composition, and environment readability." },
+  "16mm-doc": { label:"16mm Documentary", prompt:"16mm documentary film look, organic grain, muted palette, light gate weave, observational realism. Preserve identity, action blocking, and location clarity." },
+  "vhs-analog": { label:"VHS Analog", prompt:"Analog VHS transfer look, scan noise, chroma bleed, tape softness, nostalgic low-fidelity image. Preserve identity, blocking, and the original framing." },
+};
+const VISUAL_STYLES = Object.keys(VISUAL_STYLE_PRESETS);
 const CAMERA_SIZES = ["extreme-wide","wide","medium-wide","medium","medium-close","close-up","extreme-close-up"];
 const CAMERA_ANGLES = ["eye-level","high-angle","low-angle","over-the-shoulder","top-down","dutch"];
 const CAMERA_MOVEMENTS = ["static","slow-push-in","pull-back","pan","tilt","tracking","handheld","crane-like"];
@@ -60,6 +72,85 @@ function humanizeMove(m) {
   return m === "static" ? "with a static camera" : `with a ${m.replaceAll("-"," ")} camera move`;
 }
 function humanizeLighting(l) { return `${l.replaceAll("-"," ")} lighting`; }
+function normalizeVisualStyle(v) {
+  if (!v || v === "inherit") return v || "none";
+  return VISUAL_STYLE_PRESETS[v] ? v : "none";
+}
+function entryStyleVariants(entry) {
+  return (entry && typeof entry._styleVariants === "object" && entry._styleVariants) ? entry._styleVariants : {};
+}
+function entryVariantImage(entry, style) {
+  const key = normalizeVisualStyle(style);
+  if (!key || key === "none" || key === "inherit") return "";
+  const variant = entryStyleVariants(entry)[key];
+  if (!variant) return "";
+  if (typeof variant === "string") return variant;
+  return variant._imgUrl || variant._prev || "";
+}
+function resolveEntryImage(entry, style = "none") {
+  const variantImg = entryVariantImage(entry, style);
+  if (variantImg) return variantImg;
+  return entry?._imgUrl || entry?._prev || "";
+}
+function withResolvedEntryImage(entry, style = "none") {
+  const resolved = resolveEntryImage(entry, style);
+  return { ...entry, _prev: resolved };
+}
+function setEntryImageForStyle(entry, style, imgUrl, assetId = null) {
+  const key = normalizeVisualStyle(style);
+  if (!imgUrl) return entry;
+  if (!key || key === "none" || key === "inherit") {
+    return {
+      ...entry,
+      _imgUrl: imgUrl,
+      _prev: imgUrl,
+      ...(assetId ? { assetId } : {}),
+    };
+  }
+  const variants = { ...entryStyleVariants(entry) };
+  const prev = typeof variants[key] === "object" && variants[key] ? variants[key] : {};
+  variants[key] = {
+    ...prev,
+    _imgUrl: imgUrl,
+    _prev: imgUrl,
+    ...(assetId ? { assetId } : {}),
+  };
+  return { ...entry, _styleVariants: variants };
+}
+function stripBibleEntryForStorage(entry) {
+  const stripUrl = (url) => (url?.startsWith("data:") ? "" : (url || ""));
+  const variants = Object.fromEntries(
+    Object.entries(entryStyleVariants(entry)).map(([style, variant]) => {
+      if (typeof variant === "string") return [style, stripUrl(variant)];
+      return [style, {
+        ...variant,
+        _imgUrl: stripUrl(variant?._imgUrl),
+        _prev: stripUrl(variant?._prev),
+      }];
+    })
+  );
+  return {
+    ...entry,
+    _imgUrl: stripUrl(entry._imgUrl),
+    _prev: stripUrl(entry._prev),
+    _styleVariants: variants,
+  };
+}
+function resolveVisualStyle(shot, scene) {
+  const shotStyle = normalizeVisualStyle(shot?.visualStyle || "inherit");
+  if (shotStyle && shotStyle !== "inherit" && shotStyle !== "none") return shotStyle;
+  return normalizeVisualStyle(scene?.visualStyle || "none");
+}
+function applyVisualStylePrompt(prompt, visualStyle, medium = "image") {
+  const styleKey = normalizeVisualStyle(visualStyle);
+  const preset = VISUAL_STYLE_PRESETS[styleKey];
+  const cleanPrompt = (prompt || "").trim();
+  if (!preset || !preset.prompt) return cleanPrompt;
+  const subjectRule = medium === "video"
+    ? "Keep motion, shot geography, and action continuity consistent with the source prompt."
+    : "Keep the source image composition and subject continuity intact.";
+  return `${cleanPrompt}\n\nVISUAL STYLE OVERRIDE - ${preset.label}: ${preset.prompt} ${subjectRule}`;
+}
 
 // Strip screenplay speaker names (ALL-CAPS lines, parentheticals) from dialogue text
 // e.g. "WIZARD (O.S.)\nLine here.\nRANGER\nAnd if I refuse?" → "Line here. And if I refuse?"
@@ -199,6 +290,7 @@ function estimateSpeechSeconds(text="") {
 // Returns array of { code, msg, level:"error"|"warn" }
 function validateShot(shot, scene) {
   const issues = [];
+  const activeVisualStyle = resolveVisualStyle(shot, scene);
   const isLinked = !!scene;
   const allBible = isLinked
     ? [...(scene.bible||[]), ...(shot.bible||[]).filter(l=>!(scene.bible||[]).find(s=>s.tag===l.tag))]
@@ -258,7 +350,8 @@ function validateShot(shot, scene) {
     if (localBible.length === 0)
       issues.push({ code:"NO_BIBLE",   level:"warn",  msg:"Standalone shot has no references — add to Shot Bible" });
     localBible.forEach(e => {
-      if (!e.assetId)
+      const variantAsset = activeVisualStyle !== "none" ? entryStyleVariants(e)[activeVisualStyle]?.assetId : e.assetId;
+      if (!(variantAsset || resolveEntryImage(e, activeVisualStyle)))
         issues.push({ code:"NO_ASSET",  level:"warn",  msg:`${e.tag} has no image reference` });
     });
   }
@@ -322,8 +415,8 @@ function formatSceneMd(sceneNode, shots) {
   return lines.join("\n");
 }
 
-function mkScene() { return { id:`sc_${uid()}`, type:T.SCENE, sceneText:"", cinematicStyle:"thriller", shotCount:3, bible:[], dialogueLines:[] }; }
-function mkShot(sceneId,index=1) { return { id:`sh_${uid()}`, type:T.SHOT, sceneId, index, durationSec:3, sourceAnchor:"", where:"", entityTags:[], how:"", when:"", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"natural-soft", visualGoal:"", compiledText:"", bible:[], dialogue:"" }; }
+function mkScene() { return { id:`sc_${uid()}`, type:T.SCENE, sceneText:"", cinematicStyle:"thriller", visualStyle:"none", shotCount:3, bible:[], dialogueLines:[] }; }
+function mkShot(sceneId,index=1) { return { id:`sh_${uid()}`, type:T.SHOT, sceneId, index, durationSec:3, sourceAnchor:"", where:"", entityTags:[], how:"", when:"", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"natural-soft", visualGoal:"", visualStyle:"inherit", compiledText:"", bible:[], dialogue:"" }; }
 function mkImage(sceneId=null, shotId=null) { return { id:`im_${uid()}`, type:T.IMAGE, sceneId, shotId, prompt:"", generatedUrl:null, entityTag:"", aspect_ratio:"1:1", resolution:"1K", refImageUrl:null }; }
 function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", sound:"off", prevKlingId:null, voice:"none", lipsync:false }; }
 function mkVeo()   { return { id:`veo_${uid()}`, type:T.VEO, shotId:null, videoUrl:null, aspect_ratio:"16:9", duration:8, startFrameNodeId:null, endFrameNodeId:null, refNodeIds:[], useRefs:true, refType:"asset", manualPrompt:"" }; }
@@ -513,7 +606,10 @@ Return only JSON.`;
 
   // Build multimodal user content: character images first, then the text prompt
   // This lets the AI visually identify each character (age, appearance, role)
-  const bibleImgs = scene.bible.filter(e => e._prev && (e._prev.startsWith("data:") || e._prev.startsWith("/")));
+  const sceneVisualStyle = normalizeVisualStyle(scene.visualStyle || "none");
+  const bibleImgs = scene.bible
+    .map(e => withResolvedEntryImage(e, sceneVisualStyle))
+    .filter(e => e._prev && (e._prev.startsWith("data:") || e._prev.startsWith("/")));
 
   function buildAnthropicContent() {
     const parts = [];
@@ -690,8 +786,8 @@ RULES:
 // ─── AI LLM NODE — targeted edit command on any connected node ────────────────
 async function aiLlm(command, nodeType, nodeContent) {
   const fieldGuide = {
-    [T.SHOT]:  `Editable fields: how (action description), where (location), when (time of day / temporal context), cameraSize (must be one of ${JSON.stringify(CAMERA_SIZES)}), cameraAngle (must be one of ${JSON.stringify(CAMERA_ANGLES)}), cameraMovement (must be one of ${JSON.stringify(CAMERA_MOVEMENTS)}), lighting (must be one of ${JSON.stringify(LIGHTING_STYLES)}), lens (e.g. "35mm","50mm","85mm"), visualGoal (the visual purpose of this shot), durationSec (integer 1-15).`,
-    [T.SCENE]: `Editable fields: sceneText (full scene prose), cinematicStyle (must be one of ${JSON.stringify(CINEMATIC_STYLES)}).`,
+    [T.SHOT]:  `Editable fields: how (action description), where (location), when (time of day / temporal context), cameraSize (must be one of ${JSON.stringify(CAMERA_SIZES)}), cameraAngle (must be one of ${JSON.stringify(CAMERA_ANGLES)}), cameraMovement (must be one of ${JSON.stringify(CAMERA_MOVEMENTS)}), lighting (must be one of ${JSON.stringify(LIGHTING_STYLES)}), lens (e.g. "35mm","50mm","85mm"), visualGoal (the visual purpose of this shot), visualStyle (must be one of ${JSON.stringify(["inherit", ...VISUAL_STYLES])}), durationSec (integer 1-15).`,
+    [T.SCENE]: `Editable fields: sceneText (full scene prose), cinematicStyle (must be one of ${JSON.stringify(CINEMATIC_STYLES)}), visualStyle (must be one of ${JSON.stringify(VISUAL_STYLES)}).`,
     [T.IMAGE]: `Editable fields: prompt (image generation prompt).`,
     [T.KLING]: `Editable fields: manualPrompt (the Kling video generation prompt).`,
     [T.VEO]:   `Editable fields: manualPrompt (the Veo video generation prompt).`,
@@ -853,9 +949,10 @@ async function aiImage(prompt, references=[], aspect_ratio="1:1", resolution="1K
 }
 
 // Extrai { mimeType, data, tag, name } de uma entrada do bible com _prev (data URL)
-function bibleToRef(e) {
-  if (!e._prev || !e._prev.startsWith("data:")) return null;
-  const [header, data] = e._prev.split(",");
+function bibleToRef(e, style = "none") {
+  const img = resolveEntryImage(e, style);
+  if (!img || !img.startsWith("data:")) return null;
+  const [header, data] = img.split(",");
   const mimeType = header.match(/data:([^;]+)/)?.[1] || "image/jpeg";
   return { mimeType, data, tag: e.tag, name: e.name, kind: e.kind };
 }
@@ -931,6 +1028,7 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
     const multi_prompt = shotPlan.map(({ shot: sh, durationSec }, i) => {
       const raw = (sh.compiledText || `${sh.how || ""} in ${sh.where || ""}`).trim();
       let text = injectRefs(raw || `Shot ${i + 1}`);
+      text = applyVisualStylePrompt(text, sh.visualStyle, "video");
       // On the first shot, anchor visual continuity to the previous video
       if (i === 0 && prevVideoUrl) text = `<<<video_1>>> ${text}`;
       // Prepend image ref tags on the first shot so Kling uses them as visual references
@@ -952,7 +1050,7 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
   } else {
     // ── SINGLE-SHOT MODE ────────────────────────────────────────────────────
     const rawPrompt = shot.compiledText || `${shot.how} in ${shot.where}`;
-    const promptWithRefs = injectRefs(rawPrompt);
+    const promptWithRefs = injectRefs(applyVisualStylePrompt(rawPrompt, shot.visualStyle, "video"));
     // Prepend explicit image ref tags so Kling uses wired images as visual references
     const promptFinal = refTagStr ? `${refTagStr} ${promptWithRefs}` : promptWithRefs;
     body = {
@@ -1038,8 +1136,13 @@ async function aiVeoCreate(shot, options = {}) {
   const hasFrameGuidance = !hasRefs && !!(startFrame?.startsWith("data:") || endFrame?.startsWith("data:"));
   const veoModel = hasFrameGuidance ? "veo-3.1-generate-001" : "veo-3.1-generate-preview";
 
+  const styledPrompt = applyVisualStylePrompt(
+    (shot.compiledText || `${shot.how || ""} in ${shot.where || ""}`).trim() || "Cinematic shot",
+    shot.visualStyle,
+    "video"
+  );
   const instance = {
-    prompt: (shot.compiledText || `${shot.how || ""} in ${shot.where || ""}`).trim().slice(0, 2000) || "Cinematic shot",
+    prompt: styledPrompt.slice(0, 2000) || "Cinematic shot",
   };
 
   const parameters = {
@@ -1147,7 +1250,7 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
   const [savingE, setSavingE] = useState({});
 
   // Resolve entity image: local _prev first, fall back to matching world-bible entry
-  const eImg = (e) => e._prev || globalBible.find(g => g.tag === e.tag)?._prev || "";
+  const eImg = (e) => resolveEntryImage(e, node.visualStyle || "none") || resolveEntryImage(globalBible.find(g => g.tag === e.tag), node.visualStyle || "none") || "";
 
   const cardWidth = expanded ? 580 : 310;
 
@@ -1251,12 +1354,29 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
     downloadMd(`bible_${node.id}.md`, lines.join("\n"));
   };
 
-  const upload = (id,file) => { if(!file)return; const r=new FileReader(); r.onload=e=>{updB(id,"assetId",`ast_${uid()}`);updB(id,"_prev",e.target.result);}; r.readAsDataURL(file); };
+  const upload = (id,file) => {
+    if(!file)return;
+    const r=new FileReader();
+    r.onload=e=>{
+      const nextAssetId = `ast_${uid()}`;
+      upd({
+        bible: node.bible.map(ent => ent.id===id ? setEntryImageForStyle(ent, node.visualStyle || "none", e.target.result, nextAssetId) : ent)
+      });
+    };
+    r.readAsDataURL(file);
+  };
 
   const genImg = async (id) => {
     const p=aiPr[id]; if(!p?.trim())return;
     setGenId(id);
-    try{ const u=await aiImage(p); updB(id,"assetId",`ast_ai_${uid()}`); updB(id,"_prev",u); }
+    try{
+      const styledPrompt = applyVisualStylePrompt(p, node.visualStyle || "none", "image");
+      const u=await aiImage(styledPrompt);
+      const nextAssetId = `ast_ai_${uid()}`;
+      upd({
+        bible: node.bible.map(ent => ent.id===id ? setEntryImageForStyle(ent, node.visualStyle || "none", u, nextAssetId) : ent)
+      });
+    }
     catch(e){alert(`🍌 ${e.message}`);}
     finally{setGenId(null);}
   };
@@ -1287,6 +1407,11 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
         <div style={{ width:4, height:4, background: th.dark ? ac : th.t3, borderRadius:"50%" }} />
         <span style={{ fontSize:7, letterSpacing:"0.2em", color:uac, fontWeight:700 }}>SCENE NODE</span>
         <span style={{ marginLeft:"auto", fontSize:7, color:th.t2, letterSpacing:"0.08em" }}>{node.cinematicStyle.toUpperCase()}</span>
+        {(node.visualStyle || "none") !== "none" && (
+          <span style={{ fontSize:6, color:uac, letterSpacing:"0.08em", background:th.card3, border:`1px solid ${uac}33`, borderRadius:3, padding:"2px 5px" }}>
+            {VISUAL_STYLE_PRESETS[node.visualStyle || "none"]?.label || "Visual Style"}
+          </span>
+        )}
         {/* Expand / collapse button */}
         <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();setExpanded(x=>!x);}}
           title={expanded?"Collapse node":"Expand for writing"}
@@ -1365,6 +1490,12 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
           </F>
         </div>
 
+        <F label="VISUAL STYLE">
+          <select onMouseDown={e=>e.stopPropagation()} style={{ ...sel, color:uac }} value={node.visualStyle || "none"} onChange={e=>upd({ visualStyle:e.target.value })}>
+            {VISUAL_STYLES.map(s => <option key={s} value={s}>{VISUAL_STYLE_PRESETS[s].label}</option>)}
+          </select>
+        </F>
+
         {/* Bible */}
         <div style={{ borderTop:`1px solid ${th.b0}`, paddingTop:8 }}>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7 }}>
@@ -1393,7 +1524,7 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
           {node.bible.map(e=>(
             <div key={e.id} style={{ background:th.card,border:`1px solid ${th.b0}`,borderRadius:4,padding:7,marginBottom:6 }}>
               <div style={{ display:"flex",gap:7,marginBottom:6 }}>
-                <div style={{ width:44,height:44,background:th.card4,border:`1px solid ${e.assetId?ac+"44":th.b0}`,borderRadius:3,flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                <div style={{ width:44,height:44,background:th.card4,border:`1px solid ${((node.visualStyle || "none") !== "none" ? entryStyleVariants(e)[node.visualStyle || "none"]?.assetId : e.assetId) || eImg(e) ? ac+"44" : th.b0}`,borderRadius:3,flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center" }}>
                   {genId===e.id?<Ico icon={Loader2} size={16} color="#3a4a22" style={{animation:"spin 0.7s linear infinite"}}/>
                     :eImg(e)?<img src={eImg(e)} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} />
                     :<KindIcon kind={e.kind} size={16} />}
@@ -1404,7 +1535,7 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
                     <input onMouseDown={e2=>e2.stopPropagation()} style={{ ...inp,flex:1,fontSize:8,color:uac }} placeholder="@tag" value={e.tag} onChange={e2=>updateTag(e.id, e.tag, e2.target.value)} />
                     <button onMouseDown={e2=>e2.stopPropagation()} onClick={e2=>{e2.stopPropagation();delE(e.id);}} style={{ background:"transparent",border:`1px solid ${th.b0}`,color:th.t3,cursor:"pointer",fontSize:9,padding:"2px 5px",borderRadius:2 }}>✕</button>
                   </div>
-                  {(e.assetId||eImg(e))?<div style={{ fontSize:7,color:uac,letterSpacing:"0.08em" }}>✓ {e.tag} · {e.kind.toUpperCase()}</div>
+                  {(((node.visualStyle || "none") !== "none" ? entryStyleVariants(e)[node.visualStyle || "none"]?.assetId : e.assetId) || eImg(e))?<div style={{ fontSize:7,color:uac,letterSpacing:"0.08em" }}>✓ {e.tag} · {e.kind.toUpperCase()}</div>
                     :<div style={{ fontSize:7,color:th.t3,letterSpacing:"0.07em" }}>⚠ image ref required</div>}
                 </div>
               </div>
@@ -1596,14 +1727,28 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
 
 
   const localBible = node.bible || [];
+  const effectiveVisualStyle = resolveVisualStyle(node, linkedScene);
   const updB = (id,k,v) => upd({ bible: localBible.map(e=>e.id===id?{...e,[k]:v}:e) });
   const addE = (kind) => upd({ bible:[...localBible,{id:uid(),kind,name:kind==="character"?"Character":kind==="location"?"Location":"Object",tag:`@${kind[0]}${uid().slice(0,3)}`,assetId:"",notes:""}] });
   const delE = (id) => upd({ bible:localBible.filter(e=>e.id!==id) });
-  const upload = (id,file) => { if(!file)return; const r=new FileReader(); r.onload=e=>{updB(id,"assetId",`ast_${uid()}`);updB(id,"_prev",e.target.result);}; r.readAsDataURL(file); };
+  const upload = (id,file) => {
+    if(!file)return;
+    const r=new FileReader();
+    r.onload=e=>{
+      const nextAssetId = `ast_${uid()}`;
+      upd({ bible: localBible.map(ent => ent.id===id ? setEntryImageForStyle(ent, effectiveVisualStyle, e.target.result, nextAssetId) : ent) });
+    };
+    r.readAsDataURL(file);
+  };
   const genImg = async (id) => {
     const p=aiPr[id]; if(!p?.trim())return;
     setGenId(id);
-    try{ const u=await aiImage(p); updB(id,"assetId",`ast_ai_${uid()}`); updB(id,"_prev",u); }
+    try{
+      const styledPrompt = applyVisualStylePrompt(p, resolveVisualStyle(node, linkedScene), "image");
+      const u=await aiImage(styledPrompt);
+      const nextAssetId = `ast_ai_${uid()}`;
+      upd({ bible: localBible.map(ent => ent.id===id ? setEntryImageForStyle(ent, effectiveVisualStyle, u, nextAssetId) : ent) });
+    }
     catch(e){alert(`🍌 ${e.message}`);}
     finally{setGenId(null);}
   };
@@ -1708,6 +1853,20 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
             {LIGHTING_STYLES.map(o=><option key={o} value={o}>{o}</option>)}
           </select>
           <input onMouseDown={e=>e.stopPropagation()} style={{ ...inp,fontSize:8 }} placeholder="lens" value={node.lens} onChange={e=>recompile({lens:e.target.value})} />
+        </div>
+
+        <div>
+          <span style={lbl}>VISUAL STYLE</span>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:4, alignItems:"center" }}>
+            <select onMouseDown={e=>e.stopPropagation()} style={sel} value={node.visualStyle || "inherit"} onChange={e=>upd({ visualStyle:e.target.value })}>
+              <option value="inherit">Inherit scene style</option>
+              {VISUAL_STYLES.filter(s => s !== "none").map(s => <option key={s} value={s}>{VISUAL_STYLE_PRESETS[s].label}</option>)}
+              <option value="none">None</option>
+            </select>
+            <span style={{ fontSize:6, color:th.t2, letterSpacing:"0.06em", whiteSpace:"nowrap" }}>
+              ACTIVE: {VISUAL_STYLE_PRESETS[effectiveVisualStyle]?.label || "None"}
+            </span>
+          </div>
         </div>
 
         {/* ── DURATION ─ prominent Kling-aware row ── */}
@@ -1856,11 +2015,11 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
                 <div key={e.id} style={{ background:th.card,border:`1px solid ${th.b0}`,borderRadius:4,padding:6 }}>
                   <div style={{ display:"flex",gap:6,marginBottom:5 }}>
                     {/* Thumb */}
-                    <div style={{ width:38,height:38,background:th.card3,border:`1px solid ${e.assetId?ac+"33":th.b0}`,borderRadius:3,flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                    <div style={{ width:38,height:38,background:th.card3,border:`1px solid ${((effectiveVisualStyle !== "none" ? entryStyleVariants(e)[effectiveVisualStyle]?.assetId : e.assetId) || resolveEntryImage(e, effectiveVisualStyle)) ? ac+"33" : th.b0}`,borderRadius:3,flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center" }}>
                       {genId===e.id
                         ? <Ico icon={Loader2} size={13} color="#3a4a22" style={{animation:"spin 0.7s linear infinite"}}/>
-                        : e._prev
-                          ? <img src={e._prev} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} />
+                        : resolveEntryImage(e, effectiveVisualStyle)
+                          ? <img src={resolveEntryImage(e, effectiveVisualStyle)} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} />
                           : <KindIcon kind={e.kind} size={13} />}
                     </div>
                     <div style={{ flex:1,display:"flex",flexDirection:"column",gap:3 }}>
@@ -1869,7 +2028,7 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
                         <input onMouseDown={e2=>e2.stopPropagation()} style={{ flex:1,...mkFBase(th),fontSize:8,padding:"3px 5px",color:uac }} placeholder="@tag" value={e.tag} onChange={e2=>updB(e.id,"tag",e2.target.value)} />
                         <button onMouseDown={e2=>e2.stopPropagation()} onClick={e2=>{e2.stopPropagation();delE(e.id);}} style={{ background:"transparent",border:`1px solid ${th.b0}`,color:th.t3,cursor:"pointer",fontSize:8,padding:"2px 4px",borderRadius:2 }}>✕</button>
                       </div>
-                      {e.assetId
+                      {(effectiveVisualStyle !== "none" ? entryStyleVariants(e)[effectiveVisualStyle]?.assetId : e.assetId) || resolveEntryImage(e, effectiveVisualStyle)
                         ? <div style={{ fontSize:6,color:uac,letterSpacing:"0.07em" }}>✓ {e.tag}</div>
                         : <div style={{ fontSize:6,color:th.t3,letterSpacing:"0.07em" }}>⚠ needs image ref</div>}
                     </div>
@@ -1988,18 +2147,20 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
   };
 
   const shotNode = node.shotId ? allNodes.find(n => n.id === node.shotId) : null;
+  const shotSceneNode = shotNode ? allNodes.find(n=>n.id===shotNode.sceneId) : null;
   const startFrameNode = node.startFrameNodeId ? allNodes.find(n => n.id === node.startFrameNodeId) : null;
   const endFrameNode   = node.endFrameNodeId   ? allNodes.find(n => n.id === node.endFrameNodeId)   : null;
   const refNodes = (node.refNodeIds||[]).map(id=>allNodes.find(n=>n.id===id)).filter(Boolean);
   // Merge shot → scene → global project bible (lowest priority), then filter to entries with images
   const _shotB  = shotNode?.bible||[];
-  const _sceneB = shotNode ? (allNodes.find(n=>n.id===shotNode.sceneId)?.bible||[]) : [];
+  const _sceneB = shotSceneNode?.bible||[];
   const _gb     = globalBible||[];
+  const activeVisualStyle = resolveVisualStyle(shotNode, shotSceneNode);
   const bibleMsgs = [
     ..._shotB,
     ..._sceneB.filter(s=>!_shotB.find(b=>b.tag===s.tag)),
     ..._gb.filter(g=>!_shotB.find(b=>b.tag===g.tag)&&!_sceneB.find(s=>s.tag===g.tag)),
-  ].filter(e => e._prev?.startsWith("data:"));
+  ].map(e => withResolvedEntryImage(e, activeVisualStyle)).filter(e => e._prev?.startsWith("data:"));
 
   const [veoStatus, setVeoStatus]   = useState("idle");
   const [veoOpName, setVeoOpName]   = useState(null);
@@ -2041,7 +2202,9 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
       // Build a synthetic shot-like object when no shot is wired
       // Falls back to "Cinematic shot" when no prompt is given (frame-only generation)
       const finalPrompt = effectivePrompt || "Cinematic shot";
-      const shotLike = shotNode || { compiledText: finalPrompt, how: finalPrompt, where: "" };
+      const shotLike = shotNode
+        ? { ...shotNode, visualStyle: resolveVisualStyle(shotNode, shotSceneNode) }
+        : { compiledText: finalPrompt, how: finalPrompt, where: "", visualStyle: "none" };
 
       const opName = await aiVeoCreate(shotLike, {
         aspect_ratio: node.aspect_ratio || "16:9",
@@ -2377,6 +2540,10 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
   const shotNodes = (node.shotIds || [])
     .map(id => allNodes.find(n => n.id === id))
     .filter(Boolean);
+  const styledShotNodes = shotNodes.map(sh => ({
+    ...sh,
+    visualStyle: resolveVisualStyle(sh, allNodes.find(n => n.id === sh.sceneId)),
+  }));
 
   // Resolve wired image reference nodes
   const imageRefNodes = (node.imageRefIds || [])
@@ -2405,7 +2572,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
       // For each shot: take its local bible entries PLUS any scene bible entries whose
       // tag appears in the shot's entityTags. Using entityTags as the filter prevents
       // characters from other shots leaking into the image_list.
-      const allBible = shotNodes
+      const allBible = styledShotNodes
         .flatMap(sh => {
           const sceneBible = allNodes.find(n => n.id === sh.sceneId)?.bible || [];
           const localBible = sh.bible || [];
@@ -2415,7 +2582,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             .filter(tag => !localTags.has(tag))
             .map(tag => sceneBible.find(e => e.tag === tag))
             .filter(Boolean);
-          return [...localBible, ...taggedSceneEntries];
+          return [...localBible, ...taggedSceneEntries].map(entry => withResolvedEntryImage(entry, sh.visualStyle));
         })
         .filter((e,i,a) => e._prev && a.findIndex(x => x._prev === e._prev) === i);
 
@@ -2424,9 +2591,9 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
         .map(n => n.generatedUrl)
         .filter(Boolean);
 
-      const taskId = await aiKlingCreate(shotNodes[0], allBible, {
-        multiShot:    shotNodes.length > 1,
-        sceneShots:   shotNodes,
+      const taskId = await aiKlingCreate(styledShotNodes[0], allBible, {
+        multiShot:    styledShotNodes.length > 1,
+        sceneShots:   styledShotNodes,
         aspect_ratio: node.aspect_ratio || "16:9",
         mode:         node.mode         || "pro",
         sound:        node.sound        || "off",
@@ -3173,6 +3340,7 @@ function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, o
   // Aspect ratio → CSS aspectRatio value map
   const arCss = { "1:1":"1/1", "16:9":"16/9", "9:16":"9/16", "4:3":"4/3", "3:2":"3/2" };
   const currentAr = node.aspect_ratio || "1:1";
+  const activeVisualStyle = resolveVisualStyle(linkedShot, linkedScene);
 
   // Merge entity bible: shot (highest) → scene only.
   // Global bible is NOT auto-injected — it pollutes unconnected nodes.
@@ -3196,12 +3364,13 @@ function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, o
     if(!node.prompt.trim())return;
     setBusy(true);
     try{
-      const refs = allBible.map(bibleToRef).filter(Boolean);
+      const refs = allBible.map(e => bibleToRef(e, activeVisualStyle)).filter(Boolean);
       let fullPrompt = node.prompt;
       if (refs.length > 0) {
         const refDesc = refs.map(r=>`${r.tag} (${r.kind}: ${r.name})`).join(", ");
         fullPrompt = `VISUAL REFERENCE IMAGES PROVIDED — maintain exact appearance of: ${refDesc}.\n\n${node.prompt}`;
       }
+      fullPrompt = applyVisualStylePrompt(fullPrompt, resolveVisualStyle(linkedShot, linkedScene), "image");
       const u = await aiImage(fullPrompt, refs, node.aspect_ratio||"1:1", node.resolution||"1K");
       upd({generatedUrl:u});
     }
@@ -3216,7 +3385,8 @@ function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, o
       const [header, data] = node.generatedUrl.split(",");
       const mimeType = header.match(/data:([^;]+)/)?.[1] || "image/jpeg";
       const refs = [{ mimeType, data, tag:"current", name:"Current Image", kind:"reference" }];
-      const u = await aiImage(`Modify this image: ${refinePrompt}`, refs, node.aspect_ratio||"1:1", node.resolution||"1K");
+      const styledRefinePrompt = applyVisualStylePrompt(`Modify this image: ${refinePrompt}`, resolveVisualStyle(linkedShot, linkedScene), "image");
+      const u = await aiImage(styledRefinePrompt, refs, node.aspect_ratio||"1:1", node.resolution||"1K");
       upd({generatedUrl:u});
       setRefinePrompt("");
     }
@@ -3283,22 +3453,22 @@ function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, o
             <div style={{ background:th.card, border:`1px solid ${ac}11`, borderRadius:3, padding:"5px 7px" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
                 <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.12em" }}>ENTITY REFERENCES</span>
-                <span style={{ fontSize:6, color:allBible.some(e=>e._prev)?ac:"#7f3d3d", letterSpacing:"0.08em" }}>
-                  {allBible.filter(e=>e._prev).length}/{allBible.length} IM REF
+                <span style={{ fontSize:6, color:allBible.some(e=>resolveEntryImage(e, activeVisualStyle))?ac:"#7f3d3d", letterSpacing:"0.08em" }}>
+                  {allBible.filter(e=>resolveEntryImage(e, activeVisualStyle)).length}/{allBible.length} IM REF
                 </span>
               </div>
               <div style={{ display:"flex", flexWrap:"wrap", gap:3 }}>
                 {allBible.map(e=>(
-                  <div key={e.id} style={{ display:"flex",alignItems:"center",gap:3,background:e._prev?th.card2:th.card3,border:`1px solid ${e._prev?ac+"33":"#7f3d3d44"}`,borderRadius:10,padding:"2px 6px" }}>
-                    {e._prev
-                      ?<img src={e._prev} alt="" style={{ width:14,height:14,borderRadius:"50%",objectFit:"cover",border:`1px solid ${ac}55` }}/>
+                  <div key={e.id} style={{ display:"flex",alignItems:"center",gap:3,background:resolveEntryImage(e, activeVisualStyle)?th.card2:th.card3,border:`1px solid ${resolveEntryImage(e, activeVisualStyle)?ac+"33":"#7f3d3d44"}`,borderRadius:10,padding:"2px 6px" }}>
+                    {resolveEntryImage(e, activeVisualStyle)
+                      ?<img src={resolveEntryImage(e, activeVisualStyle)} alt="" style={{ width:14,height:14,borderRadius:"50%",objectFit:"cover",border:`1px solid ${ac}55` }}/>
                       :<Ico icon={AlertTriangle} size={8} color="#7f3d3d"/>}
-                    <span style={{ fontSize:6, color:e._prev?ac:"#7f3d3d", letterSpacing:"0.06em" }}>{e.tag}</span>
+                    <span style={{ fontSize:6, color:resolveEntryImage(e, activeVisualStyle)?ac:"#7f3d3d", letterSpacing:"0.06em" }}>{e.tag}</span>
                     <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.04em" }}>{e.name}</span>
                   </div>
                 ))}
               </div>
-              {allBible.some(e=>!e._prev) && (
+              {allBible.some(e=>!resolveEntryImage(e, activeVisualStyle)) && (
                 <div style={{ fontSize:6, color:"#7f3d3d", marginTop:4, letterSpacing:"0.06em" }}>⚠ entities without image ref won't be visually preserved</div>
               )}
             </div>
@@ -3412,7 +3582,7 @@ function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, o
                   <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
                     {(globalBible||[]).map(e=>(
                       <button key={e.id} onMouseDown={ev=>ev.stopPropagation()}
-                        onClick={ev=>{ev.stopPropagation();onSaveToBible(e.id,node.generatedUrl);setSavingToBible(false);}}
+                        onClick={ev=>{ev.stopPropagation();onSaveToBible(e.id,node.generatedUrl,activeVisualStyle);setSavingToBible(false);}}
                         style={{ display:"flex", alignItems:"center", gap:7, padding:"5px 7px",
                           background:th.card2, border:`1px solid ${th.b0}`, borderRadius:4,
                           cursor:"pointer", textAlign:"left", transition:"border-color 0.1s" }}
@@ -3420,15 +3590,15 @@ function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, o
                         onMouseLeave={ev=>{ev.currentTarget.style.borderColor=th.b0;}}>
                         <div style={{ width:20,height:20,borderRadius:3,overflow:"hidden",flexShrink:0,
                           background:th.card3,border:`1px solid ${th.b0}`,display:"flex",alignItems:"center",justifyContent:"center" }}>
-                          {e._prev
-                            ?<img src={e._prev} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                          {resolveEntryImage(e, activeVisualStyle)
+                            ?<img src={resolveEntryImage(e, activeVisualStyle)} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                             :<KindIcon kind={e.kind} size={11}/>}
                         </div>
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontSize:8, color:ac, fontWeight:700, letterSpacing:"0.06em" }}>{e.tag}</div>
                           <div style={{ fontSize:7, color:th.t2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.name}</div>
                         </div>
-                        {e._prev && <span style={{ fontSize:6, color:ac }}>✓</span>}
+                        {resolveEntryImage(e, activeVisualStyle) && <span style={{ fontSize:6, color:ac }}>✓</span>}
                       </button>
                     ))}
                   </div>
@@ -3470,8 +3640,8 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode }) {
 
   const getNodeContent = (n) => {
     if (!n) return {};
-    if (n.type === T.SHOT)  return { how:n.how, where:n.where, when:n.when, cameraSize:n.cameraSize, cameraAngle:n.cameraAngle, cameraMovement:n.cameraMovement, lighting:n.lighting, lens:n.lens, visualGoal:n.visualGoal, durationSec:n.durationSec, sourceAnchor:n.sourceAnchor, dialogue:n.dialogue };
-    if (n.type === T.SCENE) return { sceneText:n.sceneText, cinematicStyle:n.cinematicStyle };
+    if (n.type === T.SHOT)  return { how:n.how, where:n.where, when:n.when, cameraSize:n.cameraSize, cameraAngle:n.cameraAngle, cameraMovement:n.cameraMovement, lighting:n.lighting, lens:n.lens, visualGoal:n.visualGoal, visualStyle:n.visualStyle, durationSec:n.durationSec, sourceAnchor:n.sourceAnchor, dialogue:n.dialogue };
+    if (n.type === T.SCENE) return { sceneText:n.sceneText, cinematicStyle:n.cinematicStyle, visualStyle:n.visualStyle };
     if (n.type === T.IMAGE) return { prompt:n.prompt };
     if (n.type === T.KLING || n.type === T.VEO) return { manualPrompt:n.manualPrompt };
     return {};
@@ -7469,7 +7639,7 @@ const TEMPLATES = [
 // ─── SUPABASE STORAGE: bible image upload ─────────────────────────────────────
 // Converts a data-URL to a Blob and stores it in the "bible-images" bucket.
 // Returns the resulting public URL, or "" on failure (so callers degrade gracefully).
-async function uploadBibleImage(userId, projectId, entryId, dataUrl) {
+async function uploadBibleImage(userId, projectId, entryId, dataUrl, variantKey = "base") {
   try {
     // Ensure the bucket exists — no-op if it already does
     await supabase.storage.createBucket("bible-images", { public: true }).catch(() => {});
@@ -7481,7 +7651,8 @@ async function uploadBibleImage(userId, projectId, entryId, dataUrl) {
     for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
     const blob = new Blob([arr], { type: mime });
     const ext  = mime.split("/")[1]?.split("+")[0] || "jpg";
-    const path = `${userId}/${projectId}/${entryId}.${ext}`;
+    const safeVariant = String(variantKey || "base").replace(/[^a-z0-9_-]/gi, "_");
+    const path = `${userId}/${projectId}/${entryId}_${safeVariant}.${ext}`;
     const { error } = await supabase.storage
       .from("bible-images")
       .upload(path, blob, { upsert: true, contentType: mime });
@@ -7561,10 +7732,7 @@ export default function App() {
       // Strip base64 image data before persisting — data: URLs can be several MB
       // and will exceed localStorage's ~5 MB quota, crashing the app.
       // Text metadata (name, tag, description, notes) is always saved; images are session-only.
-      const strip = (list) => (list||[]).map(e => ({
-        ...e,
-        _imgUrl: e._imgUrl?.startsWith("data:") ? "" : (e._imgUrl||""),
-      }));
+      const strip = (list) => (list||[]).map(stripBibleEntryForStorage);
       const toSave = {
         characters: strip(bible.characters),
         objects:    strip(bible.objects),
@@ -7582,7 +7750,7 @@ export default function App() {
     ...(bible.characters||[]),
     ...(bible.objects||[]),
     ...(bible.locations||[]),
-  ].map(e => ({ ...e, _prev: e._imgUrl || e._prev || "" }));
+  ].map(e => ({ ...e, _prev: resolveEntryImage(e, "none") }));
 
   // ── Supabase: save project (debounced) ──────────────────────────────────────
   const saveProject = useCallback(async (nodesVal, posVal, bibleVal, projectId, projectName) => {
@@ -7593,32 +7761,59 @@ export default function App() {
     // - data URL  → upload to Supabase Storage, return public URL
     // - remote URL → pass through unchanged
     // - empty      → ""
-    const resolveImgUrl = (e) => {
-      if (!e._imgUrl) return Promise.resolve("");
-      if (e._imgUrl.startsWith("data:")) return uploadBibleImage(user.id, projectId, e.id, e._imgUrl);
-      return Promise.resolve(e._imgUrl);
+    const resolveImgUrl = (url, entryId, variantKey = "base") => {
+      if (!url) return Promise.resolve("");
+      if (url.startsWith("data:")) return uploadBibleImage(user.id, projectId, entryId, url, variantKey);
+      return Promise.resolve(url);
+    };
+    const resolveBibleEntry = async (entry) => {
+      const resolvedBase = await resolveImgUrl(entry._imgUrl || entry._prev || "", entry.id, "base");
+      const resolvedVariants = await Promise.all(
+        Object.entries(entryStyleVariants(entry)).map(async ([style, variant]) => {
+          const src = typeof variant === "string" ? variant : (variant?._imgUrl || variant?._prev || "");
+          const resolved = await resolveImgUrl(src, entry.id, style);
+          if (typeof variant === "string") return [style, resolved];
+          return [style, { ...variant, _imgUrl: resolved, _prev: resolved }];
+        })
+      );
+      return {
+        ...entry,
+        _imgUrl: resolvedBase,
+        _prev: resolvedBase,
+        _styleVariants: Object.fromEntries(resolvedVariants),
+      };
     };
 
-    await supabase.from("projects").upsert({
-      id:        projectId,
-      user_id:   user.id,
-      name:      projectName || "Untitled Project",
-      nodes:     nodesVal,
-      positions: posVal,
-    });
-
-    // Flatten all kinds, resolve images in parallel, then upsert
     const allKinds = [
       ...(bibleVal.characters||[]).map(e=>({ ...e, kind:"character" })),
       ...(bibleVal.objects||[]).map(e=>({ ...e, kind:"object"    })),
       ...(bibleVal.locations||[]).map(e=>({ ...e, kind:"location" })),
     ];
-    const resolvedUrls = await Promise.all(allKinds.map(resolveImgUrl));
+    const resolvedEntries = await Promise.all(allKinds.map(resolveBibleEntry));
+    const resolvedBible = {
+      characters: resolvedEntries.filter(e => e.kind === "character").map(({ kind, ...rest }) => rest),
+      objects:    resolvedEntries.filter(e => e.kind === "object").map(({ kind, ...rest }) => rest),
+      locations:  resolvedEntries.filter(e => e.kind === "location").map(({ kind, ...rest }) => rest),
+    };
+    const serializedNodes = (nodesVal || []).map(n =>
+      n.bible?.length
+        ? { ...n, bible: n.bible.map(stripBibleEntryForStorage) }
+        : n
+    );
+
+    await supabase.from("projects").upsert({
+      id:        projectId,
+      user_id:   user.id,
+      name:      projectName || "Untitled Project",
+      nodes:     serializedNodes,
+      positions: posVal,
+      data:      { bible: resolvedBible },
+    });
 
     await supabase.from("bible_entries").delete().eq("user_id", user.id).eq("project_id", projectId);
     const allEntries = allKinds.map((e, i) => {
-      const { _imgUrl, ...rest } = e;
-      return { ...rest, user_id: user.id, project_id: projectId, img_url: resolvedUrls[i] };
+      const { _imgUrl, _styleVariants, ...rest } = resolvedEntries[i];
+      return { ...rest, user_id: user.id, project_id: projectId, img_url: _imgUrl || "" };
     });
     if (allEntries.length) await supabase.from("bible_entries").upsert(allEntries);
     setSaving(false);
@@ -7640,44 +7835,79 @@ export default function App() {
     if (!data) return;
     const rawNodes = data.nodes?.length ? data.nodes : [mkScene()];
     setPos(data.positions || {});
+    const hydrateUrl = async (url) => {
+      let nextUrl = url || "";
+      if (nextUrl.startsWith("http")) {
+        try {
+          const resp = await fetch(nextUrl);
+          const blob = await resp.blob();
+          nextUrl = await new Promise(res => {
+            const r = new FileReader();
+            r.onload = ev => res(ev.target.result);
+            r.readAsDataURL(blob);
+          });
+        } catch { /* keep the remote URL as fallback */ }
+      }
+      return nextUrl;
+    };
+    const hydrateEntry = async (entry) => {
+      const baseUrl = await hydrateUrl(entry._imgUrl || entry._prev || "");
+      const hydratedVariants = await Promise.all(
+        Object.entries(entryStyleVariants(entry)).map(async ([style, variant]) => {
+          const src = typeof variant === "string" ? variant : (variant?._imgUrl || variant?._prev || "");
+          const hydrated = await hydrateUrl(src);
+          if (typeof variant === "string") return [style, hydrated];
+          return [style, { ...variant, _imgUrl: hydrated, _prev: hydrated }];
+        })
+      );
+      return { ...entry, _imgUrl: baseUrl, _prev: baseUrl, _styleVariants: Object.fromEntries(hydratedVariants) };
+    };
+    if (data.data?.bible) {
+      const projectBible = data.data.bible;
+      const [characters, objects, locations] = await Promise.all([
+        Promise.all((projectBible.characters||[]).map(hydrateEntry)),
+        Promise.all((projectBible.objects||[]).map(hydrateEntry)),
+        Promise.all((projectBible.locations||[]).map(hydrateEntry)),
+      ]);
+      setBible({ characters, objects, locations });
+
+      const tagToEntry = {};
+      [...characters, ...objects, ...locations].forEach(e => { if (e.tag) tagToEntry[e.tag] = e; });
+      const syncedNodes = rawNodes.map(n => {
+        if (!n.bible?.length) return n;
+        const synced = n.bible.map(b => tagToEntry[b.tag]
+          ? { ...b, ...tagToEntry[b.tag], _prev: resolveEntryImage(tagToEntry[b.tag], "none") }
+          : b);
+        return { ...n, bible: synced };
+      });
+      setNodes(syncedNodes);
+      setCurrentProject({ id: project.id, name: project.name });
+      setProjectPickerOpen(false);
+      return;
+    }
     // Load bible — fetch remote images and convert to data URLs so generation
     // code (which filters for "data:") works immediately after reload.
     const { data: bEntries } = await supabase.from("bible_entries").select("*").eq("project_id", project.id);
     if (bEntries) {
-      const hydrate = async (e) => {
-        let _imgUrl = e.img_url || "";
-        if (_imgUrl.startsWith("http")) {
-          try {
-            const resp = await fetch(_imgUrl);
-            const blob = await resp.blob();
-            _imgUrl = await new Promise(res => {
-              const r = new FileReader();
-              r.onload = ev => res(ev.target.result);
-              r.readAsDataURL(blob);
-            });
-          } catch { /* keep the remote URL as fallback */ }
-        }
-        return { ...e, _imgUrl };
-      };
       const [characters, objects, locations] = await Promise.all([
-        Promise.all(bEntries.filter(e=>e.kind==="character").map(hydrate)),
-        Promise.all(bEntries.filter(e=>e.kind==="object").map(hydrate)),
-        Promise.all(bEntries.filter(e=>e.kind==="location").map(hydrate)),
+        Promise.all(bEntries.filter(e=>e.kind==="character").map(hydrateEntry)),
+        Promise.all(bEntries.filter(e=>e.kind==="object").map(hydrateEntry)),
+        Promise.all(bEntries.filter(e=>e.kind==="location").map(hydrateEntry)),
       ]);
       setBible({ characters, objects, locations });
 
       // Sync scene/shot node bible entries with the freshly hydrated global bible.
       // Nodes store bible entries as snapshots — their _prev may be stale or empty.
       // Build a tag → hydrated _imgUrl map and patch every matching entry in-place.
-      const tagToImg = {};
+      const tagToEntry = {};
       [...characters, ...objects, ...locations].forEach(e => {
-        if (e.tag && e._imgUrl) tagToImg[e.tag] = e._imgUrl;
+        if (e.tag) tagToEntry[e.tag] = e;
       });
       const syncedNodes = rawNodes.map(n => {
         if (!n.bible?.length) return n;
-        const synced = n.bible.map(b =>
-          tagToImg[b.tag] ? { ...b, _prev: tagToImg[b.tag] } : b
-        );
+        const synced = n.bible.map(b => tagToEntry[b.tag]
+          ? { ...b, ...tagToEntry[b.tag], _prev: resolveEntryImage(tagToEntry[b.tag], "none") }
+          : b);
         return { ...n, bible: synced };
       });
       setNodes(syncedNodes);
@@ -7754,6 +7984,7 @@ export default function App() {
       const sc = mkScene();
       sc.sceneText      = s.sceneText      || "";
       sc.cinematicStyle = s.cinematicStyle || "drama";
+      sc.visualStyle    = s.visualStyle    || "none";
       sc.shotCount      = s.shotCount      || 3;
       sc.sceneHeading   = s.heading        || "";
       sc.dialogueLines  = s.dialogueLines  || [];
@@ -7907,14 +8138,14 @@ export default function App() {
   const linkShot = (shotId, sceneId) => setNodes(prev=>prev.map(n=>n.id===shotId?{...n,sceneId}:n));
 
   // Save a generated image URL into a global bible entry as its visual reference
-  const saveToBible = useCallback((entryId, imgUrl) => {
+  const saveToBible = useCallback((entryId, imgUrl, visualStyle = "none") => {
     // Update global bible entry
     let savedTag = null;
     setBible(prev => {
       const upd = (list) => list.map(e => {
         if (e.id !== entryId) return e;
         savedTag = e.tag;
-        return { ...e, _imgUrl: imgUrl, _prev: imgUrl };
+        return setEntryImageForStyle(e, visualStyle, imgUrl);
       });
       return { characters: upd(prev.characters||[]), objects: upd(prev.objects||[]), locations: upd(prev.locations||[]) };
     });
@@ -7922,7 +8153,7 @@ export default function App() {
     if (savedTag) {
       setNodes(prev => prev.map(n => {
         if (!n.bible?.length) return n;
-        const synced = n.bible.map(b => b.tag === savedTag ? { ...b, _prev: imgUrl } : b);
+        const synced = n.bible.map(b => b.tag === savedTag ? setEntryImageForStyle(b, visualStyle, imgUrl) : b);
         return { ...n, bible: synced };
       }));
     }
@@ -7942,23 +8173,25 @@ export default function App() {
       ...(lBible.characters||[]),
       ...(lBible.objects||[]),
       ...(lBible.locations||[]),
-    ].map(e => ({ ...e, _prev: e._imgUrl || e._prev || "" }));
+    ].map(e => ({ ...e, _prev: resolveEntryImage(e, "none") }));
     for (const n of imgNodes) {
       try {
         const linkedShot  = n.shotId  ? lNodes.find(x=>x.id===n.shotId)  : null;
         const linkedScene = n.sceneId ? lNodes.find(x=>x.id===n.sceneId) : (linkedShot?.sceneId ? lNodes.find(x=>x.id===linkedShot.sceneId) : null);
+        const activeVisualStyle = resolveVisualStyle(linkedShot, linkedScene);
         const sb = linkedScene?.bible || [];
         const shb = linkedShot?.bible || [];
         const allB = [
           ...shb,
           ...sb.filter(s=>!shb.find(b=>b.tag===s.tag)),
         ];
-        const refs = allB.map(bibleToRef).filter(Boolean);
+        const refs = allB.map(b => bibleToRef(b, activeVisualStyle)).filter(Boolean);
         let prompt = n.prompt;
         if (refs.length > 0) {
           const desc = refs.map(r=>`${r.tag} (${r.kind}: ${r.name})`).join(", ");
           prompt = `VISUAL REFERENCE IMAGES PROVIDED — maintain exact appearance of: ${desc}.\n\n${n.prompt}`;
         }
+        prompt = applyVisualStylePrompt(prompt, activeVisualStyle, "image");
         const url = await aiImage(prompt, refs, n.aspect_ratio||"1:1", n.resolution||"1K");
         updNode(n.id, { generatedUrl: url });
       } catch(e) { console.warn("Batch gen failed for", n.id, e.message); }
