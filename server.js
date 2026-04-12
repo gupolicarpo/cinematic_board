@@ -132,23 +132,47 @@ app.get("/api/kling/video/:taskId", async (req, res) => {
 });
 
 // GET /api/kling/voices — return static voice list
-// Kling does NOT expose a voices-list API endpoint. Every real integration hardcodes these IDs.
-// The old attempt to call GET /v1/videos/lip-sync/voices was being routed by Kling to its
-// task-lookup handler (GET /v1/videos/lip-sync/{task_id}) → 400 "Task not found: voices".
+// Source: Kling AI official Voice Guide (verified IDs + languages)
+// voice_language MUST match what Kling's TTS API expects — wrong language → 400
 const KLING_VOICES = [
-  { voice_id: "commercial_lady_en_f-v1", voice_name: "Female · Commercial",  voice_language: "en", voice_gender: "female" },
-  { voice_id: "chat1_female_new-3",      voice_name: "Female · Chat",         voice_language: "en", voice_gender: "female" },
-  { voice_id: "genshin_kirara",          voice_name: "Female · Kirara",       voice_language: "en", voice_gender: "female" },
-  { voice_id: "reader_en_f-v1",          voice_name: "Female · Reader",       voice_language: "en", voice_gender: "female" },
-  { voice_id: "oversea_male1",           voice_name: "Male · Overseas",       voice_language: "en", voice_gender: "male"   },
-  { voice_id: "uk_man2",                 voice_name: "Male · UK",             voice_language: "en", voice_gender: "male"   },
-  { voice_id: "uk_boy1",                 voice_name: "Male · UK Young",       voice_language: "en", voice_gender: "male"   },
-  { voice_id: "uk_oldman3",              voice_name: "Male · UK Older",       voice_language: "en", voice_gender: "male"   },
-  { voice_id: "reader_en_m-v1",          voice_name: "Male · Reader",         voice_language: "en", voice_gender: "male"   },
-  { voice_id: "ai_shatang",              voice_name: "ZH · Shatang (F)",      voice_language: "zh", voice_gender: "female" },
-  { voice_id: "ai_kaiya",                voice_name: "ZH · Kaiya (F)",        voice_language: "zh", voice_gender: "female" },
-  { voice_id: "ai_chenjiahao_712",       voice_name: "ZH · Chenjiahao (M)",   voice_language: "zh", voice_gender: "male"   },
-  { voice_id: "ai_huangzhong_712",       voice_name: "ZH · Huangzhong (M)",   voice_language: "zh", voice_gender: "male"   },
+  // ── English voices ──────────────────────────────────────────────────────────
+  { voice_id: "commercial_lady_en_f-v1", voice_name: "EN · Commercial Lady",  voice_language: "en", voice_gender: "female" },
+  { voice_id: "reader_en_m-v1",          voice_name: "EN · The Reader",        voice_language: "en", voice_gender: "male"   },
+  { voice_id: "oversea_male1",           voice_name: "EN · Anchor",            voice_language: "en", voice_gender: "male"   },
+  { voice_id: "uk_man2",                 voice_name: "EN · Crag (UK Male)",    voice_language: "en", voice_gender: "male"   },
+  { voice_id: "uk_boy1",                 voice_name: "EN · Bud (UK Young)",    voice_language: "en", voice_gender: "male"   },
+  { voice_id: "calm_story1",             voice_name: "EN · Lore",              voice_language: "en", voice_gender: "male"   },
+  { voice_id: "ai_huangzhong_712",       voice_name: "EN · Beacon",            voice_language: "en", voice_gender: "male"   },
+  { voice_id: "ai_laoguowang_712",       voice_name: "EN · Titan",             voice_language: "en", voice_gender: "male"   },
+  { voice_id: "ai_huangyaoshi_712",      voice_name: "EN · Rock",              voice_language: "en", voice_gender: "male"   },
+  { voice_id: "genshin_vindi2",          voice_name: "EN · Sunny",             voice_language: "en", voice_gender: "male"   },
+  { voice_id: "chat1_female_new-3",      voice_name: "EN · Tender",            voice_language: "en", voice_gender: "female" },
+  { voice_id: "chat_0407_5-1",           voice_name: "EN · Siren",             voice_language: "en", voice_gender: "female" },
+  { voice_id: "girlfriend_4_speech02",   voice_name: "EN · Melody",            voice_language: "en", voice_gender: "female" },
+  { voice_id: "genshin_kirara",          voice_name: "EN · Dove",              voice_language: "en", voice_gender: "female" },
+  { voice_id: "genshin_klee2",           voice_name: "EN · Peppy",             voice_language: "en", voice_gender: "female" },
+  { voice_id: "ai_shatang",             voice_name: "EN · Blossom",            voice_language: "en", voice_gender: "female" },
+  { voice_id: "chengshu_jiejie",         voice_name: "EN · Grace",             voice_language: "en", voice_gender: "female" },
+  { voice_id: "you_pingjing",            voice_name: "EN · Helen",             voice_language: "en", voice_gender: "female" },
+  { voice_id: "cartoon-boy-07",          voice_name: "EN · Zippy",             voice_language: "en", voice_gender: "male"   },
+  { voice_id: "cartoon-girl-01",         voice_name: "EN · Sprite",            voice_language: "en", voice_gender: "female" },
+  { voice_id: "laopopo_speech02",        voice_name: "EN · Prattle",           voice_language: "en", voice_gender: "female" },
+  { voice_id: "heainainai_speech02",     voice_name: "EN · Hearth",            voice_language: "en", voice_gender: "female" },
+  { voice_id: "AOT",                     voice_name: "EN · Ace",               voice_language: "en", voice_gender: "male"   },
+  { voice_id: "zhinen_xuesheng",         voice_name: "EN · Sage",              voice_language: "en", voice_gender: "male"   },
+  { voice_id: "ai_kaiya",                voice_name: "EN · Shine",             voice_language: "en", voice_gender: "male"   },
+  { voice_id: "ai_chenjiahao_712",       voice_name: "EN · Lyric",             voice_language: "en", voice_gender: "male"   },
+  // ── Chinese voices ──────────────────────────────────────────────────────────
+  { voice_id: "ai_shatang",              voice_name: "ZH · 青春少女",           voice_language: "zh", voice_gender: "female" },
+  { voice_id: "genshin_kirara",          voice_name: "ZH · 元气少女",           voice_language: "zh", voice_gender: "female" },
+  { voice_id: "chat1_female_new-3",      voice_name: "ZH · 温柔姐姐",           voice_language: "zh", voice_gender: "female" },
+  { voice_id: "ai_kaiya",                voice_name: "ZH · 阳光男生",           voice_language: "zh", voice_gender: "male"   },
+  { voice_id: "ai_chenjiahao_712",       voice_name: "ZH · 文艺小哥",           voice_language: "zh", voice_gender: "male"   },
+  { voice_id: "ai_laoguowang_712",       voice_name: "ZH · 严肃上司",           voice_language: "zh", voice_gender: "male"   },
+  { voice_id: "uk_oldman3",             voice_name: "ZH · 唠叨爷爷",            voice_language: "zh", voice_gender: "male"   },
+  { voice_id: "diyinnansang_DB_CN_M_04-v2", voice_name: "ZH · 新闻播报男",     voice_language: "zh", voice_gender: "male"   },
+  { voice_id: "yizhipiannan-v1",         voice_name: "ZH · 译制片男",           voice_language: "zh", voice_gender: "male"   },
+  { voice_id: "daopianyansang-v1",       voice_name: "ZH · 刀片烟嗓",           voice_language: "zh", voice_gender: "male"   },
 ];
 app.get("/api/kling/voices", (req, res) => {
   res.json({ code: 0, data: { voices: KLING_VOICES } });
@@ -161,10 +185,14 @@ app.get("/api/kling/voices", (req, res) => {
 // returns Kling task: poll /api/kling/tts/:taskId → task_result.audios[0].{ id, url, duration }
 app.post("/api/kling/tts", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
-  const { text, voice_id, voice_language = "en", voice_speed = 1.0 } = req.body;
+  const { text, voice_id, voice_speed = 1.0 } = req.body;
   if (!text || !voice_id) return res.status(400).send("text and voice_id required");
+  // Always look up the correct voice_language from the official voice table.
+  // Client-supplied language is ignored — wrong language is the #1 cause of 400 errors.
+  const voiceEntry = KLING_VOICES.find(v => v.voice_id === voice_id);
+  const voice_language = voiceEntry?.voice_language || "en";
   const body = { text: text.slice(0, 1000), voice_id, voice_language, voice_speed };
-  console.log("[tts] text len:", text.length, "voice:", voice_id, "lang:", voice_language);
+  console.log("[tts] text len:", text.length, "voice:", voice_id, "lang:", voice_language, voiceEntry ? "✓" : "⚠ unknown voice_id");
   try {
     const r = await post("api-singapore.klingai.com", "/v1/audio/tts",
       { "Authorization": `Bearer ${klingJWT()}` }, body);

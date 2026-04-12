@@ -2498,7 +2498,10 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ text, voice_id, voice_language: "en" }),
             });
-            if (!ttsRes.ok) throw new Error(`TTS request failed: ${ttsRes.status}`);
+            if (!ttsRes.ok) {
+              const errBody = await ttsRes.text().catch(() => "");
+              throw new Error(`TTS request failed: ${ttsRes.status} — ${errBody.slice(0, 200)}`);
+            }
             const ttsData = await ttsRes.json();
             if (ttsData.code && ttsData.code !== 0) throw new Error(`TTS error ${ttsData.code}: ${ttsData.message}`);
             // Fast-path: some Kling TTS responses complete synchronously
