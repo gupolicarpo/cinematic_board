@@ -95,6 +95,65 @@ function detectSpeakers(text) {
   return [...speakers];
 }
 
+function parseDialogueSegments(text) {
+  if (!text) return [];
+  const segments = [];
+  let curSpeaker = null;
+  let curLines = [];
+  const flush = () => {
+    const cleaned = curLines.join(" ").replace(/\s+/g, " ").trim();
+    if (curSpeaker && cleaned) segments.push({ speaker: curSpeaker, text: cleaned });
+    curLines = [];
+  };
+  for (const rawLine of text.split("\n")) {
+    const t = rawLine.trim();
+    if (!t) continue;
+    if (/^[A-Z][A-Z0-9\s.'"\-]+(\s*\([^)]*\))?\s*$/.test(t)) {
+      flush();
+      curSpeaker = t.replace(/\s*\([^)]*\)\s*$/, "").trim();
+    } else if (/^\([^)]+\)$/.test(t)) {
+      // Stage direction — ignore
+    } else if (curSpeaker) {
+      curLines.push(t);
+    }
+  }
+  flush();
+  return segments;
+}
+
+function buildKlingShotPlan(shots, multiShot = false) {
+  if (!multiShot) {
+    const shot = shots?.[0];
+    if (!shot) return [];
+    const durationSec = Math.max(3, Math.min(15, shot.durationSec || 5));
+    return [{ shot, durationSec, startSec: 0, endSec: durationSec }];
+  }
+
+  const filteredShots = (shots || []).filter(s => (s.compiledText || s.how)?.trim()).slice(0, 6);
+  if (filteredShots.length === 0) return [];
+
+  let durs = filteredShots.map(sh => Math.max(1, Math.round(sh.durationSec || 5)));
+  let total = durs.reduce((a, b) => a + b, 0);
+
+  if (total > 15) {
+    durs = durs.map(d => Math.max(1, Math.round((d / total) * 15)));
+    const newTotal = durs.reduce((a, b) => a + b, 0);
+    durs[durs.length - 1] += 15 - newTotal;
+    total = 15;
+  }
+  if (total < 3) {
+    durs[durs.length - 1] += 3 - total;
+  }
+
+  let cursor = 0;
+  return filteredShots.map((shot, i) => {
+    const durationSec = durs[i];
+    const startSec = cursor;
+    cursor += durationSec;
+    return { shot, durationSec, startSec, endSec: cursor };
+  });
+}
+
 function compileShotText(s) {
   const tags = s.entityTags?.length ? s.entityTags.join(" ") : "";
   const base = `${capitalize(s.cameraSize)} cinematic shot at ${s.when}, ${s.cameraAngle}, ${humanizeMove(s.cameraMovement)}, lens ${s.lens}, ${humanizeLighting(s.lighting)}.${tags ? " "+tags : ""} ${s.how} in ${s.where}. Visual goal: ${s.visualGoal}.`;
@@ -860,35 +919,19 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
 
   if (multiShot && sceneShots.length > 0) {
     // ── MULTI-SHOT MODE ─────────────────────────────────────────────────────
-    const shots = sceneShots.filter(s => (s.compiledText || s.how)?.trim()).slice(0, 6);
+    const shotPlan = buildKlingShotPlan(sceneShots, true);
+    const shots = shotPlan.map(p => p.shot);
     if (shots.length === 0) throw new Error("No shots with prompts found for multi-shot.");
+    const total = shotPlan.reduce((sum, p) => sum + p.durationSec, 0);
 
-    // Compute individual durations (min 1s each)
-    let durs = shots.map(sh => Math.max(1, Math.round(sh.durationSec || 5)));
-    let total = durs.reduce((a, b) => a + b, 0);
-
-    // Scale down if total exceeds 15s
-    if (total > 15) {
-      durs = durs.map(d => Math.max(1, Math.round((d / total) * 15)));
-      // Fix rounding: adjust last element so sum is exactly 15
-      const newTotal = durs.reduce((a, b) => a + b, 0);
-      durs[durs.length - 1] += 15 - newTotal;
-      total = 15;
-    }
-    // Pad up to minimum 3s total
-    if (total < 3) {
-      durs[durs.length - 1] += 3 - total;
-      total = 3;
-    }
-
-    const multi_prompt = shots.map((sh, i) => {
+    const multi_prompt = shotPlan.map(({ shot: sh, durationSec }, i) => {
       const raw = (sh.compiledText || `${sh.how || ""} in ${sh.where || ""}`).trim();
       let text = injectRefs(raw || `Shot ${i + 1}`);
       // On the first shot, anchor visual continuity to the previous video
       if (i === 0 && prevVideoUrl) text = `<<<video_1>>> ${text}`;
       // Prepend image ref tags on the first shot so Kling uses them as visual references
       if (i === 0 && refTagStr) text = `${refTagStr} ${text}`;
-      return { index: i + 1, prompt: text.slice(0, 512), duration: String(durs[i]) };
+      return { index: i + 1, prompt: text.slice(0, 512), duration: String(durationSec) };
     });
 
     body = {
@@ -912,7 +955,7 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
       model_name:   "kling-v3-omni",
       multi_shot:   false,
       prompt:       prevVideoUrl ? `<<<video_1>>> ${promptFinal}` : promptFinal,
-      duration:     String(Math.max(3, Math.min(15, shot.durationSec || 5))),
+      duration:     String(buildKlingShotPlan([shot], false)[0]?.durationSec || 5),
       aspect_ratio,
       mode,
       sound: prevVideoUrl ? "off" : sound,  // API requires sound:off when video_list is set
@@ -2448,7 +2491,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
       if (shouldLipsync) {
         setKlingLipsyncErr("");
         try {
-          const computeAdvancedTiming = ({ faceStartMs, faceEndMs, audioDurationMs, videoDurationMs, speaker }) => {
+          const computeAdvancedTiming = ({ faceStartMs, faceEndMs, windowStartMs = 0, windowEndMs = videoDurationMs, audioDurationMs, videoDurationMs, speaker }) => {
             const SAFETY_MS = 120;
             if (!Number.isFinite(audioDurationMs) || audioDurationMs < 2000) {
               throw new Error(`Audio for ${speaker} is shorter than 2s, which Kling advanced lipsync rejects`);
@@ -2460,14 +2503,15 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
               throw new Error(`Missing face timing for ${speaker}`);
             }
 
-            const maxClipDurationMs = Math.max(0, videoDurationMs - SAFETY_MS);
+            const maxClipDurationMs = Math.max(0, Math.min(videoDurationMs - SAFETY_MS, windowEndMs - windowStartMs));
             const clipDurationMs = Math.min(audioDurationMs, maxClipDurationMs);
             if (clipDurationMs < 2000) {
               throw new Error(`Cropped audio for ${speaker} would be shorter than 2s`);
             }
 
-            const minInsertTime = Math.max(0, faceStartMs - (clipDurationMs - 2000));
-            const maxInsertTime = Math.min(maxClipDurationMs - clipDurationMs, faceEndMs - 2000);
+            const maxVideoInsertTime = Math.max(0, videoDurationMs - SAFETY_MS - clipDurationMs);
+            const minInsertTime = Math.max(0, windowStartMs, faceStartMs - (clipDurationMs - 2000));
+            const maxInsertTime = Math.min(maxVideoInsertTime, windowEndMs - clipDurationMs, faceEndMs - 2000);
             if (maxInsertTime < minInsertTime) {
               throw new Error(`Face for ${speaker} is not visible long enough for a 2s lipsync overlap`);
             }
@@ -2505,6 +2549,25 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
           }
           const speakers = Object.keys(speakerLines);
           if (speakers.length === 0) { await runSimpleLipsync(url); return; }
+          const shotPlan = buildKlingShotPlan(shotNodes, shotNodes.length > 1);
+          const segmentPlansBase = [];
+          for (const { shot: plannedShot, durationSec, startSec, endSec } of shotPlan) {
+            const segments = parseDialogueSegments(plannedShot.dialogue || "");
+            segments.forEach((seg, segIdx) => {
+              segmentPlansBase.push({
+                segmentId: `${plannedShot.id}:${segIdx}:${seg.speaker}`,
+                speaker: seg.speaker,
+                text: seg.text.slice(0, 1000),
+                shotId: plannedShot.id,
+                shotIndex: plannedShot.index,
+                shotDurationSec: durationSec,
+                shotStartMs: Math.round(startSec * 1000),
+                shotEndMs: Math.round(endSec * 1000),
+                shotEntityTags: plannedShot.entityTags || [],
+              });
+            });
+          }
+          if (segmentPlansBase.length === 0) { await runSimpleLipsync(url); return; }
 
           // ── Map speaker names → bible tags (e.g. "WIZARD" → "@WIZARD") ──
           // Normalise by uppercasing and stripping non-alphanumeric chars for fuzzy match
@@ -2529,20 +2592,30 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             return node.voice || "none";
           };
 
-          const speakerPlans = speakers.map((speaker) => {
-            const voice_id = resolveVoice(speaker);
-            if (!voice_id || voice_id === "none") throw new Error(`No voice assigned for speaker: ${speaker}`);
-            const text = speakerLines[speaker].join(' ').slice(0, 1000);
-            const estimatedSpeechSecs = estimateSpeechSeconds(text);
-            const speakerBudgetSecs = speakerShotBudgetSec[speaker] || 0;
+          const segmentPlans = segmentPlansBase.map((seg) => {
+            const voice_id = resolveVoice(seg.speaker);
+            if (!voice_id || voice_id === "none") throw new Error(`No voice assigned for speaker: ${seg.speaker}`);
+            const estimatedSpeechSecs = estimateSpeechSeconds(seg.text);
+            const issues = [];
             if (estimatedSpeechSecs > 0 && estimatedSpeechSecs < 2) {
-              throw new Error(`[lipsync-precheck] Estimated speech for ${speaker} is ~${estimatedSpeechSecs.toFixed(1)}s; Kling advanced lipsync requires at least 2.0s of audio`);
+              issues.push(`Shot ${seg.shotIndex} ${seg.speaker} is ~${estimatedSpeechSecs.toFixed(1)}s; Kling advanced lipsync requires at least 2.0s`);
             }
-            if (speakerBudgetSecs > 0 && estimatedSpeechSecs > speakerBudgetSecs) {
-              throw new Error(`[lipsync-precheck] Dialogue for ${speaker} needs ~${estimatedSpeechSecs.toFixed(1)}s but speaking shots total ${speakerBudgetSecs.toFixed(1)}s`);
+            if (estimatedSpeechSecs > seg.shotDurationSec) {
+              issues.push(`Shot ${seg.shotIndex} ${seg.speaker} needs ~${estimatedSpeechSecs.toFixed(1)}s but shot is ${seg.shotDurationSec.toFixed(1)}s`);
             }
-            return { speaker, voice_id, text };
+            return {
+              ...seg,
+              voice_id,
+              estimatedSpeechSecs,
+              issues,
+              speakerKey: normTag(seg.speaker),
+              visualOrder: (seg.shotEntityTags || []).map(normTag),
+            };
           });
+          const precheckIssues = segmentPlans.flatMap(seg => seg.issues);
+          if (precheckIssues.length) {
+            throw new Error(`[lipsync-precheck] ${precheckIssues.join("; ")}`);
+          }
 
           // ── Step 2: TTS for each speaker ─────────────────────────────────
           const pollTts = async (taskId) => {
@@ -2558,8 +2631,8 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             throw new Error("TTS timeout");
           };
 
-          const speakerAudio = {}; // speaker → { id, url, duration (s) }
-          for (const { speaker, voice_id, text } of speakerPlans) {
+          const segmentAudio = {}; // segmentId → { id, url, duration (s) }
+          for (const { segmentId, speaker, voice_id, text } of segmentPlans) {
             setKlingPollMsg(`TTS: generating voice for ${speaker}…`);
             const ttsRes = await fetch("/api/kling/tts", {
               method: "POST", headers: { "Content-Type": "application/json" },
@@ -2572,11 +2645,11 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             const ttsData = await ttsRes.json();
             if (ttsData.code && ttsData.code !== 0) throw new Error(`TTS error ${ttsData.code}: ${ttsData.message}`);
             if (ttsData.data?.task_status === "succeed" && ttsData.data?.task_result?.audios?.[0]) {
-              speakerAudio[speaker] = ttsData.data.task_result.audios[0];
+              segmentAudio[segmentId] = ttsData.data.task_result.audios[0];
             } else {
               const ttsTaskId = ttsData.data?.task_id;
               if (!ttsTaskId) throw new Error(`No TTS task_id in response: ${JSON.stringify(ttsData).slice(0, 200)}`);
-              speakerAudio[speaker] = await pollTts(ttsTaskId);
+              segmentAudio[segmentId] = await pollTts(ttsTaskId);
             }
           }
 
@@ -2594,40 +2667,15 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
           if (!sessionId) throw new Error("No session_id from identify-face");
           if (faces.length === 0) throw new Error("No faces detected in video — can't lipsync");
 
-          // ── Step 4: match speakers to faces ──────────────────────────────
-          // Build visual character order from entityTags across shots (first appearance wins).
-          // This reflects who appears ON SCREEN, which matches how Kling orders detected faces.
-          const visualOrder = [];
-          for (const sh of shotNodes) {
-            for (const tag of (sh.entityTags || [])) {
-              const key = normTag(tag);
-              if (!visualOrder.includes(key)) visualOrder.push(key);
-            }
-          }
-
-          const assignments = speakers.map((speaker) => {
-            // Find this speaker's position in the visual character order
-            const speakerKey = normTag(speaker);
-            const visualIdx = visualOrder.indexOf(speakerKey);
-            // Use visual order index to pick the face; fall back to dialogue order
-            const fallbackIdx = speakers.indexOf(speaker);
-            const faceIdx = visualIdx >= 0 ? visualIdx : fallbackIdx;
-            const face = faces[faceIdx] || faces[0];
-            const audio = speakerAudio[speaker];
-            const audioDurationMs = Math.round(parseFloat(audio.duration || 0) * 1000);
-            const timing = computeAdvancedTiming({
-              faceStartMs: face.start_time,
-              faceEndMs: face.end_time,
-              audioDurationMs,
-              videoDurationMs: generatedVideoDurationMs,
-              speaker,
-            });
+          // ── Step 4: build per-segment lipsync assignments ────────────────
+          const assignments = segmentPlans.map((segment, segIdx) => {
+            const audio = segmentAudio[segment.segmentId];
+            const audioDurationMs = Math.round(parseFloat(audio?.duration || 0) * 1000);
             return {
-              speaker,
-              face_id: face.face_id,
-              audio_id: audio.id,
+              ...segment,
+              orderIdx: segIdx,
+              audio_id: audio?.id,
               _audioDurationMs: audioDurationMs,
-              ...timing,
             };
           });
 
@@ -2678,13 +2726,20 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                 }
               }
             }
-            // Pick the face at same index position in the new video
-            const face = currentFaces[idx] || currentFaces[0];
+            // Pick a face that overlaps this shot window, then use the shot's visual order when possible.
+            const overlappingFaces = currentFaces.filter(f => f.end_time > a.shotStartMs && f.start_time < a.shotEndMs);
+            const facePool = overlappingFaces.length ? overlappingFaces : currentFaces;
+            const visualIdx = a.visualOrder.indexOf(a.speakerKey);
+            const fallbackIdx = Math.min(a.orderIdx, Math.max(facePool.length - 1, 0));
+            const faceIdx = visualIdx >= 0 ? Math.min(visualIdx, Math.max(facePool.length - 1, 0)) : fallbackIdx;
+            const face = facePool[faceIdx] || facePool[0];
             const faceId = face?.face_id ?? a.face_id;
-            // Recalculate insertion time with the fresh face start_time (may have shifted after prior lipsync pass).
+            if (!a.audio_id) throw new Error(`Missing TTS audio for ${a.speaker}`);
             const timing = computeAdvancedTiming({
               faceStartMs: face?.start_time ?? 0,
               faceEndMs: face?.end_time ?? currentVideoDurationMs,
+              windowStartMs: a.shotStartMs,
+              windowEndMs: a.shotEndMs,
               audioDurationMs: a._audioDurationMs,
               videoDurationMs: currentVideoDurationMs,
               speaker: a.speaker,
@@ -2910,40 +2965,23 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                   const allSpeakers = [...new Set(shotNodes.flatMap(sh => detectSpeakers(sh.dialogue || "")))];
                   const hasMultiSpeaker = allSpeakers.length > 1;
 
-                  // Per-speaker text preview (max 1000 chars each — TTS API limit)
-                  const speakerPreview = allSpeakers.map(spk => {
-                    const lines = [];
-                    let shotBudgetSec = 0;
-                    for (const sh of shotNodes) {
-                      if (!sh.dialogue?.trim()) continue;
-                      let cur = null;
-                      let hasLineInShot = false;
-                      for (const raw of sh.dialogue.split('\n')) {
-                        const t = raw.trim();
-                        if (!t) continue;
-                        if (/^[A-Z][A-Z0-9\s.'"\\-]+(\s*\([^)]*\))?\s*$/.test(t)) {
-                          cur = t.replace(/\s*\([^)]*\)\s*$/, '').trim();
-                        } else if (/^\([^)]+\)$/.test(t)) {
-                          // skip stage direction
-                        } else if (cur === spk) {
-                          lines.push(t);
-                          hasLineInShot = true;
-                        }
-                      }
-                      if (hasLineInShot) shotBudgetSec += (sh.durationSec || 0);
-                    }
-                    const full = lines.join(' ');
-                    const estimatedSecs = estimateSpeechSeconds(full);
-                    return {
-                      speaker: spk,
-                      text: full,
-                      truncated: full.length > 1000,
-                      estimatedSecs,
-                      shotBudgetSec,
-                      tooShortForAdvanced: estimatedSecs > 0 && estimatedSecs < 2,
-                      tooLongForShots: shotBudgetSec > 0 && estimatedSecs > shotBudgetSec,
-                    };
-                  });
+                  const previewShotPlan = buildKlingShotPlan(shotNodes, shotNodes.length > 1);
+                  const segmentPreview = previewShotPlan.flatMap(({ shot, durationSec }, shotPlanIdx) =>
+                    parseDialogueSegments(shot.dialogue || "").map((seg, segIdx) => {
+                      const estimatedSecs = estimateSpeechSeconds(seg.text);
+                      return {
+                        key: `${shot.id}:${segIdx}`,
+                        shotIndex: shot.index,
+                        speaker: seg.speaker,
+                        text: seg.text,
+                        truncated: seg.text.length > 1000,
+                        estimatedSecs,
+                        shotBudgetSec: durationSec,
+                        tooShortForAdvanced: estimatedSecs > 0 && estimatedSecs < 2,
+                        tooLongForShot: estimatedSecs > durationSec,
+                      };
+                    })
+                  );
 
                   // Voice selector helper — renders a <select> for a given value/onChange
                   const VoiceSelect = ({ value, onChange }) => (
@@ -3010,13 +3048,11 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                       <span style={{ fontSize:5, letterSpacing:"0.15em", color:lipsyncAc, fontWeight:700, display:"block", marginBottom:4 }}>
                         AUDIO SCRIPT {hasMultiSpeaker ? `— ${allSpeakers.length} SPEAKERS` : "PREVIEW"}
                       </span>
-                      {speakerPreview.map(({ speaker, text, truncated, estimatedSecs, shotBudgetSec, tooShortForAdvanced, tooLongForShots }) => (
-                        <div key={speaker} style={{ marginBottom:4 }}>
-                          {hasMultiSpeaker && (
-                            <span style={{ fontSize:5, color:lipsyncAc, fontWeight:700, letterSpacing:"0.1em", display:"block", marginBottom:1 }}>
-                              {speaker}
-                            </span>
-                          )}
+                      {segmentPreview.map(({ key, shotIndex, speaker, text, truncated, estimatedSecs, shotBudgetSec, tooShortForAdvanced, tooLongForShot }) => (
+                        <div key={key} style={{ marginBottom:4 }}>
+                          <span style={{ fontSize:5, color:lipsyncAc, fontWeight:700, letterSpacing:"0.1em", display:"block", marginBottom:1 }}>
+                            SHOT {shotIndex} · {speaker}
+                          </span>
                           <div style={{ fontSize:5, color:th.t3, letterSpacing:"0.06em", marginBottom:1 }}>
                             est. speech {estimatedSecs.toFixed(1)}s {shotBudgetSec > 0 ? `· shot time ${shotBudgetSec.toFixed(1)}s` : ""}
                           </div>
@@ -3028,9 +3064,9 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                               ⚠ Advanced lipsync needs at least 2.0s of speech for this speaker
                             </div>
                           )}
-                          {tooLongForShots && (
+                          {tooLongForShot && (
                             <div style={{ fontSize:5, color:"#fbbf24", marginTop:1, letterSpacing:"0.06em" }}>
-                              ⚠ Increase shot duration — estimated speech exceeds the speaking shots for this character
+                              ⚠ Increase shot duration — estimated speech exceeds this shot's duration
                             </div>
                           )}
                           {truncated && (
