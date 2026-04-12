@@ -88,6 +88,132 @@ function get(hostname, path, headers) {
   });
 }
 
+function requestRaw({ hostname, path, method = "POST", headers = {}, body = "" }) {
+  return new Promise((resolve, reject) => {
+    const payload = typeof body === "string" ? body : JSON.stringify(body);
+    const req = https.request({
+      hostname, path, method,
+      headers: { "Content-Length": Buffer.byteLength(payload), ...headers },
+    }, (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => { console.log(`[${method} ${hostname}] ${res.statusCode}`); resolve({ status: res.statusCode, data }); });
+    });
+    req.on("error", (e) => { console.error(e.message); reject(e); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+let googleTokenCache = { token: null, exp: 0 };
+let googleServiceAccountCache = null;
+
+function readGoogleServiceAccount() {
+  if (googleServiceAccountCache) return googleServiceAccountCache;
+  const inline = process.env.VERTEX_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "";
+  if (inline.trim()) {
+    try {
+      googleServiceAccountCache = JSON.parse(inline);
+      return googleServiceAccountCache;
+    } catch {
+      try {
+        googleServiceAccountCache = JSON.parse(Buffer.from(inline, "base64").toString("utf8"));
+        return googleServiceAccountCache;
+      } catch {}
+    }
+  }
+  const credsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.VERTEX_SERVICE_ACCOUNT_PATH || "";
+  if (credsPath && fs.existsSync(credsPath)) {
+    googleServiceAccountCache = JSON.parse(fs.readFileSync(credsPath, "utf8"));
+    return googleServiceAccountCache;
+  }
+  return null;
+}
+
+function vertexVeoConfig(modelHint = "") {
+  const sa = readGoogleServiceAccount();
+  return {
+    project: process.env.VERTEX_AI_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || sa?.project_id || "",
+    location: process.env.VERTEX_AI_LOCATION || "us-central1",
+    frameModel: process.env.VERTEX_VEO_FRAME_MODEL || "veo-3.1-generate-001",
+    model: process.env.VERTEX_VEO_MODEL || modelHint || "veo-3.1-generate-preview",
+  };
+}
+
+async function googleAccessToken() {
+  if (process.env.VERTEX_ACCESS_TOKEN) return process.env.VERTEX_ACCESS_TOKEN;
+  const now = Math.floor(Date.now() / 1000);
+  if (googleTokenCache.token && googleTokenCache.exp > now + 60) return googleTokenCache.token;
+  const sa = readGoogleServiceAccount();
+  if (!sa?.client_email || !sa?.private_key) {
+    throw new Error("Vertex AI requires service account credentials. Set GOOGLE_APPLICATION_CREDENTIALS or VERTEX_SERVICE_ACCOUNT_JSON.");
+  }
+  const jwtHeader = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const jwtPayload = b64url(JSON.stringify({
+    iss: sa.client_email,
+    scope: "https://www.googleapis.com/auth/cloud-platform",
+    aud: "https://oauth2.googleapis.com/token",
+    exp: now + 3600,
+    iat: now,
+  }));
+  const unsigned = `${jwtHeader}.${jwtPayload}`;
+  const signature = b64url(crypto.createSign("RSA-SHA256").update(unsigned).sign(sa.private_key));
+  const assertion = `${unsigned}.${signature}`;
+  const form = new URLSearchParams({
+    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+    assertion,
+  }).toString();
+  const r = await requestRaw({
+    hostname: "oauth2.googleapis.com",
+    path: "/token",
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form,
+  });
+  if (r.status !== 200) throw new Error(`Google OAuth ${r.status}: ${String(r.data).slice(0, 200)}`);
+  const d = JSON.parse(r.data);
+  googleTokenCache = { token: d.access_token, exp: now + Number(d.expires_in || 3600) };
+  return googleTokenCache.token;
+}
+
+function isVertexOperationName(opName = "") {
+  return /^projects\/[^/]+\/locations\/[^/]+\/publishers\/google\/models\/[^/]+\/operations\/[^/]+$/.test(String(opName));
+}
+
+function gcsMediaUrl(gsUri) {
+  const trimmed = String(gsUri || "");
+  if (!trimmed.startsWith("gs://")) throw new Error("Invalid gs:// URI");
+  const withoutScheme = trimmed.slice(5);
+  const slash = withoutScheme.indexOf("/");
+  if (slash <= 0) throw new Error("Invalid gs:// URI");
+  const bucket = withoutScheme.slice(0, slash);
+  const object = withoutScheme.slice(slash + 1);
+  return `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(object)}?alt=media`;
+}
+
+async function cacheVeoBuffer(buffer, cacheKey) {
+  const fileId = crypto.createHash("sha1").update(cacheKey).digest("hex");
+  const storagePath = `veo-cache/${fileId}.mp4`;
+
+  if (supabaseAdmin) {
+    const { data: existing } = await supabaseAdmin.storage
+      .from(ASSET_BUCKET).list("veo-cache", { search: `${fileId}.mp4` });
+    if (existing && existing.length > 0) {
+      const { data: urlData } = supabaseAdmin.storage.from(ASSET_BUCKET).getPublicUrl(storagePath);
+      return urlData.publicUrl;
+    }
+    const { error: upErr } = await supabaseAdmin.storage.from(ASSET_BUCKET)
+      .upload(storagePath, buffer, { contentType: "video/mp4", upsert: true });
+    if (upErr) throw upErr;
+    const { data: urlData } = supabaseAdmin.storage.from(ASSET_BUCKET).getPublicUrl(storagePath);
+    return urlData.publicUrl;
+  }
+
+  const localPath = path.join(VEO_CACHE, `${fileId}.mp4`);
+  if (!fs.existsSync(localPath)) fs.writeFileSync(localPath, buffer);
+  return `/api/veo/file/${fileId}.mp4`;
+}
+
 // ── Kling JWT (HS256, no external dep) ────────────────────────────────────────
 function b64url(buf) {
   return (Buffer.isBuffer(buf) ? buf : Buffer.from(buf))
@@ -340,15 +466,24 @@ app.post("/api/gemini/image", async (req, res) => {
 // ── Veo 3.1 Video Generation ─────────────────────────────────────────────────
 // POST /api/veo/video — start generation (returns operation name for polling)
 app.post("/api/veo/video", async (req, res) => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return res.status(500).send("GEMINI_API_KEY not set");
   try {
-    // Extract and strip the model hint added by the client
     const { _veoModel, ...payload } = req.body;
-    // Route to correct model:
-    //   veo-3.1-generate-preview  — reference images (asset/style consistency)
-    //   veo-3.1-generate-001      — T2V, I2V (start frame), first+last frames
-    const model = _veoModel || "veo-3.1-generate-001";
+    const hasFrameGuidance = !!payload?.instances?.[0]?.image || !!payload?.instances?.[0]?.lastFrame;
+    if (hasFrameGuidance) {
+      const vertex = vertexVeoConfig(_veoModel);
+      if (!vertex.project) {
+        return res.status(400).send(JSON.stringify({ error: { code: 400, message: "Veo start/end frame requires Vertex AI project configuration. Set VERTEX_AI_PROJECT or GOOGLE_CLOUD_PROJECT.", status: "INVALID_ARGUMENT" } }));
+      }
+      const accessToken = await googleAccessToken();
+      const r = await post(`${vertex.location}-aiplatform.googleapis.com`,
+        `/v1/projects/${vertex.project}/locations/${vertex.location}/publishers/google/models/${vertex.frameModel}:predictLongRunning`,
+        { "Authorization": `Bearer ${accessToken}` }, payload);
+      return res.status(r.status).send(r.data);
+    }
+
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) return res.status(500).send("GEMINI_API_KEY not set");
+    const model = _veoModel || "veo-3.1-generate-preview";
     const r = await post("generativelanguage.googleapis.com",
       `/v1beta/models/${model}:predictLongRunning?key=${key}`,
       {}, payload);
@@ -358,11 +493,35 @@ app.post("/api/veo/video", async (req, res) => {
 
 // GET /api/veo/video?op=OPERATION_NAME — poll operation status
 app.get("/api/veo/video", async (req, res) => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return res.status(500).send("GEMINI_API_KEY not set");
   const opName = req.query.op;
   if (!opName) return res.status(400).send("Missing op param");
   try {
+    if (isVertexOperationName(opName)) {
+      const basePath = String(opName).replace(/\/operations\/[^/]+$/, "");
+      const locationMatch = String(opName).match(/^projects\/[^/]+\/locations\/([^/]+)\//);
+      const location = locationMatch?.[1] || vertexVeoConfig().location;
+      const accessToken = await googleAccessToken();
+      const r = await post(`${location}-aiplatform.googleapis.com`,
+        `/v1/${basePath}:fetchPredictOperation`,
+        { "Authorization": `Bearer ${accessToken}` },
+        { operationName: opName });
+      if (r.status < 200 || r.status >= 300) return res.status(r.status).send(r.data);
+      const d = JSON.parse(r.data);
+      if (d.done && !d.error && Array.isArray(d.response?.videos)) {
+        for (let i = 0; i < d.response.videos.length; i++) {
+          const video = d.response.videos[i];
+          if (video?.bytesBase64Encoded) {
+            const buffer = Buffer.from(video.bytesBase64Encoded, "base64");
+            const url = await cacheVeoBuffer(buffer, `${opName}:${i}`);
+            d.response.videos[i] = { ...video, uri: url };
+          }
+        }
+      }
+      return res.status(200).send(JSON.stringify(d));
+    }
+
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) return res.status(500).send("GEMINI_API_KEY not set");
     const r = await get("generativelanguage.googleapis.com",
       `/v1beta/${opName}?key=${key}`, {});
     res.status(r.status).send(r.data);
@@ -370,21 +529,23 @@ app.get("/api/veo/video", async (req, res) => {
 });
 
 // Helper: download a URL following redirects into a Buffer
-function downloadToBuffer(url, redirectsLeft = 5) {
+function downloadToBuffer(url, headers = {}, redirectsLeft = 5) {
   return new Promise((resolve, reject) => {
     const proto = url.startsWith("https") ? require("https") : require("http");
-    proto.get(url, res => {
+    const req = proto.request(url, { method: "GET", headers }, res => {
       if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
         res.resume();
         if (!redirectsLeft) return reject(new Error("Too many redirects"));
-        return downloadToBuffer(res.headers.location, redirectsLeft - 1).then(resolve).catch(reject);
+        return downloadToBuffer(res.headers.location, headers, redirectsLeft - 1).then(resolve).catch(reject);
       }
       if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode}`)); }
       const chunks = [];
       res.on("data", c => chunks.push(c));
       res.on("end",  () => resolve(Buffer.concat(chunks)));
       res.on("error", reject);
-    }).on("error", reject);
+    });
+    req.on("error", reject);
+    req.end();
   });
 }
 
@@ -392,11 +553,18 @@ function downloadToBuffer(url, redirectsLeft = 5) {
 // Downloads the Veo video from Google, stores in Supabase Storage (or local cache),
 // then returns the public URL as JSON { url } and also redirects to it.
 app.get("/api/veo/download", async (req, res) => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return res.status(500).send("GEMINI_API_KEY not set");
   const videoUri = req.query.uri;
   if (!videoUri) return res.status(400).send("Missing uri param");
   try {
+    if (String(videoUri).startsWith("gs://")) {
+      const accessToken = await googleAccessToken();
+      const buffer = await downloadToBuffer(gcsMediaUrl(videoUri), { Authorization: `Bearer ${accessToken}` });
+      const url = await cacheVeoBuffer(buffer, String(videoUri));
+      return url.startsWith("/api/veo/file/") ? res.redirect(url) : res.json({ url });
+    }
+
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) return res.status(500).send("GEMINI_API_KEY not set");
     const fileId      = crypto.createHash("sha1").update(videoUri).digest("hex");
     const storagePath = `veo-cache/${fileId}.mp4`;
 

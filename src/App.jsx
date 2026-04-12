@@ -1035,7 +1035,8 @@ async function aiVeoCreate(shot, options = {}) {
   // When both are wired (refs + start frame), REFERENCE mode wins.
   const refs = referenceImages.filter(r => r.dataUrl?.startsWith("data:")).slice(0, 3);
   const hasRefs  = refs.length > 0;
-  const veoModel = "veo-3.1-generate-preview";
+  const hasFrameGuidance = !hasRefs && !!(startFrame?.startsWith("data:") || endFrame?.startsWith("data:"));
+  const veoModel = hasFrameGuidance ? "veo-3.1-generate-001" : "veo-3.1-generate-preview";
 
   const instance = {
     prompt: (shot.compiledText || `${shot.how || ""} in ${shot.where || ""}`).trim().slice(0, 2000) || "Cinematic shot",
@@ -1100,8 +1101,10 @@ async function aiVeoPoll(operationName, onStatus) {
       const uri =
         genResp?.generatedSamples?.[0]?.video?.uri ||
         d.response?.generatedSamples?.[0]?.video?.uri ||
-        d.response?.videos?.[0]?.uri;
+        d.response?.videos?.[0]?.uri ||
+        d.response?.videos?.[0]?.gcsUri;
       if (!uri) throw new Error("Veo succeeded but no video URI in response");
+      if (/^https?:\/\//.test(uri) || uri.startsWith("/api/veo/file/")) return uri;
       // Download via server proxy → stores in Supabase and returns public URL
       const dlRes = await fetch(`/api/veo/download?uri=${encodeURIComponent(uri)}`);
       if (!dlRes.ok) throw new Error("Veo download failed: " + await dlRes.text());
