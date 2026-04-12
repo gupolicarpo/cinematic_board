@@ -2371,7 +2371,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
       });
       setKlingTaskId(taskId);
       setKlingStatus("polling"); setKlingPollMsg("Processing…");
-      const { url, durationMs: videoDurationMs } = await aiKlingPoll(taskId, s=>setKlingPollMsg(s));
+      const { url } = await aiKlingPoll(taskId, s=>setKlingPollMsg(s));
 
       // ── LIPSYNC PASS ────────────────────────────────────────────────────────
       // Two modes:
@@ -2548,21 +2548,15 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             const faceIdx = visualIdx >= 0 ? visualIdx : fallbackIdx;
             const face = faces[faceIdx] || faces[0];
             const audio = speakerAudio[speaker];
-            const audioDurationMs = Math.max(2000, Math.round(parseFloat(audio.duration) * 1000));
-            // sound_insert_time must be >= face.start_time so the audio overlaps the face by >=2000ms.
-            // We never move it earlier — we only cap the audio END so it doesn't exceed the video.
+            // Let Kling use the full TTS audio by default.
+            // Passing manual sound_end_time values caused short lines to fail when our local timing
+            // estimate exceeded the actual generated audio length.
             const insertTime = face.start_time;
-            const availableMs = videoDurationMs - insertTime;   // ms remaining from face appearance
-            const soundEndTime = Math.min(audioDurationMs, Math.max(2000, availableMs));
             return {
               speaker,
               face_id: face.face_id,
               audio_id: audio.id,
-              sound_start_time: 0,
-              sound_end_time: soundEndTime,
               sound_insert_time: insertTime,
-              _audioDurationMs: audioDurationMs,
-              _videoDurationMs: videoDurationMs,
             };
           });
 
@@ -2607,11 +2601,8 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             // Pick the face at same index position in the new video
             const face = currentFaces[idx] || currentFaces[0];
             const faceId = face?.face_id ?? a.face_id;
-            // Recalculate timing with the fresh face start_time (may have shifted after prior lipsync pass).
-            // Insert at face.start_time — never earlier — then cap audio end to video boundary.
+            // Recalculate insertion time with the fresh face start_time (may have shifted after prior lipsync pass).
             const newInsertTime = face?.start_time ?? a.sound_insert_time;
-            const newAvailableMs = a._videoDurationMs - newInsertTime;
-            const newSoundEndTime = Math.min(a._audioDurationMs, Math.max(2000, newAvailableMs));
             setKlingPollMsg(`Lipsync: applying ${a.speaker}'s voice to face ${faceId}…`);
             const lsRes = await fetch("/api/kling/advanced-lipsync", {
               method: "POST", headers: { "Content-Type": "application/json" },
@@ -2620,8 +2611,6 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                 face_choose: [{
                   face_id: faceId,
                   audio_id: a.audio_id,
-                  sound_start_time: 0,
-                  sound_end_time: newSoundEndTime,
                   sound_insert_time: newInsertTime,
                 }],
               }),
@@ -8398,4 +8387,3 @@ export default function App() {
     </ThemeCtx.Provider>
   );
 }
-
