@@ -158,8 +158,12 @@ function compileShotText(s) {
   const tags = s.entityTags?.length ? s.entityTags.join(" ") : "";
   const base = `${capitalize(s.cameraSize)} cinematic shot at ${s.when}, ${s.cameraAngle}, ${humanizeMove(s.cameraMovement)}, lens ${s.lens}, ${humanizeLighting(s.lighting)}.${tags ? " "+tags : ""} ${s.how} in ${s.where}. Visual goal: ${s.visualGoal}.`;
   const withDirector = s.directorNote ? `${base} Director's intent: ${s.directorNote}` : base;
-  const cleanDialogue = stripSpeakerNames(s.dialogue);
-  return cleanDialogue ? `${withDirector} Dialogue: "${cleanDialogue}"` : withDirector;
+  const dialogueBlock = (s.dialogue || "")
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join("\n");
+  return dialogueBlock ? `${withDirector}\nDialogue block:\n${dialogueBlock}` : withDirector;
 }
 
 function getSceneShots(nodes, sceneId) {
@@ -2568,6 +2572,12 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             });
           }
           if (segmentPlansBase.length === 0) { await runSimpleLipsync(url); return; }
+          const impossibleShotIssues = segmentPlansBase
+            .filter(seg => seg.shotDurationSec < 2)
+            .map(seg => `Shot ${seg.shotIndex} ${seg.speaker} is only ${seg.shotDurationSec.toFixed(1)}s; Kling advanced lipsync needs at least 2.0s of usable video`);
+          if (impossibleShotIssues.length) {
+            throw new Error(`[lipsync-precheck] ${impossibleShotIssues.join("; ")}`);
+          }
 
           // ── Map speaker names → bible tags (e.g. "WIZARD" → "@WIZARD") ──
           // Normalise by uppercasing and stripping non-alphanumeric chars for fuzzy match
@@ -2595,27 +2605,13 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
           const segmentPlans = segmentPlansBase.map((seg) => {
             const voice_id = resolveVoice(seg.speaker);
             if (!voice_id || voice_id === "none") throw new Error(`No voice assigned for speaker: ${seg.speaker}`);
-            const estimatedSpeechSecs = estimateSpeechSeconds(seg.text);
-            const issues = [];
-            if (estimatedSpeechSecs > 0 && estimatedSpeechSecs < 2) {
-              issues.push(`Shot ${seg.shotIndex} ${seg.speaker} is ~${estimatedSpeechSecs.toFixed(1)}s; Kling advanced lipsync requires at least 2.0s`);
-            }
-            if (estimatedSpeechSecs > seg.shotDurationSec) {
-              issues.push(`Shot ${seg.shotIndex} ${seg.speaker} needs ~${estimatedSpeechSecs.toFixed(1)}s but shot is ${seg.shotDurationSec.toFixed(1)}s`);
-            }
             return {
               ...seg,
               voice_id,
-              estimatedSpeechSecs,
-              issues,
               speakerKey: normTag(seg.speaker),
               visualOrder: (seg.shotEntityTags || []).map(normTag),
             };
           });
-          const precheckIssues = segmentPlans.flatMap(seg => seg.issues);
-          if (precheckIssues.length) {
-            throw new Error(`[lipsync-precheck] ${precheckIssues.join("; ")}`);
-          }
 
           // ── Step 2: TTS for each speaker ─────────────────────────────────
           const pollTts = async (taskId) => {
@@ -2655,6 +2651,15 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
 
           // ── Step 3: identify faces in video ──────────────────────────────
           setKlingPollMsg("Identifying faces in video…");
+          const shortAudioIssues = segmentPlans.flatMap(({ segmentId, shotIndex, speaker }) => {
+            const audioDurationMs = Math.round(parseFloat(segmentAudio[segmentId]?.duration || 0) * 1000);
+            if (Number.isFinite(audioDurationMs) && audioDurationMs >= 2000) return [];
+            return [`Shot ${shotIndex} ${speaker} produced ${(Math.max(audioDurationMs, 0) / 1000).toFixed(1)}s of audio; Kling advanced lipsync requires at least 2.0s`];
+          });
+          if (shortAudioIssues.length) {
+            throw new Error(`[lipsync-precheck] ${shortAudioIssues.join("; ")}`);
+          }
+
           const faceRes = await fetch("/api/kling/identify-face", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify(generatedVideoId ? { video_id: generatedVideoId } : { video_url: url }),
