@@ -1,0 +1,1 @@
+Never make architectural changes wihtout asking me first to proceed. when tasked to analise analise only never commit changes.
