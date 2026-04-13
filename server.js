@@ -186,15 +186,6 @@ if (!fs.existsSync(VEO_CACHE)) fs.mkdirSync(VEO_CACHE, { recursive: true });
 
 const app = express();
 
-// ── Canonical redirect: non-www → www (prevents duplicate indexing) ──────────
-app.use((req, res, next) => {
-  const host = req.headers.host || "";
-  if (process.env.NODE_ENV === "production" && !host.startsWith("www.") && !host.includes("localhost")) {
-    return res.redirect(301, `https://www.${host}${req.url}`);
-  }
-  next();
-});
-
 app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "30mb" }));
 
