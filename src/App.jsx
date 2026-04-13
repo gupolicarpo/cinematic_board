@@ -1257,7 +1257,7 @@ function InspectAction({ onClick, th }) {
 }
 
 // ─── SCENE NODE ───────────────────────────────────────────────────────────────
-function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected, onStartWire, nodePos, model, sceneStats, onExport, globalBible = [] }) {
+function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected, onStartWire, nodePos, model, sceneStats, onExport, globalBible = [], onInspect }) {
   const th = useTheme();
   const ac = th.dark ? (styleColor[node.cinematicStyle]||"#c084fc") : th.t2;
   const uac = th.dark ? ac : th.t0;
@@ -1436,6 +1436,7 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
             {VISUAL_STYLE_PRESETS[node.visualStyle || "none"]?.label || "Visual Style"}
           </span>
         )}
+        {onInspect && <InspectAction onClick={onInspect} th={th} />}
         {/* Expand / collapse button */}
         <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();setExpanded(x=>!x);}}
           title={expanded?"Collapse node":"Expand for writing"}
@@ -1734,7 +1735,7 @@ function AutoTextarea({ value, onChange, placeholder, style, ...props }) {
 }
 
 // ─── SHOT NODE ────────────────────────────────────────────────────────────────
-function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: selected, onStartWire, nodePos, sceneStats, globalBible, onRetrySingleShot }) {
+function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: selected, onStartWire, nodePos, sceneStats, globalBible, onRetrySingleShot, onInspect }) {
   const th = useTheme();
   const inp = mkInp(th); const sel = mkSel(th); const lbl = mkLbl(th);
   const ac = th.dark ? "#38bdf8" : th.t2;
@@ -1830,6 +1831,7 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
           <span style={{ fontSize:11, color:uac, fontWeight:700 }}>{node.durationSec||1}</span>
           <span style={{ fontSize:7, color:th.t2, letterSpacing:"0.08em" }}>s</span>
         </div>
+        {onInspect && <InspectAction onClick={onInspect} th={th} />}
         {/* Export this shot */}
         <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();
           const slug = `shot-${node.index||"x"}-${(node.how||"shot").trim().slice(0,20).replace(/[^a-z0-9]/gi,"-").toLowerCase()}`;
@@ -2144,7 +2146,7 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
 }
 
 // ─── VEO NODE ─────────────────────────────────────────────────────────────────
-function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodePos, globalBible }) {
+function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodePos, globalBible, onInspect }) {
   const th = useTheme();
   const inp = mkInp(th); const sel = mkSel(th); const lbl = mkLbl(th);
   const ac = th.dark ? "#a855f7" : th.t2;
@@ -2328,6 +2330,7 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
           <Ico icon={Video} size={11} color={th.dark ? ac : th.t3}/>
           <span style={{ fontSize:7, letterSpacing:"0.2em", color:ac, fontWeight:700 }}>VEO NODE</span>
           <span style={{ marginLeft:"auto", fontSize:6, color:`${ac}55`, letterSpacing:"0.06em" }}>Veo 3.1</span>
+          {onInspect && <InspectAction onClick={onInspect} th={th} />}
           <button onMouseDown={e=>e.stopPropagation()} onClick={onDel}
             style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:9, padding:"0 2px", lineHeight:1 }}>✕</button>
         </div>
@@ -2512,7 +2515,7 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
 }
 
 // ─── KLING NODE ───────────────────────────────────────────────────────────────
-function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodePos, globalBible }) {
+function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodePos, globalBible, onInspect }) {
   const th = useTheme();
   const inp = mkInp(th); const sel = mkSel(th); const lbl = mkLbl(th);
   const ac = th.dark ? "#f97316" : th.t2;
@@ -3027,6 +3030,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
           <span style={{ marginLeft:"auto", fontSize:6, color:`${ac}55`, letterSpacing:"0.06em" }}>
             {shotNodes.length===0 ? "no shots" : shotNodes.length===1 ? "single shot" : `${shotNodes.length} shots · multi`}
           </span>
+          {onInspect && <InspectAction onClick={onInspect} th={th} />}
           <button onMouseDown={e=>e.stopPropagation()} onClick={onDel}
             style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:9, padding:"0 2px", lineHeight:1 }} title="Delete node">✕</button>
         </div>
@@ -3351,7 +3355,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
 }
 
 // ─── IMAGE NODE ───────────────────────────────────────────────────────────────
-function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, onUnlinkShot, onStartWire, nodePos, globalBible, onSaveToBible }) {
+function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, onUnlinkShot, onStartWire, nodePos, globalBible, onSaveToBible, onInspect }) {
   const th = useTheme();
   const inp = mkInp(th); const sel = mkSel(th); const lbl = mkLbl(th); const fBase = mkFBase(th);
   const ac = th.dark ? "#a3e635" : th.t2;
@@ -3466,8 +3470,10 @@ function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, o
                 style={{ background:"transparent",border:"none",color:th.t3,cursor:"pointer",fontSize:8,padding:"0 1px",lineHeight:1,marginLeft:2 }} title="Unlink shot">✕</button>
             </div>
           )}
+          <div style={{ marginLeft:"auto" }} />
+          {onInspect && <InspectAction onClick={onInspect} th={th} />}
           <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onDel();}}
-            style={{ background:"transparent",border:"none",color:th.t3,cursor:"pointer",fontSize:11,padding:"0 2px",lineHeight:1,marginLeft:"auto" }}>✕</button>
+            style={{ background:"transparent",border:"none",color:th.t3,cursor:"pointer",fontSize:11,padding:"0 2px",lineHeight:1 }}>✕</button>
         </div>
 
         <div style={{ padding:9, display:"flex", flexDirection:"column", gap:7 }}>
@@ -3638,7 +3644,7 @@ function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, o
 }
 
 // ─── LLM NODE ─────────────────────────────────────────────────────────────────
-function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode }) {
+function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onInspect }) {
   const th = useTheme();
   const ac = th.dark ? "#6366f1" : th.t2;
   const selColor = selected ? ac : th.dark ? `${ac}44` : th.b0;
@@ -3742,8 +3748,10 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode }) {
           <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.08em", marginLeft:2 }}>
             {targetNodes.length > 0 ? `${targetNodes.length} node${targetNodes.length>1?"s":""} connected` : "no nodes"}
           </span>
+          <div style={{ marginLeft:"auto" }} />
+          {onInspect && <InspectAction onClick={onInspect} th={th} />}
           <button onMouseDown={e=>e.stopPropagation()} onClick={onDel}
-            style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:9, padding:"0 2px", lineHeight:1, marginLeft:"auto" }} title="Delete node">✕</button>
+            style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:9, padding:"0 2px", lineHeight:1 }} title="Delete node">✕</button>
         </div>
 
         <div style={{ padding:"8px 10px", display:"flex", flexDirection:"column", gap:6 }}>
@@ -3991,7 +3999,7 @@ function detectBeats(audioBuffer) {
 }
 
 // ─── CLIP NODE ────────────────────────────────────────────────────────────────
-function ClipCard({ node, upd, onDel, sel: selected, onStartWire, nodePos }) {
+function ClipCard({ node, upd, onDel, sel: selected, onStartWire, nodePos, onInspect }) {
   const th      = useTheme();
   const ac      = "#3b82f6";   // blue accent
   const fileRef = useRef(null);
@@ -4060,6 +4068,7 @@ function ClipCard({ node, upd, onDel, sel: selected, onStartWire, nodePos }) {
             <span style={{ fontSize:6, color:ac, marginLeft:4 }}>✓ server</span>
           )}
           <div style={{ flex:1 }}/>
+          {onInspect && <InspectAction onClick={onInspect} th={th} />}
           <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onDel();}}
             style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:11, padding:"0 2px", lineHeight:1 }}>✕</button>
         </div>
@@ -4129,7 +4138,7 @@ const MUSIC_STYLE_TAGS = [
   { label:"COMEDY",    value:"comedy" },
 ];
 
-function AudioTrackCard({ node, upd, onDel, sel: selected, onStartWire, nodePos, allNodes }) {
+function AudioTrackCard({ node, upd, onDel, sel: selected, onStartWire, nodePos, allNodes, onInspect }) {
   const th         = useTheme();
   const ac         = "#10b981";   // emerald green accent
   const fileRef    = useRef(null);
@@ -4326,6 +4335,7 @@ function AudioTrackCard({ node, upd, onDel, sel: selected, onStartWire, nodePos,
             </span>
           )}
           <div style={{ flex:1 }}/>
+          {onInspect && <InspectAction onClick={onInspect} th={th} />}
           <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onDel();}}
             style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:11, padding:"0 2px", lineHeight:1 }}>✕</button>
         </div>
@@ -4631,7 +4641,7 @@ function AudioTrackCard({ node, upd, onDel, sel: selected, onStartWire, nodePos,
   );
 }
 
-function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode }) {
+function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, onInspect }) {
   const th = useTheme();
   const ac = th.dark ? "#e2e8f0" : "#0f172a";
   const beatAc = "#10b981"; // same as AudioTrackCard accent
@@ -5358,6 +5368,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode })
             title={expanded ? "Collapse" : "Expand"}>
             {expanded ? "⊡" : "⤢"}
           </button>
+          {onInspect && <InspectAction onClick={onInspect} th={th} />}
           <button onMouseDown={e => e.stopPropagation()}
             onClick={e => { e.stopPropagation(); onDel(); }}
             style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer",
@@ -5772,7 +5783,7 @@ const ASSET_TABS = [
 ];
 
 // ─── SCRIPT CARD ──────────────────────────────────────────────────────────────
-function ScriptCard({ node, sel, upd, onDel, onSplitScenes }) {
+function ScriptCard({ node, sel, upd, onDel, onSplitScenes, onInspect }) {
   const th = useTheme();
   const [mode,          setMode]         = useState(node.scriptMode || "write"); // write | upload | generate
   const [script,        setScript]       = useState(node.script || "");
@@ -5886,6 +5897,7 @@ function ScriptCard({ node, sel, upd, onDel, onSplitScenes }) {
           style={{ flex:1, background:"transparent", border:"none", outline:"none", fontSize:12, fontWeight:700,
             color:th.t0, fontFamily:"'Inter',system-ui,sans-serif" }}
         />
+        {onInspect && <InspectAction onClick={onInspect} th={th} />}
         <button onClick={onDel} style={{ background:"transparent", border:"none", color:th.t4, cursor:"pointer", fontSize:14, lineHeight:1 }}>✕</button>
       </div>
 
@@ -8243,35 +8255,327 @@ export default function App() {
   }, [nodes, inspectId]);
   const inspectNode = inspectId ? (nodes.find(n => n.id === inspectId) || null) : null;
 
-  const renderNodeCard = (n, { inspectMode = false } = {}) => {
-    const nodePosValue = inspectMode ? { x: 0, y: 0 } : (pos[n.id] || { x: 80, y: 80 });
-    const isSel = inspectMode ? true : selId === n.id;
+  const inspectorInput = {
+    width:"100%",
+    boxSizing:"border-box",
+    background:th.bg,
+    border:`1px solid ${th.b0}`,
+    color:th.t0,
+    borderRadius:8,
+    padding:"10px 12px",
+    fontSize:12,
+    outline:"none",
+    fontFamily:"'Inter',system-ui,sans-serif",
+  };
+  const inspectorText = { ...inspectorInput, resize:"vertical", lineHeight:1.6, minHeight:92 };
+  const inspectorSelect = { ...inspectorInput, padding:"10px 10px" };
+  const sectionTitle = { fontSize:10, letterSpacing:"0.14em", color:th.t3, fontFamily:"'Inter',system-ui,sans-serif", marginBottom:8 };
+  const fieldLabel = { fontSize:10, letterSpacing:"0.08em", color:th.t2, fontFamily:"'Inter',system-ui,sans-serif", marginBottom:6, display:"block" };
+  const inspectorSection = (title, content) => (
+    <div style={{ border:`1px solid ${th.b0}`, borderRadius:12, padding:"14px 14px 12px", background:th.card2 }}>
+      <div style={sectionTitle}>{title}</div>
+      {content}
+    </div>
+  );
+  const patchShotFromInspector = (shot, patch) => {
+    const next = { ...shot, ...patch };
+    updNode(shot.id, { ...patch, ...(shot.promptOverride ? {} : { compiledText: compileShotText(next) }) });
+  };
+  const renderInspectorContent = (n) => {
+    if (!n) return null;
+    if (n.type === T.SCENE) {
+      return (
+        <>
+          {inspectorSection("Scene Text", (
+            <textarea
+              value={n.sceneText || ""}
+              onChange={e=>updNode(n.id, { sceneText:e.target.value })}
+              style={{ ...inspectorText, minHeight:220 }}
+            />
+          ))}
+          {inspectorSection("Style", (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+              <div>
+                <label style={fieldLabel}>Cinematic Style</label>
+                <select value={n.cinematicStyle || "drama"} onChange={e=>updNode(n.id, { cinematicStyle:e.target.value })} style={inspectorSelect}>
+                  {Object.keys(styleColor).map(s => <option key={s} value={s}>{capitalize(s)}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={fieldLabel}>Visual Style</label>
+                <select value={n.visualStyle || "none"} onChange={e=>updNode(n.id, { visualStyle:e.target.value })} style={inspectorSelect}>
+                  {VISUAL_STYLES.map(s => <option key={s} value={s}>{VISUAL_STYLE_PRESETS[s].label}</option>)}
+                </select>
+              </div>
+            </div>
+          ))}
+        </>
+      );
+    }
+    if (n.type === T.SHOT) {
+      const sceneNode = nodes.find(x=>x.id===n.sceneId) || null;
+      return (
+        <>
+          {inspectorSection("Shot Body", (
+            <div style={{ display:"grid", gap:12 }}>
+              <div>
+                <label style={fieldLabel}>Action</label>
+                <textarea value={n.how || ""} onChange={e=>patchShotFromInspector(n, { how:e.target.value })} style={inspectorText} />
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                <div>
+                  <label style={fieldLabel}>Where</label>
+                  <textarea value={n.where || ""} onChange={e=>patchShotFromInspector(n, { where:e.target.value })} style={{ ...inspectorText, minHeight:92 }} />
+                </div>
+                <div>
+                  <label style={fieldLabel}>When</label>
+                  <textarea value={n.when || ""} onChange={e=>patchShotFromInspector(n, { when:e.target.value })} style={{ ...inspectorText, minHeight:92 }} />
+                </div>
+              </div>
+              <div>
+                <label style={fieldLabel}>Visual Goal</label>
+                <textarea value={n.visualGoal || ""} onChange={e=>patchShotFromInspector(n, { visualGoal:e.target.value })} style={inspectorText} />
+              </div>
+            </div>
+          ))}
+          {inspectorSection("Camera & Timing", (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+              <div>
+                <label style={fieldLabel}>Duration (s)</label>
+                <input type="number" min="1" max="15" value={n.durationSec || 1} onChange={e=>patchShotFromInspector(n, { durationSec: Math.max(1, Math.min(15, Number(e.target.value) || 1)) })} style={inspectorInput} />
+              </div>
+              <div>
+                <label style={fieldLabel}>Lens</label>
+                <input value={n.lens || ""} onChange={e=>patchShotFromInspector(n, { lens:e.target.value })} style={inspectorInput} />
+              </div>
+              <div>
+                <label style={fieldLabel}>Camera Size</label>
+                <select value={n.cameraSize || "medium"} onChange={e=>patchShotFromInspector(n, { cameraSize:e.target.value })} style={inspectorSelect}>
+                  {CAMERA_SIZES.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={fieldLabel}>Camera Angle</label>
+                <select value={n.cameraAngle || "eye-level"} onChange={e=>patchShotFromInspector(n, { cameraAngle:e.target.value })} style={inspectorSelect}>
+                  {CAMERA_ANGLES.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={fieldLabel}>Movement</label>
+                <select value={n.cameraMovement || "static"} onChange={e=>patchShotFromInspector(n, { cameraMovement:e.target.value })} style={inspectorSelect}>
+                  {CAMERA_MOVEMENTS.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={fieldLabel}>Lighting</label>
+                <select value={n.lighting || "natural-soft"} onChange={e=>patchShotFromInspector(n, { lighting:e.target.value })} style={inspectorSelect}>
+                  {LIGHTING_STYLES.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+              <div style={{ gridColumn:"1 / -1" }}>
+                <label style={fieldLabel}>Visual Style</label>
+                <select value={n.visualStyle || "inherit"} onChange={e=>updNode(n.id, { visualStyle:e.target.value })} style={inspectorSelect}>
+                  <option value="inherit">Inherit Scene Style</option>
+                  {VISUAL_STYLES.filter(s => s !== "none").map(v => <option key={v} value={v}>{VISUAL_STYLE_PRESETS[v].label}</option>)}
+                </select>
+                <div style={{ fontSize:10, color:th.t3, marginTop:6 }}>Active: {VISUAL_STYLE_PRESETS[resolveVisualStyle(n, sceneNode)]?.label || "None"}</div>
+              </div>
+            </div>
+          ))}
+          {inspectorSection("Dialogue & Prompt", (
+            <div style={{ display:"grid", gap:12 }}>
+              <div>
+                <label style={fieldLabel}>Dialogue</label>
+                <textarea value={n.dialogue || ""} onChange={e=>patchShotFromInspector(n, { dialogue:e.target.value })} style={{ ...inspectorText, minHeight:120 }} />
+              </div>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                <span style={fieldLabel}>Prompt Override</span>
+                <button
+                  onClick={()=>updNode(n.id, { promptOverride: !n.promptOverride, compiledText: n.promptOverride ? compileShotText(n) : (n.compiledText || compileShotText(n)) })}
+                  style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t2, borderRadius:8, padding:"8px 10px", fontSize:10, letterSpacing:"0.08em", cursor:"pointer", fontFamily:"'Inter',system-ui,sans-serif" }}
+                >
+                  {n.promptOverride ? "DISABLE OVERRIDE" : "ENABLE OVERRIDE"}
+                </button>
+              </div>
+              {n.promptOverride ? (
+                <textarea value={n.compiledText || ""} onChange={e=>updNode(n.id, { compiledText:e.target.value })} style={{ ...inspectorText, minHeight:180 }} />
+              ) : (
+                <div style={{ ...inspectorText, minHeight:120, whiteSpace:"pre-wrap" }}>{n.compiledText || compileShotText(n)}</div>
+              )}
+            </div>
+          ))}
+        </>
+      );
+    }
+    if (n.type === T.IMAGE) {
+      return (
+        <>
+          {inspectorSection("Prompt", (
+            <textarea value={n.prompt || ""} onChange={e=>updNode(n.id, { prompt:e.target.value })} style={{ ...inspectorText, minHeight:220 }} />
+          ))}
+          {inspectorSection("Image Settings", (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+              <div>
+                <label style={fieldLabel}>Aspect Ratio</label>
+                <select value={n.aspect_ratio || "1:1"} onChange={e=>updNode(n.id, { aspect_ratio:e.target.value })} style={inspectorSelect}>
+                  {["1:1","16:9","9:16","4:3","3:4"].map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={fieldLabel}>Resolution</label>
+                <select value={n.resolution || "1K"} onChange={e=>updNode(n.id, { resolution:e.target.value })} style={inspectorSelect}>
+                  {["1K","2K"].map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+            </div>
+          ))}
+        </>
+      );
+    }
+    if (n.type === T.VEO) {
+      return (
+        <>
+          {inspectorSection("Prompt", (
+            <textarea value={n.manualPrompt || ""} onChange={e=>updNode(n.id, { manualPrompt:e.target.value })} style={{ ...inspectorText, minHeight:200 }} />
+          ))}
+          {inspectorSection("Veo Settings", (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+              <div>
+                <label style={fieldLabel}>Aspect Ratio</label>
+                <select value={n.aspect_ratio || "16:9"} onChange={e=>updNode(n.id, { aspect_ratio:e.target.value })} style={inspectorSelect}>
+                  {["16:9","9:16"].map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={fieldLabel}>Duration</label>
+                <select value={n.duration || 8} onChange={e=>updNode(n.id, { duration:Number(e.target.value) })} style={inspectorSelect}>
+                  {[4,6,8].map(v => <option key={v} value={v}>{v}s</option>)}
+                </select>
+              </div>
+            </div>
+          ))}
+        </>
+      );
+    }
+    if (n.type === T.KLING) {
+      return (
+        <>
+          {inspectorSection("Kling Settings", (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+              <div>
+                <label style={fieldLabel}>Aspect Ratio</label>
+                <select value={n.aspect_ratio || "16:9"} onChange={e=>updNode(n.id, { aspect_ratio:e.target.value })} style={inspectorSelect}>
+                  {["16:9","9:16","1:1"].map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={fieldLabel}>Mode</label>
+                <select value={n.mode || "pro"} onChange={e=>updNode(n.id, { mode:e.target.value })} style={inspectorSelect}>
+                  <option value="pro">PRO</option>
+                  <option value="std">STD</option>
+                </select>
+              </div>
+              <div>
+                <label style={fieldLabel}>Sound</label>
+                <select value={n.sound || "off"} onChange={e=>updNode(n.id, { sound:e.target.value })} style={inspectorSelect}>
+                  <option value="off">OFF</option>
+                  <option value="on">ON</option>
+                </select>
+              </div>
+              <div>
+                <label style={fieldLabel}>Lipsync</label>
+                <select value={n.lipsync ? "on" : "off"} onChange={e=>updNode(n.id, { lipsync:e.target.value === "on" })} style={inspectorSelect}>
+                  <option value="off">OFF</option>
+                  <option value="on">ON</option>
+                </select>
+              </div>
+            </div>
+          ))}
+        </>
+      );
+    }
+    if (n.type === T.LLM) {
+      return (
+        <>
+          {inspectorSection("AI Command", (
+            <div style={{ display:"grid", gap:12 }}>
+              <div>
+                <label style={fieldLabel}>Mode</label>
+                <select value={n.llmMode || "edit"} onChange={e=>updNode(n.id, { llmMode:e.target.value })} style={inspectorSelect}>
+                  <option value="edit">Edit</option>
+                  <option value="coherence">Coherence</option>
+                </select>
+              </div>
+              <div>
+                <label style={fieldLabel}>Instruction</label>
+                <textarea value={n.command || ""} onChange={e=>updNode(n.id, { command:e.target.value })} style={{ ...inspectorText, minHeight:220 }} />
+              </div>
+            </div>
+          ))}
+        </>
+      );
+    }
+    if (n.type === T.SCRIPT) {
+      return (
+        <>
+          {inspectorSection("Script Meta", (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+              <div style={{ gridColumn:"1 / -1" }}>
+                <label style={fieldLabel}>Title</label>
+                <input value={n.title || ""} onChange={e=>updNode(n.id, { title:e.target.value })} style={inspectorInput} />
+              </div>
+              <div>
+                <label style={fieldLabel}>Format</label>
+                <select value={n.format || "screenplay"} onChange={e=>updNode(n.id, { format:e.target.value })} style={inspectorSelect}>
+                  <option value="screenplay">Screenplay</option>
+                  <option value="treatment">Treatment</option>
+                </select>
+              </div>
+              <div>
+                <label style={fieldLabel}>Cinematic Style</label>
+                <select value={n.cinematicStyle || ""} onChange={e=>updNode(n.id, { cinematicStyle:e.target.value })} style={inspectorSelect}>
+                  <option value="">None</option>
+                  {Object.keys(styleColor).map(s => <option key={s} value={s}>{capitalize(s)}</option>)}
+                </select>
+              </div>
+              <div style={{ gridColumn:"1 / -1" }}>
+                <label style={fieldLabel}>Idea</label>
+                <textarea value={n.idea || ""} onChange={e=>updNode(n.id, { idea:e.target.value })} style={{ ...inspectorText, minHeight:100 }} />
+              </div>
+            </div>
+          ))}
+          {inspectorSection("Script", (
+            <textarea value={n.script || ""} onChange={e=>updNode(n.id, { script:e.target.value })} style={{ ...inspectorText, minHeight:320, fontFamily:"'Courier New',monospace" }} />
+          ))}
+        </>
+      );
+    }
+    return inspectorSection("Node Content", (
+      <div style={{ fontSize:12, color:th.t2, lineHeight:1.7 }}>
+        This node does not have a dedicated inspector form yet. Its main editable content is still available in the card.
+      </div>
+    ));
+  };
+
+  const renderNodeCard = (n) => {
+    const nodePosValue = pos[n.id] || { x: 80, y: 80 };
+    const isSel = selId === n.id;
     const linkedShot = n.type===T.IMAGE ? (nodes.find(x=>x.id===n.shotId)||null) : null;
     const linkedScene = n.type===T.IMAGE ? (nodes.find(x=>x.id===(n.sceneId||(linkedShot && linkedShot.sceneId)))||null) : null;
     const sceneNode = n.type===T.SHOT ? (nodes.find(x=>x.id===n.sceneId)||null) : null;
-    const nodeCard = (
-      <>
-        {n.type===T.SCENE&&<SceneCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onGenShots={onGenShots} onGenVersionB={onGenVersionB} onDel={()=>delNode(n.id)} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} model={shotModel} sceneStats={getSceneShotStats(nodes,n.id)} onExport={()=>exportScene(n)} globalBible={globalBibleFlat} />}
-        {n.type===T.SHOT&&<ShotCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} sceneBible={sceneNode?.bible||[]} linkedScene={sceneNode} onLink={sceneId=>linkShot(n.id,sceneId)} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} sceneStats={getSceneShotStats(nodes,n.sceneId)} globalBible={globalBibleFlat} onRetrySingleShot={onRetrySingleShot} />}
-        {n.type===T.IMAGE&&<ImageCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} linkedShot={linkedShot} linkedScene={linkedScene} onUnlinkShot={()=>updNode(n.id,{shotId:null,prompt:""})} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onSaveToBible={saveToBible} />}
-        {n.type===T.KLING&&<KlingCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} />}
-        {n.type===T.VEO&&<VeoCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} />}
-        {n.type===T.LLM&&<LlmCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onUpdateNode={updNode} />}
-        {n.type===T.VIDEOEDIT&&<VideoEditCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} audioNode={nodes.find(x=>x.id===n.audioNodeId)||null} />}
-        {n.type===T.AUDIO&&<AudioTrackCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} allNodes={nodes} />}
-        {n.type===T.SCRIPT&&<ScriptCard node={n} sel={isSel} upd={pr=>updNode(n.id,pr)} onDel={()=>delNode(n.id)} onSplitScenes={scenes=>onSplitScenes(n.id,scenes)} />}
-        {n.type===T.CLIP&&<ClipCard node={n} sel={isSel} upd={pr=>updNode(n.id,pr)} onDel={()=>delNode(n.id)} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} />}
-      </>
-    );
     return (
-      <div style={{ position:"relative", display:"inline-block", zoom: inspectMode ? 1.12 : 1 }}>
-        {!inspectMode && (
-          <div style={{ position:"absolute", top:8, right:8, zIndex:40 }}>
-            <InspectAction onClick={()=>openInspector(n.id)} th={th} />
-          </div>
-        )}
-        {nodeCard}
-      </div>
+      <>
+        {n.type===T.SCENE&&<SceneCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onGenShots={onGenShots} onGenVersionB={onGenVersionB} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={nodePosValue} model={shotModel} sceneStats={getSceneShotStats(nodes,n.id)} onExport={()=>exportScene(n)} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.SHOT&&<ShotCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} sceneBible={sceneNode?.bible||[]} linkedScene={sceneNode} onLink={sceneId=>linkShot(n.id,sceneId)} onStartWire={startWire} nodePos={nodePosValue} sceneStats={getSceneShotStats(nodes,n.sceneId)} globalBible={globalBibleFlat} onRetrySingleShot={onRetrySingleShot} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.IMAGE&&<ImageCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} linkedShot={linkedShot} linkedScene={linkedScene} onUnlinkShot={()=>updNode(n.id,{shotId:null,prompt:""})} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onSaveToBible={saveToBible} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.KLING&&<KlingCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.VEO&&<VeoCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.LLM&&<LlmCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onUpdateNode={updNode} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.VIDEOEDIT&&<VideoEditCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} audioNode={nodes.find(x=>x.id===n.audioNodeId)||null} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.AUDIO&&<AudioTrackCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={nodePosValue} allNodes={nodes} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.SCRIPT&&<ScriptCard node={n} sel={isSel} upd={pr=>updNode(n.id,pr)} onDel={()=>delNode(n.id)} onSplitScenes={scenes=>onSplitScenes(n.id,scenes)} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.CLIP&&<ClipCard node={n} sel={isSel} upd={pr=>updNode(n.id,pr)} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={nodePosValue} onInspect={()=>openInspector(n.id)} />}
+      </>
     );
   };
   const moveNode = (id,x,y) => setPos(prev=>({...prev,[id]:{x,y}}));
@@ -9060,8 +9364,8 @@ export default function App() {
               </button>
             </div>
             <div style={{ flex:1, overflow:"auto", padding:"18px 18px 40px" }}>
-              <div style={{ display:"inline-block" }}>
-                {renderNodeCard(inspectNode, { inspectMode:true })}
+              <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+                {renderInspectorContent(inspectNode)}
               </div>
             </div>
           </div>
