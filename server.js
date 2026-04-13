@@ -1505,15 +1505,82 @@ app.get("/health", (req, res) => res.json({ ok: true, node: process.version,
 const PORT = process.env.PORT || 3000;
 const isProd = process.env.NODE_ENV === "production";
 
+// ─── PER-PAGE SEO META ────────────────────────────────────────────────────────
+// Each route gets its own <title>, <description>, og:*, twitter:* and JSON-LD.
+// This lets Google see the right metadata for /pricing and /features instead of
+// always getting the homepage copy.
+const PAGE_META = {
+  "/": {
+    title: "Cartasis — AI Video Production Canvas | Script to Screen with Kling & Veo",
+    description: "Cartasis is the AI-powered director's canvas that takes you from script to finished video. Write scenes, plan shots, generate images, create AI videos with Kling and Veo, compose music, and edit — all in one visual workflow.",
+    ogTitle: "Cartasis — AI Video Production Canvas",
+    ogDescription: "From idea to finished video. Write your script, plan every shot, generate AI images, produce videos with Kling & Veo, and compose music — all on one canvas.",
+    canonical: "https://www.cartasis.com/",
+  },
+  "/pricing": {
+    title: "Cartasis Pricing — Free Plan + AI Credits | From $0 to $99/mo",
+    description: "Start free with 80 AI credits/mo. Scale to Indie ($19/mo, 900 credits), Pro ($49/mo, 2500 credits), or Studio ($99/mo, 6000 credits). Generate videos with Kling AI & Google Veo, create images, add lipsync, and compose music.",
+    ogTitle: "Cartasis Pricing — Transparent AI Video Plans",
+    ogDescription: "Start free. Generate AI videos with Kling & Veo, create images, compose music. No hidden fees — just credits. Plans from $0 to $99/mo.",
+    canonical: "https://www.cartasis.com/pricing",
+    ldJson: JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": "Cartasis",
+      "url": "https://www.cartasis.com",
+      "description": "AI-powered cinematic production canvas — script to finished video in one workflow.",
+      "offers": [
+        { "@type":"Offer", "name":"Free",   "price":"0",  "priceCurrency":"USD", "description":"80 credits/mo, Kling Standard, watermark, 2 projects" },
+        { "@type":"Offer", "name":"Indie",  "price":"19", "priceCurrency":"USD", "description":"900 credits/mo, all Kling + Lipsync, Veo Fast, 10 projects, no watermark" },
+        { "@type":"Offer", "name":"Pro",    "price":"49", "priceCurrency":"USD", "description":"2500 credits/mo, all Kling + all Veo, 30 projects, all AI features" },
+        { "@type":"Offer", "name":"Studio", "price":"99", "priceCurrency":"USD", "description":"6000 credits/mo, everything, 3 seats, unlimited projects, priority generation" },
+      ],
+    }),
+  },
+  "/features": {
+    title: "Cartasis Features — Node-Based AI Video Canvas | All AI Tools in One Place",
+    description: "Explore every Cartasis feature: AI script writing, cinematic shot planning, world bible for character consistency, Kling AI & Google Veo video generation, lipsync, AI music with ElevenLabs, and multi-node video editing.",
+    ogTitle: "Cartasis Features — The Complete AI Filmmaker's Toolkit",
+    ogDescription: "Node-based AI video production: script → scene → shot → image → video → lipsync → music → edit. Everything a director needs, powered by Kling, Veo, and ElevenLabs.",
+    canonical: "https://www.cartasis.com/features",
+  },
+};
+
+function injectPageMeta(html, path) {
+  const meta = PAGE_META[path] || PAGE_META["/"];
+  const inject = `
+    <title>${meta.title}</title>
+    <meta name="description" content="${meta.description}" />
+    <link rel="canonical" href="${meta.canonical}" />
+    <meta property="og:url" content="${meta.canonical}" />
+    <meta property="og:title" content="${meta.ogTitle}" />
+    <meta property="og:description" content="${meta.ogDescription}" />
+    <meta name="twitter:title" content="${meta.ogTitle}" />
+    <meta name="twitter:description" content="${meta.ogDescription}" />
+    ${meta.ldJson ? `<script type="application/ld+json">${meta.ldJson}</script>` : ""}
+  `;
+  // Replace the existing <title> tag (and everything up to </title>) with our injected block
+  return html.replace(/<title>[\s\S]*?<\/title>/, inject);
+}
+
 async function start() {
   if (isProd) {
     // Production: serve pre-built static files from dist/
     const distPath = path.join(__dirname, "dist");
     app.use(express.static(distPath));
-    // SPA fallback — all non-API routes serve index.html
+    // SPA fallback — inject per-page meta then serve index.html
     app.get("*", (req, res) => {
       if (!req.path.startsWith("/api")) {
-        res.sendFile(path.join(distPath, "index.html"));
+        const fs = require("fs");
+        const indexPath = path.join(distPath, "index.html");
+        try {
+          const raw = fs.readFileSync(indexPath, "utf8");
+          const html = injectPageMeta(raw, req.path);
+          res.setHeader("Content-Type", "text/html");
+          res.send(html);
+        } catch {
+          res.sendFile(indexPath);
+        }
       }
     });
   } else {
