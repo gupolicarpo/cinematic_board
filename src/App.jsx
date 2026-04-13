@@ -824,53 +824,109 @@ async function aiCoherenceCheck(nodes, command) {
   const sceneNodes = nodes.filter(n => n.type === T.SCENE);
   const shotNodes  = nodes.filter(n => n.type === T.SHOT);
 
-  // Build rich context per node
-  const context = nodes.map(n => {
-    if (n.type === T.SCENE) return {
-      id: n.id, type: "SCENE", index: n.index,
-      sceneText: n.sceneText || "",
-      cinematicStyle: n.cinematicStyle || "",
-    };
-    if (n.type === T.SHOT) return {
-      id: n.id, type: "SHOT", shotIndex: n.index,
-      sceneId: n.sceneId,
-      sourceAnchor: n.sourceAnchor || "",
-      how: n.how || "",
-      where: n.where || "",
-      when: n.when || "",
-      visualGoal: n.visualGoal || "",
-      dialogue: n.dialogue || "",
-      cameraSize: n.cameraSize, cameraAngle: n.cameraAngle,
-      cameraMovement: n.cameraMovement, lighting: n.lighting,
-    };
-    return { id: n.id, type: n.type.toUpperCase() };
+  // Group shots by their parent scene for sequence-level analysis
+  const sceneMap = Object.fromEntries(sceneNodes.map(s => [s.id, s]));
+  const shotsByScene = {};
+  shotNodes.forEach(sh => {
+    const sid = sh.sceneId || "__unlinked__";
+    if (!shotsByScene[sid]) shotsByScene[sid] = [];
+    shotsByScene[sid].push(sh);
   });
 
-  const hasShotsWithoutAnchor = shotNodes.some(n => !n.sourceAnchor?.trim());
+  // Build structured context grouped by scene → shots
+  const context = sceneNodes.map(scene => ({
+    id: scene.id,
+    type: "SCENE",
+    sceneText: scene.sceneText || "",
+    cinematicStyle: scene.cinematicStyle || "",
+    shots: (shotsByScene[scene.id] || [])
+      .sort((a, b) => (a.index || 0) - (b.index || 0))
+      .map(sh => ({
+        id: sh.id,
+        index: sh.index,
+        sourceAnchor: sh.sourceAnchor || "",
+        how: sh.how || "",
+        where: sh.where || "",
+        when: sh.when || "",
+        entityTags: sh.entityTags || [],
+        cameraSize: sh.cameraSize || "",
+        cameraAngle: sh.cameraAngle || "",
+        cameraMovement: sh.cameraMovement || "",
+        lighting: sh.lighting || "",
+        visualGoal: sh.visualGoal || "",
+        dialogue: sh.dialogue || "",
+        durationSec: sh.durationSec || 0,
+      })),
+  }));
 
-  const sys = `You are a cinematic script supervisor analyzing storyboard nodes for coherence.
+  // Also include any unlinked shots
+  if (shotsByScene["__unlinked__"]?.length) {
+    context.push({
+      id: "__unlinked__", type: "UNLINKED_SHOTS",
+      shots: shotsByScene["__unlinked__"].map(sh => ({
+        id: sh.id, index: sh.index, how: sh.how || "", where: sh.where || "",
+        visualGoal: sh.visualGoal || "", sourceAnchor: sh.sourceAnchor || "",
+      })),
+    });
+  }
 
-You receive a list of SCENE and SHOT nodes. Your tasks:
-1. SOURCE ANCHOR: For every SHOT where sourceAnchor is empty or missing, write a verbatim quote (5-20 words) taken DIRECTLY from the SCENE's sceneText that best justifies this shot. If no matching scene is provided, write a short anchor based on the shot's own "how" field.
-2. VISUAL GOAL: For every SHOT where visualGoal is empty, write a concise cinematic purpose (e.g. "establish isolation", "reveal the villain's power").
-3. COHERENCE: If a SHOT's where/when/lighting conflicts with the SCENE context, suggest fixes.
-4. DIALOGUE: If a shot has dialogue but no visualGoal that references it, update visualGoal.
-5. Only return patches for nodes that actually need changes.
+  const sys = `You are a senior script supervisor and continuity editor analyzing a storyboard for a short film or video production.
 
-Return a JSON object where each key is a node ID and each value is a patch object with ONLY the fields to change.
-Return ONLY raw JSON. No markdown fences, no commentary.
+You receive SCENE nodes (with the full scene prose) and their child SHOT nodes (ordered by index). Your job is to do a thorough coherence review across six dimensions:
+
+────────────────────────────────────────────
+1. BEAT COVERAGE — Does the sequence of shots cover all the story beats in the scene text?
+   • Flag if important actions, reveals, or dialogue beats from sceneText have no corresponding shot.
+   • Flag if shots reference actions/characters/locations that do NOT exist in the scene text (hallucination risk).
+   • Fix: update sourceAnchor to a verbatim 5-20 word quote from sceneText that justifies each shot.
+
+2. SEQUENCE LOGIC — Does the shot order make narrative and spatial sense?
+   • Check that establishing shots come before close-ups when introducing a new space.
+   • Flag if there are abrupt jump cuts with no transitional logic (e.g., two consecutive extreme close-ups on the same subject with no spatial re-establishment).
+   • Flag if character/object continuity breaks (e.g., a character is introduced in shot 3 but only the location is established in shot 5).
+
+3. CUT CORRECTNESS — Are the edit cuts cinematically sound?
+   • Check the 180° rule: if two characters face each other, their eye-line relationship must stay consistent across cuts.
+   • Check for match-cut opportunities (movement, eyeline, action) that are being missed.
+   • Flag where/when values that conflict between consecutive shots in the same scene.
+
+4. SHOT BALANCE — Is there good coverage variety?
+   • A scene should typically have: 1 wide/establishing shot, medium shots for action, close-ups for emotional beats.
+   • Flag if ALL shots are the same cameraSize (e.g., all medium) — this produces flat coverage.
+   • Flag if dialogue shots lack a corresponding reaction shot.
+
+5. VISUAL GOAL — Every shot must have a clear cinematic purpose.
+   • If visualGoal is empty or generic, write a specific purpose: "reveal the gap between what the character says and feels", "establish the threat looming behind the protagonist", etc.
+
+6. HALLUCINATION PREVENTION — The most critical check.
+   • Cross-reference every shot's "how", "where", "entityTags" against the scene text.
+   • If a shot describes an action, character, or location detail that is NOT present in the scene text and cannot be reasonably inferred, flag it and suggest a correction grounded in the scene.
+
+────────────────────────────────────────────
+OUTPUT RULES:
+• Return a JSON object where each key is a node ID (scene or shot) and each value is a patch with ONLY the fields to change.
+• For shots: patchable fields are sourceAnchor, how, where, when, visualGoal, cameraSize, cameraAngle, cameraMovement, lighting, directorNote.
+• Use directorNote to explain a coherence issue without changing creative intent (e.g. "Check 180° — previous shot has character entering from left").
+• ONLY include nodes that actually need changes. Empty patches are forbidden.
+• Return ONLY raw JSON. No markdown, no explanation outside the JSON.
 
 Example:
 {
-  "sh_abc": { "sourceAnchor": "flames erupt across the stone floor", "visualGoal": "establish the scale of destruction" },
-  "sh_xyz": { "visualGoal": "reveal the character's hesitation" }
+  "sh_abc": { "sourceAnchor": "the door splinters open and smoke pours in", "visualGoal": "establish the violence of the entry before we see a face" },
+  "sh_xyz": { "cameraSize": "close-up", "directorNote": "Previous shot was also medium — vary to close-up to land the emotional beat" },
+  "sh_999": { "how": "Character reacts to the sound — DO NOT show the attacker yet", "directorNote": "Shot 4 reveals the attacker; this shot must preserve the mystery" }
 }`;
 
-  const usr = `${command?.trim() ? `User instruction: "${command}"\n\n` : ""}Nodes to analyze:\n${JSON.stringify(context, null, 2)}`;
+  const usr = `${command?.trim() ? `Director's note / specific focus: "${command}"\n\n` : ""}Storyboard to analyze:\n${JSON.stringify(context, null, 2)}`;
 
   const r = await fetch("/api/messages", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 2000, system: sys, messages: [{ role: "user", content: usr }] })
+    body: JSON.stringify({
+      model: "claude-sonnet-4-5",
+      max_tokens: 4000,
+      system: sys,
+      messages: [{ role: "user", content: usr }],
+    })
   });
   const raw = await r.text();
   if (!r.ok) throw new Error(`Claude ${r.status}: ${raw.slice(0, 200)}`);
