@@ -6617,6 +6617,7 @@ function EscListener({ cb }) {
 // the user can open and immediately edit or generate from.
 
 function makeActionShortFilmTemplate() {
+  return makeActionNeoNoirShortFilmTemplate();
   // ── Shared entity definitions ──────────────────────────────────────────────
   const eHero    = { id:`e_${uid()}`, kind:"character", name:"Adrian Vale",   tag:"@hero",    description:"Professional killer, late 30s, black tailored suit, disciplined posture, unreadable face, economical movement", notes:"Protagonist", _imgUrl:"/character_Alex_Mercer.png", _prev:"/character_Alex_Mercer.png", assetId:"ref" };
   const eVillain = { id:`e_${uid()}`, kind:"character", name:"Gregor Sane",   tag:"@villain", description:"Crime broker, 50s, immaculate charcoal overcoat, calm authority, predatory stillness", notes:"Antagonist", _imgUrl:"", assetId:"" };
