@@ -55,11 +55,6 @@ const FALLBACK_PRICING = {
     { tier:"pro",    label:"Pro",    priceDisplay:"$49", credits:2500, features:["2500 credits/mo","All Kling + All Veo","30 projects","All AI features"], interval:"month" },
     { tier:"studio", label:"Studio", priceDisplay:"$99", credits:6000, features:["6000 credits/mo","Everything","3 seats","Unlimited projects","Priority gen"], interval:"month" },
   ],
-  topups: [
-    { pack:"500",  label:"500 credits",  priceDisplay:"$9.99",  description:"~25 Kling videos" },
-    { pack:"1500", label:"1500 credits", priceDisplay:"$24.99", description:"~33 Veo Fast videos" },
-    { pack:"4000", label:"4000 credits", priceDisplay:"$59.99", description:"Best value" },
-  ],
 };
 
 const GlobalStyle = () => (
@@ -342,7 +337,6 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
 
   const openAuth = () => setAuthOpen(true);
   const pricingTiers = pricingData?.tiers?.length ? pricingData.tiers : FALLBACK_PRICING.tiers;
-  const pricingTopups = pricingData?.topups?.length ? pricingData.topups : FALLBACK_PRICING.topups;
 
   return (
     <div style={{ fontFamily:"Inter,system-ui,sans-serif", color:DARK, background:WHITE }}>
@@ -856,18 +850,6 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
           })}
         </div>
 
-        <div style={{ background:SURFACE, border:`1px solid ${BORDER}`, borderRadius:16, padding:24 }}>
-          <div style={{ fontSize:14, fontWeight:700, color:DARK, marginBottom:14 }}>Credit top-ups</div>
-          <div className="lp-grid-3" style={{ gap:14 }}>
-            {pricingTopups.map((pack) => (
-              <div key={pack.pack} style={{ background:WHITE, border:`1px solid ${BORDER}`, borderRadius:12, padding:18 }}>
-                <div style={{ fontSize:15, fontWeight:800, color:DARK, marginBottom:4 }}>{pack.label}</div>
-                <div style={{ fontSize:20, fontWeight:800, color:"#7c3aed", letterSpacing:"-0.02em", marginBottom:6 }}>{pack.priceDisplay}</div>
-                <div style={{ fontSize:12, color:MUTED, lineHeight:1.6 }}>{pack.description || "One-time credit pack"}</div>
-              </div>
-            ))}
-          </div>
-        </div>
       </Section>
 
       {/* ── FAQ ── */}
