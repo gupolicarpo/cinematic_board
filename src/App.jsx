@@ -902,6 +902,18 @@ You receive SCENE nodes (with the full scene prose) and their child SHOT nodes (
    • Cross-reference every shot's "how", "where", "entityTags" against the scene text.
    • If a shot describes an action, character, or location detail that is NOT present in the scene text and cannot be reasonably inferred, flag it and suggest a correction grounded in the scene.
 
+7. SHOT COMPLEXITY / AI GENERATION VIABILITY — Every shot must be generatable by an AI video model.
+   • A single shot must describe ONE primary action or moment, not a sequence of events.
+   • RED FLAGS that will cause AI video generation to fail or produce incoherent output:
+     - Multiple characters doing different things simultaneously (e.g. "A runs left while B fires and C ducks")
+     - A character performing more than one distinct action in sequence (e.g. "picks up the gun, loads it, and aims")
+     - A location change within a single shot description
+     - Shots that contain a cause AND an effect (e.g. "the explosion happens and the wall collapses")
+     - More than 2-3 active entities in complex interaction
+   • RULE: one shot = one action = one moment. If a shot "how" field contains multiple verbs describing distinct sequential events, it must be split or simplified.
+   • Fix: rewrite "how" to describe only the single most important visual action for that shot. Use directorNote to explain what was removed and suggest it becomes its own shot.
+   • Also check durationSec vs complexity: a 3s shot cannot credibly show a long physical sequence. Flag and suggest either simplifying the action or increasing duration.
+
 ────────────────────────────────────────────
 OUTPUT RULES:
 • Return a JSON object where each key is a node ID (scene or shot) and each value is a patch with ONLY the fields to change.
