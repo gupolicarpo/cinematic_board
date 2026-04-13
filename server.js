@@ -186,12 +186,11 @@ if (!fs.existsSync(VEO_CACHE)) fs.mkdirSync(VEO_CACHE, { recursive: true });
 
 const app = express();
 
-// ── Canonical redirect: www → non-www (prevents duplicate indexing) ──────────
+// ── Canonical redirect: non-www → www (prevents duplicate indexing) ──────────
 app.use((req, res, next) => {
   const host = req.headers.host || "";
-  if (process.env.NODE_ENV === "production" && host.startsWith("www.")) {
-    const bare = host.slice(4);
-    return res.redirect(301, `https://${bare}${req.url}`);
+  if (process.env.NODE_ENV === "production" && !host.startsWith("www.") && !host.includes("localhost")) {
+    return res.redirect(301, `https://www.${host}${req.url}`);
   }
   next();
 });
