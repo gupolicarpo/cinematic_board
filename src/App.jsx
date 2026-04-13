@@ -1831,7 +1831,6 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
           <span style={{ fontSize:11, color:uac, fontWeight:700 }}>{node.durationSec||1}</span>
           <span style={{ fontSize:7, color:th.t2, letterSpacing:"0.08em" }}>s</span>
         </div>
-        {onInspect && <InspectAction onClick={onInspect} th={th} />}
         {/* Export this shot */}
         <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();
           const slug = `shot-${node.index||"x"}-${(node.how||"shot").trim().slice(0,20).replace(/[^a-z0-9]/gi,"-").toLowerCase()}`;
@@ -2103,6 +2102,7 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
                     ↺ RESET
                   </button>
                 )}
+                {onInspect && <InspectAction onClick={onInspect} th={th} />}
                 <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation(); setPromptEdit(o=>!o);}}
                   title={promptEdit ? "Collapse prompt" : "Edit prompt directly"}
                   style={{ background: promptEdit ? `${uac}22` : "transparent", border:`1px solid ${promptEdit ? uac+"44" : th.b0}`, color: promptEdit ? uac : th.t2, fontFamily:"'Inter',system-ui,sans-serif", fontSize:6, padding:"2px 5px", borderRadius:2, cursor:"pointer", letterSpacing:"0.06em" }}>
