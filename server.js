@@ -55,9 +55,35 @@ const STRIPE_PRICES = {
   pro:    process.env.STRIPE_PRICE_PRO,
   studio: process.env.STRIPE_PRICE_STUDIO,
 };
+const TOPUP_PRICES = {
+  "500":  process.env.STRIPE_PRICE_TOPUP_500,
+  "1500": process.env.STRIPE_PRICE_TOPUP_1500,
+  "4000": process.env.STRIPE_PRICE_TOPUP_4000,
+};
 
 // Monthly credits per tier
 const TIER_CREDITS = { free: 80, indie: 900, pro: 2500, studio: 6000 };
+const TIER_LABELS  = { free: "Free", indie: "Indie", pro: "Pro", studio: "Studio" };
+const TIER_FEATURES = {
+  free:   ["80 credits/mo", "Kling Standard", "Watermark", "2 projects"],
+  indie:  ["900 credits/mo", "All Kling + Lipsync", "Veo Fast", "10 projects", "No watermark"],
+  pro:    ["2500 credits/mo", "All Kling + All Veo", "30 projects", "All AI features"],
+  studio: ["6000 credits/mo", "Everything", "3 seats", "Unlimited projects", "Priority gen"],
+};
+const TOPUP_DESCRIPTIONS = {
+  "500":  "~25 Kling videos",
+  "1500": "~33 Veo Fast videos",
+  "4000": "Best value",
+};
+
+function formatStripeMoney(unitAmount, currency = "usd") {
+  if (typeof unitAmount !== "number") return "";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: String(currency || "usd").toUpperCase(),
+    minimumFractionDigits: unitAmount % 100 === 0 ? 0 : 2,
+  }).format(unitAmount / 100);
+}
 
 // Cost in credits per operation
 const OP_CREDITS = {
@@ -1242,6 +1268,67 @@ app.get("/api/user/credits", async (req, res) => {
   });
 });
 
+// GET /api/stripe/public-pricing — public pricing metadata for landing / pricing UI
+app.get("/api/stripe/public-pricing", async (_req, res) => {
+  const fallback = {
+    tiers: [
+      { tier:"free",   label:"Free",   priceDisplay:"$0",  credits:TIER_CREDITS.free,   features:TIER_FEATURES.free, interval:"month" },
+      { tier:"indie",  label:"Indie",  priceDisplay:"$19", credits:TIER_CREDITS.indie,  features:TIER_FEATURES.indie, interval:"month" },
+      { tier:"pro",    label:"Pro",    priceDisplay:"$49", credits:TIER_CREDITS.pro,    features:TIER_FEATURES.pro, interval:"month" },
+      { tier:"studio", label:"Studio", priceDisplay:"$99", credits:TIER_CREDITS.studio, features:TIER_FEATURES.studio, interval:"month" },
+    ],
+    topups: [
+      { pack:"500",  label:"500 credits",  priceDisplay:"$9.99",  description:TOPUP_DESCRIPTIONS["500"] },
+      { pack:"1500", label:"1500 credits", priceDisplay:"$24.99", description:TOPUP_DESCRIPTIONS["1500"] },
+      { pack:"4000", label:"4000 credits", priceDisplay:"$59.99", description:TOPUP_DESCRIPTIONS["4000"] },
+    ],
+  };
+  if (!stripe) return res.json(fallback);
+
+  try {
+    const paidTiers = Object.entries(STRIPE_PRICES).filter(([, priceId]) => !!priceId);
+    const [stripeTierPrices, stripeTopups] = await Promise.all([
+      Promise.all(paidTiers.map(async ([tier, priceId]) => {
+        const price = await stripe.prices.retrieve(priceId, { expand: ["product"] });
+        const product = price?.product && typeof price.product === "object" ? price.product : null;
+        return {
+          tier,
+          label: product?.name || TIER_LABELS[tier] || tier,
+          priceDisplay: formatStripeMoney(price?.unit_amount, price?.currency),
+          credits: TIER_CREDITS[tier],
+          features: TIER_FEATURES[tier] || [],
+          description: product?.description || "",
+          interval: price?.recurring?.interval || "month",
+          priceId: price?.id || priceId,
+        };
+      })),
+      Promise.all(Object.entries(TOPUP_PRICES).filter(([, priceId]) => !!priceId).map(async ([pack, priceId]) => {
+        const price = await stripe.prices.retrieve(priceId, { expand: ["product"] });
+        const product = price?.product && typeof price.product === "object" ? price.product : null;
+        return {
+          pack,
+          label: product?.name || `${pack} credits`,
+          priceDisplay: formatStripeMoney(price?.unit_amount, price?.currency),
+          description: product?.description || TOPUP_DESCRIPTIONS[pack] || "",
+          priceId: price?.id || priceId,
+        };
+      })),
+    ]);
+
+    const tierOrder = ["free", "indie", "pro", "studio"];
+    const tiers = [
+      fallback.tiers[0],
+      ...stripeTierPrices.sort((a, b) => tierOrder.indexOf(a.tier) - tierOrder.indexOf(b.tier)),
+    ];
+    const topups = stripeTopups.length ? stripeTopups.sort((a, b) => Number(a.pack) - Number(b.pack)) : fallback.topups;
+
+    return res.json({ tiers, topups });
+  } catch (err) {
+    console.error("[stripe-public-pricing]", err.message);
+    return res.json(fallback);
+  }
+});
+
 // POST /api/stripe/checkout — create Stripe Checkout session for a given tier
 app.post("/api/stripe/checkout", async (req, res) => {
   if (!stripe) return res.status(500).json({ error: "Stripe not configured" });
@@ -1300,11 +1387,6 @@ app.post("/api/stripe/topup", async (req, res) => {
   if (!stripe) return res.status(500).json({ error: "Stripe not configured" });
   const userId = await getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  const TOPUP_PRICES = {
-    "500":  process.env.STRIPE_PRICE_TOPUP_500,
-    "1500": process.env.STRIPE_PRICE_TOPUP_1500,
-    "4000": process.env.STRIPE_PRICE_TOPUP_4000,
-  };
   const { pack } = req.body; // "500", "1500", "4000"
   const priceId = TOPUP_PRICES[pack];
   if (!priceId) return res.status(400).json({ error: `Unknown pack: ${pack}` });

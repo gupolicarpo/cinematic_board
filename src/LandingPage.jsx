@@ -48,6 +48,20 @@ const VIDEO_FRAMES = [
   { id:"1478720568477-152d9b164e26", label:"FRAME 00:05", engine:"VEO"   },
 ];
 
+const FALLBACK_PRICING = {
+  tiers: [
+    { tier:"free",   label:"Free",   priceDisplay:"$0",  credits:80,   features:["80 credits/mo","Kling Standard","Watermark","2 projects"], interval:"month" },
+    { tier:"indie",  label:"Indie",  priceDisplay:"$19", credits:900,  features:["900 credits/mo","All Kling + Lipsync","Veo Fast","10 projects","No watermark"], interval:"month" },
+    { tier:"pro",    label:"Pro",    priceDisplay:"$49", credits:2500, features:["2500 credits/mo","All Kling + All Veo","30 projects","All AI features"], interval:"month" },
+    { tier:"studio", label:"Studio", priceDisplay:"$99", credits:6000, features:["6000 credits/mo","Everything","3 seats","Unlimited projects","Priority gen"], interval:"month" },
+  ],
+  topups: [
+    { pack:"500",  label:"500 credits",  priceDisplay:"$9.99",  description:"~25 Kling videos" },
+    { pack:"1500", label:"1500 credits", priceDisplay:"$24.99", description:"~33 Veo Fast videos" },
+    { pack:"4000", label:"4000 credits", priceDisplay:"$59.99", description:"Best value" },
+  ],
+};
+
 const GlobalStyle = () => (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
@@ -289,9 +303,10 @@ const NodeCard = ({ x, y, color, label, emoji, title, sub, accent, borderColor, 
 );
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
-export default function LandingPage({ onAuth }) {
+export default function LandingPage({ onAuth, initialSection = "" }) {
   const [authOpen, setAuthOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [pricingData, setPricingData] = useState(FALLBACK_PRICING);
 
   useEffect(() => {
     document.body.style.overflow = "auto";
@@ -305,7 +320,29 @@ export default function LandingPage({ onAuth }) {
     return () => window.removeEventListener("scroll", fn);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/stripe/public-pricing")
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(data => {
+        if (!cancelled && data?.tiers?.length) setPricingData(data);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!initialSection) return;
+    const timer = setTimeout(() => {
+      const el = document.getElementById(initialSection);
+      if (el) el.scrollIntoView({ behavior:"smooth", block:"start" });
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [initialSection]);
+
   const openAuth = () => setAuthOpen(true);
+  const pricingTiers = pricingData?.tiers?.length ? pricingData.tiers : FALLBACK_PRICING.tiers;
+  const pricingTopups = pricingData?.topups?.length ? pricingData.topups : FALLBACK_PRICING.topups;
 
   return (
     <div style={{ fontFamily:"Inter,system-ui,sans-serif", color:DARK, background:WHITE }}>
@@ -322,9 +359,9 @@ export default function LandingPage({ onAuth }) {
             <span style={{ fontSize:13, fontWeight:800, letterSpacing:"0.18em", color:DARK }}>CINEMATIC GRAPH</span>
           </div>
           <nav className="lp-nav-links">
-            {[["#nodes","Node System"],["#storyboard","Scene & Shots"],["#bible","World Bible"],["#video","AI Video"],["#workflow","Script → Cut"],["#features","Features"]].map(([href,label]) => (
-              href === "#features"
-                ? <a key={href} href="/features" style={{ fontSize:13, fontWeight:500, color:MID, transition:"color 0.15s" }}
+            {[["#nodes","Node System"],["#storyboard","Scene & Shots"],["#bible","World Bible"],["#video","AI Video"],["/pricing","Pricing"],["#workflow","Script → Cut"],["/features","Features"]].map(([href,label]) => (
+              href.startsWith("/")
+                ? <a key={href} href={href} style={{ fontSize:13, fontWeight:500, color:MID, transition:"color 0.15s" }}
                     onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>{label}</a>
                 : <a key={href} href={href} style={{ fontSize:13, fontWeight:500, color:MID, transition:"color 0.15s" }}
                     onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>{label}</a>
@@ -777,6 +814,59 @@ export default function LandingPage({ onAuth }) {
               </div>
             </div>
           ))}
+        </div>
+      </Section>
+
+      {/* ── PRICING ── */}
+      <Section id="pricing" pt={96} pb={96}>
+        <div style={{ textAlign:"center", marginBottom:48 }}>
+          <Tag>Pricing</Tag>
+          <h2 style={{ fontSize:"clamp(28px,4vw,44px)", fontWeight:800, letterSpacing:"-0.025em", lineHeight:1.15, marginBottom:16 }}>
+            Straightforward plans.<br />Real credits. No guessing.
+          </h2>
+          <p style={{ fontSize:16, color:MUTED, lineHeight:1.8, maxWidth:660, margin:"0 auto" }}>
+            Your Stripe-configured plans are shown here. Start free, upgrade when you need more monthly credits, and top up when a project gets heavier.
+          </p>
+        </div>
+
+        <div className="lp-grid-4" style={{ gap:16, marginBottom:28, gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))" }}>
+          {pricingTiers.map((tier) => {
+            const tierColor = ({ free:MUTED, indie:"#38bdf8", pro:"#a78bfa", studio:"#f59e0b" })[tier.tier] || ACCENT;
+            return (
+              <div key={tier.tier} style={{ background:WHITE, border:`1px solid ${BORDER}`, borderTop:`3px solid ${tierColor}`, borderRadius:16, padding:22, textAlign:"left" }}>
+                <div style={{ fontSize:12, fontWeight:800, color:tierColor, letterSpacing:"0.08em", marginBottom:8 }}>{tier.label}</div>
+                <div style={{ fontSize:32, fontWeight:900, color:DARK, letterSpacing:"-0.03em", marginBottom:4 }}>
+                  {tier.priceDisplay}
+                  <span style={{ fontSize:14, color:MUTED, fontWeight:500 }}>/{tier.interval === "year" ? "yr" : "mo"}</span>
+                </div>
+                <div style={{ fontSize:13, color:MUTED, marginBottom:16 }}>{(tier.credits || 0).toLocaleString()} credits per month</div>
+                <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:18 }}>
+                  {(tier.features || []).map((feature) => (
+                    <div key={feature} style={{ fontSize:13, color:MID, lineHeight:1.5 }}>✓ {feature}</div>
+                  ))}
+                </div>
+                {tier.description && (
+                  <div style={{ fontSize:12, color:MUTED, lineHeight:1.6, marginBottom:18 }}>{tier.description}</div>
+                )}
+                <button onClick={openAuth} style={{ width:"100%", background:tier.tier === "free" ? DARK : `${tierColor}14`, border:`1px solid ${tier.tier === "free" ? DARK : `${tierColor}35`}`, borderRadius:10, padding:"12px 14px", color:tier.tier === "free" ? WHITE : tierColor, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                  {tier.tier === "free" ? "Start free" : "Get started"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ background:SURFACE, border:`1px solid ${BORDER}`, borderRadius:16, padding:24 }}>
+          <div style={{ fontSize:14, fontWeight:700, color:DARK, marginBottom:14 }}>Credit top-ups</div>
+          <div className="lp-grid-3" style={{ gap:14 }}>
+            {pricingTopups.map((pack) => (
+              <div key={pack.pack} style={{ background:WHITE, border:`1px solid ${BORDER}`, borderRadius:12, padding:18 }}>
+                <div style={{ fontSize:15, fontWeight:800, color:DARK, marginBottom:4 }}>{pack.label}</div>
+                <div style={{ fontSize:20, fontWeight:800, color:"#7c3aed", letterSpacing:"-0.02em", marginBottom:6 }}>{pack.priceDisplay}</div>
+                <div style={{ fontSize:12, color:MUTED, lineHeight:1.6 }}>{pack.description || "One-time credit pack"}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </Section>
 

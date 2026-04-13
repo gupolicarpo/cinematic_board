@@ -7681,6 +7681,7 @@ export default function App() {
   const [showPricing,     setShowPricing]      = useState(false);
   const [outOfCredits,    setOutOfCredits]     = useState(null); // { needed, balance, op } or null
   const [showTopup,       setShowTopup]        = useState(false);
+  const [pricingData,     setPricingData]      = useState(null);
 
   // Check for existing session on mount
   useEffect(() => {
@@ -7706,6 +7707,14 @@ export default function App() {
     } catch {}
   };
   useEffect(() => { if (user) fetchCredits(); else setCredits(null); }, [user]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/stripe/public-pricing")
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(data => { if (!cancelled) setPricingData(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Helper: check 402 responses from generation endpoints and show popup
   const handleApiResponse = async (res) => {
@@ -8523,6 +8532,7 @@ export default function App() {
     </div>
   );
   if (window.location.pathname === "/features") return <FeaturesPage onAuth={() => window.location.href = "/"} />;
+  if (window.location.pathname === "/pricing") return <LandingPage onAuth={u => setUser(u)} initialSection="pricing" />;
   if (!user) return <LandingPage onAuth={u => setUser(u)} />;
 
   // ── Billing helpers (needs user + credits in scope) ──────────────────────
@@ -8577,6 +8587,17 @@ export default function App() {
 
   const TIER_LABEL = { free: "Free", indie: "Indie", pro: "Pro", studio: "Studio" };
   const TIER_COLOR = { free: "#6b7280", indie: "#38bdf8", pro: "#a78bfa", studio: "#f59e0b" };
+  const pricingTiers = pricingData?.tiers?.length ? pricingData.tiers : [
+    { tier:"free",   label:"Free",   priceDisplay:"$0",  credits:80,   features:["80 credits/mo","Kling Standard","Watermark","2 projects"], interval:"month" },
+    { tier:"indie",  label:"Indie",  priceDisplay:"$19", credits:900,  features:["900 credits/mo","All Kling + Lipsync","Veo Fast","10 projects","No watermark"], interval:"month" },
+    { tier:"pro",    label:"Pro",    priceDisplay:"$49", credits:2500, features:["2500 credits/mo","All Kling + All Veo","30 projects","All AI features"], interval:"month" },
+    { tier:"studio", label:"Studio", priceDisplay:"$99", credits:6000, features:["6000 credits/mo","Everything","3 seats","Unlimited projects","Priority gen"], interval:"month" },
+  ];
+  const pricingTopups = pricingData?.topups?.length ? pricingData.topups : [
+    { pack:"500",  label:"500 credits",  priceDisplay:"$9.99",  description:"~25 Kling videos" },
+    { pack:"1500", label:"1500 credits", priceDisplay:"$24.99", description:"~33 Veo Fast videos" },
+    { pack:"4000", label:"4000 credits", priceDisplay:"$59.99", description:"Best value" },
+  ];
   const credPct = credits ? Math.min(100, Math.round((credits.credits_balance / credits.credits_monthly) * 100)) : 0;
   const credLow = credits && credits.credits_balance < Math.round(credits.credits_monthly * 0.15);
 
@@ -8595,13 +8616,13 @@ export default function App() {
           {/* Top-up packs */}
           <div style={{ fontSize:12, fontWeight:600, color:th.t3, textTransform:"uppercase", letterSpacing:1, marginBottom:10 }}>Buy credit packs</div>
           <div style={{ display:"flex", gap:8, marginBottom:20 }}>
-            {[["500","$9.99"], ["1500","$24.99"], ["4000","$59.99"]].map(([pack, price]) => (
-              <button key={pack} onClick={() => { setOutOfCredits(null); startTopup(pack); }}
+            {pricingTopups.map((pack) => (
+              <button key={pack.pack} onClick={() => { setOutOfCredits(null); startTopup(pack.pack); }}
                 style={{ flex:1, padding:"10px 4px", borderRadius:8, border:`1px solid ${th.b1}`, background:th.bg,
                   color:th.t0, cursor:"pointer", fontSize:12, fontWeight:600 }}>
-                <div style={{ fontSize:15, fontWeight:700 }}>{pack}</div>
+                <div style={{ fontSize:15, fontWeight:700 }}>{pack.pack}</div>
                 <div style={{ color:th.t3, fontSize:11 }}>credits</div>
-                <div style={{ color:"#a78bfa", marginTop:2 }}>{price}</div>
+                <div style={{ color:"#a78bfa", marginTop:2 }}>{pack.priceDisplay}</div>
               </button>
             ))}
           </div>
@@ -8654,43 +8675,41 @@ export default function App() {
               style={{ background:"transparent", border:"none", color:th.t2, fontSize:22, cursor:"pointer" }}>✕</button>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))", gap:16 }}>
-            {[
-              { tier:"free",   label:"Free",   price:"$0",   credits:80,   color:"#6b7280", features:["80 credits/mo","Kling Standard","Watermark","2 projects"] },
-              { tier:"indie",  label:"Indie",  price:"$19",  credits:900,  color:"#38bdf8", features:["900 credits/mo","All Kling + Lipsync","Veo Fast","10 projects","No watermark"] },
-              { tier:"pro",    label:"Pro",    price:"$49",  credits:2500, color:"#a78bfa", features:["2500 credits/mo","All Kling + All Veo","30 projects","All AI features"], popular:true },
-              { tier:"studio", label:"Studio", price:"$99",  credits:6000, color:"#f59e0b", features:["6000 credits/mo","Everything","3 seats","Unlimited projects","Priority gen"] },
-            ].map(t => (
-              <div key={t.tier} style={{ border:`2px solid ${credits?.tier===t.tier ? t.color : th.b1}`, borderRadius:12, padding:20, position:"relative" }}>
-                {t.popular && <div style={{ position:"absolute", top:-11, left:"50%", transform:"translateX(-50%)", background:t.color, color:"#000", fontSize:10, fontWeight:700, padding:"2px 10px", borderRadius:20 }}>POPULAR</div>}
-                <div style={{ fontSize:13, fontWeight:700, color:t.color, marginBottom:4 }}>{t.label}</div>
-                <div style={{ fontSize:26, fontWeight:800, color:th.t0 }}>{t.price}<span style={{fontSize:13,color:th.t3,fontWeight:400}}>/mo</span></div>
-                <div style={{ fontSize:12, color:th.t3, marginBottom:16 }}>{t.credits.toLocaleString()} credits/mo</div>
-                {t.features.map(f => (
+            {pricingTiers.map(t => {
+              const color = TIER_COLOR[t.tier] || "#a78bfa";
+              const popular = t.tier === "pro";
+              return (
+              <div key={t.tier} style={{ border:`2px solid ${credits?.tier===t.tier ? color : th.b1}`, borderRadius:12, padding:20, position:"relative" }}>
+                {popular && <div style={{ position:"absolute", top:-11, left:"50%", transform:"translateX(-50%)", background:color, color:"#000", fontSize:10, fontWeight:700, padding:"2px 10px", borderRadius:20 }}>POPULAR</div>}
+                <div style={{ fontSize:13, fontWeight:700, color:color, marginBottom:4 }}>{t.label}</div>
+                <div style={{ fontSize:26, fontWeight:800, color:th.t0 }}>{t.priceDisplay}<span style={{fontSize:13,color:th.t3,fontWeight:400}}>/{t.interval === "year" ? "yr" : "mo"}</span></div>
+                <div style={{ fontSize:12, color:th.t3, marginBottom:16 }}>{(t.credits || 0).toLocaleString()} credits/mo</div>
+                {(t.features || []).map(f => (
                   <div key={f} style={{ fontSize:12, color:th.t1, marginBottom:6 }}>✓ {f}</div>
                 ))}
                 {credits?.tier === t.tier ? (
-                  <div style={{ marginTop:16, fontSize:12, color:t.color, fontWeight:600, textAlign:"center" }}>Current plan</div>
+                  <div style={{ marginTop:16, fontSize:12, color:color, fontWeight:600, textAlign:"center" }}>Current plan</div>
                 ) : t.tier === "free" ? null : (
                   <button onClick={() => { setShowPricing(false); startCheckout(t.tier); }}
-                    style={{ marginTop:16, width:"100%", padding:"9px 0", borderRadius:8, border:`1px solid ${t.color}`,
-                      background:`${t.color}18`, color:t.color, cursor:"pointer", fontSize:13, fontWeight:600 }}>
+                    style={{ marginTop:16, width:"100%", padding:"9px 0", borderRadius:8, border:`1px solid ${color}`,
+                      background:`${color}18`, color:color, cursor:"pointer", fontSize:13, fontWeight:600 }}>
                     {credits?.tier === "free" ? "Start free trial" : "Switch plan"}
                   </button>
                 )}
               </div>
-            ))}
+            )})}
           </div>
           {/* Credit top-ups */}
           <div style={{ marginTop:32, borderTop:`1px solid ${th.b1}`, paddingTop:24 }}>
             <div style={{ fontSize:14, fontWeight:600, color:th.t0, marginBottom:16 }}>Need more credits? Buy a top-up pack</div>
             <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
-              {[["500","$9.99","~25 Kling videos"], ["1500","$24.99","~33 Veo Fast videos"], ["4000","$59.99","Best value"]].map(([pack,price,desc]) => (
-                <button key={pack} onClick={() => { setShowPricing(false); startTopup(pack); }}
+              {pricingTopups.map((pack) => (
+                <button key={pack.pack} onClick={() => { setShowPricing(false); startTopup(pack.pack); }}
                   style={{ flex:1, minWidth:140, padding:"12px 16px", borderRadius:10, border:`1px solid ${th.b1}`,
                     background:th.bg, color:th.t0, cursor:"pointer", textAlign:"left" }}>
-                  <div style={{ fontSize:15, fontWeight:700 }}>{pack} credits</div>
-                  <div style={{ fontSize:13, color:"#a78bfa", fontWeight:600 }}>{price}</div>
-                  <div style={{ fontSize:11, color:th.t3, marginTop:2 }}>{desc}</div>
+                  <div style={{ fontSize:15, fontWeight:700 }}>{pack.label}</div>
+                  <div style={{ fontSize:13, color:"#a78bfa", fontWeight:600 }}>{pack.priceDisplay}</div>
+                  <div style={{ fontSize:11, color:th.t3, marginTop:2 }}>{pack.description}</div>
                 </button>
               ))}
             </div>
