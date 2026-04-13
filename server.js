@@ -1505,6 +1505,10 @@ app.get("/health", (req, res) => res.json({ ok: true, node: process.version,
 
 const PORT = process.env.PORT || 3000;
 const isProd = process.env.NODE_ENV === "production";
+const SITE_ORIGIN = (process.env.APP_URL || "https://www.cartasis.com").replace(/\/$/, "");
+const SITE_HOSTNAME = (() => {
+  try { return new URL(SITE_ORIGIN).hostname; } catch { return ""; }
+})();
 
 // ─── PER-PAGE SEO META ────────────────────────────────────────────────────────
 // Each route gets its own <title>, <description>, og:*, twitter:* and JSON-LD.
@@ -1516,19 +1520,19 @@ const PAGE_META = {
     description: "Cartasis is the AI-powered director's canvas that takes you from script to finished video. Write scenes, plan shots, generate images, create AI videos with Kling and Veo, compose music, and edit — all in one visual workflow.",
     ogTitle: "Cartasis — AI Video Production Canvas",
     ogDescription: "From idea to finished video. Write your script, plan every shot, generate AI images, produce videos with Kling & Veo, and compose music — all on one canvas.",
-    canonical: "https://www.cartasis.com/",
+    canonical: `${SITE_ORIGIN}/`,
   },
   "/pricing": {
     title: "Cartasis Pricing — Free Plan + AI Credits | From $0 to $99/mo",
     description: "Start free with 80 AI credits/mo. Scale to Indie ($19/mo, 900 credits), Pro ($49/mo, 2500 credits), or Studio ($99/mo, 6000 credits). Generate videos with Kling AI & Google Veo, create images, add lipsync, and compose music.",
     ogTitle: "Cartasis Pricing — Transparent AI Video Plans",
     ogDescription: "Start free. Generate AI videos with Kling & Veo, create images, compose music. No hidden fees — just credits. Plans from $0 to $99/mo.",
-    canonical: "https://www.cartasis.com/pricing",
+    canonical: `${SITE_ORIGIN}/pricing`,
     ldJson: JSON.stringify({
       "@context": "https://schema.org",
       "@type": "Product",
       "name": "Cartasis",
-      "url": "https://www.cartasis.com",
+      "url": SITE_ORIGIN,
       "description": "AI-powered cinematic production canvas — script to finished video in one workflow.",
       "offers": [
         { "@type":"Offer", "name":"Free",   "price":"0",  "priceCurrency":"USD", "description":"80 credits/mo, Kling Standard, watermark, 2 projects" },
@@ -1543,7 +1547,7 @@ const PAGE_META = {
     description: "Explore every Cartasis feature: AI script writing, cinematic shot planning, world bible for character consistency, Kling AI & Google Veo video generation, lipsync, AI music with ElevenLabs, and multi-node video editing.",
     ogTitle: "Cartasis Features — The Complete AI Filmmaker's Toolkit",
     ogDescription: "Node-based AI video production: script → scene → shot → image → video → lipsync → music → edit. Everything a director needs, powered by Kling, Veo, and ElevenLabs.",
-    canonical: "https://www.cartasis.com/features",
+    canonical: `${SITE_ORIGIN}/features`,
   },
 };
 
@@ -1566,6 +1570,19 @@ function injectPageMeta(html, path) {
 
 async function start() {
   if (isProd) {
+    app.use((req, res, next) => {
+      const rawHost = (req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+      const rawProto = (req.headers["x-forwarded-proto"] || req.protocol || "https").split(",")[0].trim();
+      const hostNoPort = rawHost.replace(/:\d+$/, "");
+      if (hostNoPort && SITE_HOSTNAME && hostNoPort !== SITE_HOSTNAME && hostNoPort === "cartasis.com" && SITE_HOSTNAME === "www.cartasis.com") {
+        return res.redirect(301, `${SITE_ORIGIN}${req.originalUrl || "/"}`);
+      }
+      if (hostNoPort && SITE_HOSTNAME && rawProto === "http" && SITE_ORIGIN.startsWith("https://") && hostNoPort === SITE_HOSTNAME) {
+        return res.redirect(301, `${SITE_ORIGIN}${req.originalUrl || "/"}`);
+      }
+      next();
+    });
+
     // Production: serve pre-built static files from dist/
     const distPath = path.join(__dirname, "dist");
     app.use(express.static(distPath));
