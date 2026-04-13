@@ -7676,6 +7676,12 @@ export default function App() {
   const [saving,          setSaving]          = useState(false);
   const saveTimer = useRef(null);
 
+  // ── Credits / Billing ─────────────────────────────────────────────────────
+  const [credits,         setCredits]         = useState(null); // { tier, credits_balance, credits_monthly, op_costs }
+  const [showPricing,     setShowPricing]      = useState(false);
+  const [outOfCredits,    setOutOfCredits]     = useState(null); // { needed, balance, op } or null
+  const [showTopup,       setShowTopup]        = useState(false);
+
   // Check for existing session on mount
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -7687,6 +7693,34 @@ export default function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // Fetch credits whenever user changes
+  const fetchCredits = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    try {
+      const r = await fetch("/api/user/credits", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (r.ok) setCredits(await r.json());
+    } catch {}
+  };
+  useEffect(() => { if (user) fetchCredits(); else setCredits(null); }, [user]);
+
+  // Helper: check 402 responses from generation endpoints and show popup
+  const handleApiResponse = async (res) => {
+    if (res.status === 402) {
+      const body = await res.json().catch(() => ({}));
+      setOutOfCredits({
+        needed:  body.credits_needed || 0,
+        balance: body.credits_balance || 0,
+        op:      body.error || "insufficient_credits",
+      });
+      fetchCredits();
+      return false; // caller should abort
+    }
+    return true;
+  };
 
   const _initScene = mkScene();
   const [nodes, setNodes] = useState([_initScene]);
@@ -8491,8 +8525,188 @@ export default function App() {
   if (window.location.pathname === "/features") return <FeaturesPage onAuth={() => window.location.href = "/"} />;
   if (!user) return <LandingPage onAuth={u => setUser(u)} />;
 
+  // ── Billing helpers (needs user + credits in scope) ──────────────────────
+  const startCheckout = async (tier) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    try {
+      const r = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ tier }),
+      });
+      const d = await r.json();
+      if (d.url) window.location.href = d.url;
+    } catch (e) { alert("Checkout error: " + e.message); }
+  };
+
+  const startTopup = async (pack) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    try {
+      const r = await fetch("/api/stripe/topup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ pack }),
+      });
+      const d = await r.json();
+      if (d.url) window.location.href = d.url;
+    } catch (e) { alert("Topup error: " + e.message); }
+  };
+
+  const openPortal = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    try {
+      const r = await fetch("/api/stripe/portal", {
+        method: "POST", headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const d = await r.json();
+      if (d.url) window.open(d.url, "_blank");
+    } catch (e) { alert("Portal error: " + e.message); }
+  };
+
+  // Handle Stripe redirect back (?payment=success etc.)
+  (() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("payment") === "success" || p.get("payment") === "topup_success") {
+      fetchCredits();
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  })();
+
+  const TIER_LABEL = { free: "Free", indie: "Indie", pro: "Pro", studio: "Studio" };
+  const TIER_COLOR = { free: "#6b7280", indie: "#38bdf8", pro: "#a78bfa", studio: "#f59e0b" };
+  const credPct = credits ? Math.min(100, Math.round((credits.credits_balance / credits.credits_monthly) * 100)) : 0;
+  const credLow = credits && credits.credits_balance < Math.round(credits.credits_monthly * 0.15);
+
   return (
     <ThemeCtx.Provider value={th}>
+
+    {/* ── OUT-OF-CREDITS POPUP ─────────────────────────────────────────────── */}
+    {outOfCredits && (
+      <div style={{ position:"fixed", inset:0, zIndex:9999, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <div style={{ background:th.card, border:`1px solid ${th.b1}`, borderRadius:12, padding:32, maxWidth:440, width:"90%", boxShadow:"0 24px 64px rgba(0,0,0,0.5)" }}>
+          <div style={{ fontSize:32, marginBottom:8 }}>⚡</div>
+          <div style={{ fontSize:18, fontWeight:700, color:th.t0, marginBottom:8 }}>Not enough credits</div>
+          <div style={{ fontSize:14, color:th.t2, marginBottom:20 }}>
+            This operation needs <strong style={{color:th.t0}}>{outOfCredits.needed} credits</strong> but you only have <strong style={{color:th.t0}}>{outOfCredits.balance}</strong> remaining.
+          </div>
+          {/* Top-up packs */}
+          <div style={{ fontSize:12, fontWeight:600, color:th.t3, textTransform:"uppercase", letterSpacing:1, marginBottom:10 }}>Buy credit packs</div>
+          <div style={{ display:"flex", gap:8, marginBottom:20 }}>
+            {[["500","$9.99"], ["1500","$24.99"], ["4000","$59.99"]].map(([pack, price]) => (
+              <button key={pack} onClick={() => { setOutOfCredits(null); startTopup(pack); }}
+                style={{ flex:1, padding:"10px 4px", borderRadius:8, border:`1px solid ${th.b1}`, background:th.bg,
+                  color:th.t0, cursor:"pointer", fontSize:12, fontWeight:600 }}>
+                <div style={{ fontSize:15, fontWeight:700 }}>{pack}</div>
+                <div style={{ color:th.t3, fontSize:11 }}>credits</div>
+                <div style={{ color:"#a78bfa", marginTop:2 }}>{price}</div>
+              </button>
+            ))}
+          </div>
+          {/* Upgrade plan */}
+          {credits?.tier !== "studio" && (
+            <>
+              <div style={{ fontSize:12, fontWeight:600, color:th.t3, textTransform:"uppercase", letterSpacing:1, marginBottom:10 }}>Or upgrade your plan</div>
+              <div style={{ display:"flex", gap:8, marginBottom:20 }}>
+                {credits?.tier === "free" && (
+                  <button onClick={() => { setOutOfCredits(null); startCheckout("indie"); }}
+                    style={{ flex:1, padding:"10px 8px", borderRadius:8, border:"1px solid #38bdf8", background:"rgba(56,189,248,0.08)",
+                      color:"#38bdf8", cursor:"pointer", fontSize:12, fontWeight:600 }}>
+                    Indie — $19/mo<br/><span style={{color:th.t3,fontSize:11}}>900 credits/mo</span>
+                  </button>
+                )}
+                {(credits?.tier === "free" || credits?.tier === "indie") && (
+                  <button onClick={() => { setOutOfCredits(null); startCheckout("pro"); }}
+                    style={{ flex:1, padding:"10px 8px", borderRadius:8, border:"1px solid #a78bfa", background:"rgba(167,139,250,0.08)",
+                      color:"#a78bfa", cursor:"pointer", fontSize:12, fontWeight:600 }}>
+                    Pro — $49/mo<br/><span style={{color:th.t3,fontSize:11}}>2500 credits/mo</span>
+                  </button>
+                )}
+                <button onClick={() => { setOutOfCredits(null); startCheckout("studio"); }}
+                  style={{ flex:1, padding:"10px 8px", borderRadius:8, border:"1px solid #f59e0b", background:"rgba(245,158,11,0.08)",
+                    color:"#f59e0b", cursor:"pointer", fontSize:12, fontWeight:600 }}>
+                  Studio — $99/mo<br/><span style={{color:th.t3,fontSize:11}}>6000 credits/mo</span>
+                </button>
+              </div>
+            </>
+          )}
+          <button onClick={() => setOutOfCredits(null)}
+            style={{ width:"100%", padding:"10px 0", borderRadius:8, border:`1px solid ${th.b1}`,
+              background:"transparent", color:th.t2, cursor:"pointer", fontSize:13 }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    )}
+
+    {/* ── PRICING PAGE OVERLAY ─────────────────────────────────────────────── */}
+    {showPricing && (
+      <div style={{ position:"fixed", inset:0, zIndex:9998, background:"rgba(0,0,0,0.82)", display:"flex", alignItems:"center", justifyContent:"center", overflowY:"auto", padding:"40px 16px" }}>
+        <div style={{ background:th.card, border:`1px solid ${th.b1}`, borderRadius:16, padding:40, maxWidth:880, width:"100%" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:32 }}>
+            <div>
+              <div style={{ fontSize:24, fontWeight:700, color:th.t0 }}>Upgrade your plan</div>
+              <div style={{ fontSize:14, color:th.t2, marginTop:4 }}>Current plan: <strong style={{color:TIER_COLOR[credits?.tier||"free"]}}>{TIER_LABEL[credits?.tier||"free"]}</strong> · {credits?.credits_balance ?? 0} credits remaining</div>
+            </div>
+            <button onClick={() => setShowPricing(false)}
+              style={{ background:"transparent", border:"none", color:th.t2, fontSize:22, cursor:"pointer" }}>✕</button>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))", gap:16 }}>
+            {[
+              { tier:"free",   label:"Free",   price:"$0",   credits:80,   color:"#6b7280", features:["80 credits/mo","Kling Standard","Watermark","2 projects"] },
+              { tier:"indie",  label:"Indie",  price:"$19",  credits:900,  color:"#38bdf8", features:["900 credits/mo","All Kling + Lipsync","Veo Fast","10 projects","No watermark"] },
+              { tier:"pro",    label:"Pro",    price:"$49",  credits:2500, color:"#a78bfa", features:["2500 credits/mo","All Kling + All Veo","30 projects","All AI features"], popular:true },
+              { tier:"studio", label:"Studio", price:"$99",  credits:6000, color:"#f59e0b", features:["6000 credits/mo","Everything","3 seats","Unlimited projects","Priority gen"] },
+            ].map(t => (
+              <div key={t.tier} style={{ border:`2px solid ${credits?.tier===t.tier ? t.color : th.b1}`, borderRadius:12, padding:20, position:"relative" }}>
+                {t.popular && <div style={{ position:"absolute", top:-11, left:"50%", transform:"translateX(-50%)", background:t.color, color:"#000", fontSize:10, fontWeight:700, padding:"2px 10px", borderRadius:20 }}>POPULAR</div>}
+                <div style={{ fontSize:13, fontWeight:700, color:t.color, marginBottom:4 }}>{t.label}</div>
+                <div style={{ fontSize:26, fontWeight:800, color:th.t0 }}>{t.price}<span style={{fontSize:13,color:th.t3,fontWeight:400}}>/mo</span></div>
+                <div style={{ fontSize:12, color:th.t3, marginBottom:16 }}>{t.credits.toLocaleString()} credits/mo</div>
+                {t.features.map(f => (
+                  <div key={f} style={{ fontSize:12, color:th.t1, marginBottom:6 }}>✓ {f}</div>
+                ))}
+                {credits?.tier === t.tier ? (
+                  <div style={{ marginTop:16, fontSize:12, color:t.color, fontWeight:600, textAlign:"center" }}>Current plan</div>
+                ) : t.tier === "free" ? null : (
+                  <button onClick={() => { setShowPricing(false); startCheckout(t.tier); }}
+                    style={{ marginTop:16, width:"100%", padding:"9px 0", borderRadius:8, border:`1px solid ${t.color}`,
+                      background:`${t.color}18`, color:t.color, cursor:"pointer", fontSize:13, fontWeight:600 }}>
+                    {credits?.tier === "free" ? "Start free trial" : "Switch plan"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          {/* Credit top-ups */}
+          <div style={{ marginTop:32, borderTop:`1px solid ${th.b1}`, paddingTop:24 }}>
+            <div style={{ fontSize:14, fontWeight:600, color:th.t0, marginBottom:16 }}>Need more credits? Buy a top-up pack</div>
+            <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
+              {[["500","$9.99","~25 Kling videos"], ["1500","$24.99","~33 Veo Fast videos"], ["4000","$59.99","Best value"]].map(([pack,price,desc]) => (
+                <button key={pack} onClick={() => { setShowPricing(false); startTopup(pack); }}
+                  style={{ flex:1, minWidth:140, padding:"12px 16px", borderRadius:10, border:`1px solid ${th.b1}`,
+                    background:th.bg, color:th.t0, cursor:"pointer", textAlign:"left" }}>
+                  <div style={{ fontSize:15, fontWeight:700 }}>{pack} credits</div>
+                  <div style={{ fontSize:13, color:"#a78bfa", fontWeight:600 }}>{price}</div>
+                  <div style={{ fontSize:11, color:th.t3, marginTop:2 }}>{desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          {credits?.tier !== "free" && (
+            <div style={{ marginTop:20, textAlign:"center" }}>
+              <button onClick={() => { setShowPricing(false); openPortal(); }}
+                style={{ background:"transparent", border:"none", color:th.t3, fontSize:12, cursor:"pointer", textDecoration:"underline" }}>
+                Manage or cancel subscription
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+
     {projectPickerOpen && (
       <ProjectPicker
         user={user}
@@ -8603,6 +8817,43 @@ export default function App() {
             style={{ background:th.card, border:`1px solid ${th.b0}`, color:th.t1, fontFamily:"'Inter',system-ui,sans-serif", fontSize:11, padding:"5px 12px", borderRadius:4, cursor:"pointer", letterSpacing:"0.08em", display:"flex", alignItems:"center", gap:6 }}>
             {isDark ? "☀ LIGHT" : "● DARK"}
           </button>
+          <div style={{ width:1,height:22,background:th.b0 }} />
+          {/* Credits bar */}
+          {credits && (() => {
+            const tierColors = { free:"#6b7280", indie:"#3b82f6", pro:"#8b5cf6", studio:"#f59e0b" };
+            const tierColor = tierColors[credits.tier] || "#6b7280";
+            const pct = credits.credits_monthly > 0 ? Math.max(0, Math.min(1, credits.credits_balance / credits.credits_monthly)) : 0;
+            const credLow = pct < 0.15;
+            return (
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                {/* Tier badge */}
+                <span style={{ fontSize:10, fontWeight:700, color:tierColor, letterSpacing:"0.08em", border:`1px solid ${tierColor}44`, borderRadius:3, padding:"2px 6px", background:`${tierColor}11` }}>
+                  {credits.tier.toUpperCase()}
+                </span>
+                {/* Credit count + bar */}
+                <div style={{ display:"flex", flexDirection:"column", gap:2, minWidth:80 }}>
+                  <span style={{ fontSize:10, color: credLow ? "#ef4444" : th.t3, fontFamily:"'Inter',system-ui,sans-serif" }}>
+                    {credits.credits_balance} / {credits.credits_monthly} cr
+                  </span>
+                  <div style={{ width:80, height:3, background:th.b0, borderRadius:2, overflow:"hidden" }}>
+                    <div style={{ width:`${pct*100}%`, height:"100%", background: credLow ? "#ef4444" : tierColor, borderRadius:2, transition:"width 0.3s" }} />
+                  </div>
+                </div>
+                {/* Upgrade / Buy more */}
+                {credits.tier === "free" ? (
+                  <button onClick={()=>setShowPricing(true)}
+                    style={{ background: tierColors.indie, border:"none", color:"#fff", fontFamily:"'Inter',system-ui,sans-serif", fontSize:10, fontWeight:700, padding:"4px 10px", borderRadius:4, cursor:"pointer", letterSpacing:"0.07em" }}>
+                    UPGRADE
+                  </button>
+                ) : credLow ? (
+                  <button onClick={()=>setShowTopup(true)}
+                    style={{ background:"#ef4444", border:"none", color:"#fff", fontFamily:"'Inter',system-ui,sans-serif", fontSize:10, fontWeight:700, padding:"4px 10px", borderRadius:4, cursor:"pointer", letterSpacing:"0.07em" }}>
+                    BUY MORE
+                  </button>
+                ) : null}
+              </div>
+            );
+          })()}
           <div style={{ width:1,height:22,background:th.b0 }} />
           {/* User */}
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>

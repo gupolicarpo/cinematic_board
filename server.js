@@ -9,6 +9,7 @@ const os       = require("os");
 const { exec } = require("child_process");
 const multer   = require("multer");
 const { createClient } = require("@supabase/supabase-js");
+const Stripe   = require("stripe");
 // Vite loaded dynamically in dev mode only (see start())
 
 // ── SUPABASE ───────────────────────────────────────────────────────────────────
@@ -38,6 +39,111 @@ async function getUserId(req) {
   if (!token || !supabaseAdmin) return null;
   const { data } = await supabaseAdmin.auth.getUser(token);
   return data?.user?.id || null;
+}
+
+// ── STRIPE ─────────────────────────────────────────────────────────────────────
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? Stripe(process.env.STRIPE_SECRET_KEY)
+  : null;
+
+// Price IDs — set these in .env after creating products in Stripe dashboard
+// STRIPE_PRICE_INDIE   e.g. price_xxx  ($19/mo)
+// STRIPE_PRICE_PRO     e.g. price_xxx  ($49/mo)
+// STRIPE_PRICE_STUDIO  e.g. price_xxx  ($99/mo)
+const STRIPE_PRICES = {
+  indie:  process.env.STRIPE_PRICE_INDIE,
+  pro:    process.env.STRIPE_PRICE_PRO,
+  studio: process.env.STRIPE_PRICE_STUDIO,
+};
+
+// Monthly credits per tier
+const TIER_CREDITS = { free: 80, indie: 900, pro: 2500, studio: 6000 };
+
+// Cost in credits per operation
+const OP_CREDITS = {
+  kling_5s_std:  20,
+  kling_5s_pro:  40,
+  kling_10s_std: 40,
+  kling_10s_pro: 80,
+  kling_lipsync: 8,
+  kling_tts:     2,
+  veo_fast_5s:   45,
+  veo_fast_8s:   70,
+  veo_fast_10s:  88,
+  veo_fast_12s:  105,
+  veo_std_5s:    115,
+  veo_std_8s:    185,
+  veo_std_10s:   230,
+  image_gen:     3,
+  coherence:     1,
+};
+
+// ── CREDIT HELPERS ─────────────────────────────────────────────────────────────
+
+// Get or create user subscription row
+async function getUserSub(userId) {
+  if (!supabaseAdmin || !userId) return null;
+  const { data, error } = await supabaseAdmin
+    .from("user_subscriptions")
+    .select("*")
+    .eq("user_id", userId)
+    .single();
+  if (error && error.code === "PGRST116") {
+    // Row doesn't exist yet — create free tier
+    const { data: created } = await supabaseAdmin
+      .from("user_subscriptions")
+      .insert({ user_id: userId, tier: "free", credits_balance: 80, credits_monthly: 80 })
+      .select().single();
+    return created;
+  }
+  return data || null;
+}
+
+// Deduct credits; returns { ok, balance } or { ok: false, balance }
+async function deductCredits(userId, amount, operation, metadata = {}) {
+  if (!supabaseAdmin || !userId) return { ok: true, balance: 999 }; // dev fallback
+  const sub = await getUserSub(userId);
+  if (!sub) return { ok: false, balance: 0 };
+  if (sub.credits_balance < amount) return { ok: false, balance: sub.credits_balance };
+  const newBalance = sub.credits_balance - amount;
+  await supabaseAdmin
+    .from("user_subscriptions")
+    .update({ credits_balance: newBalance, updated_at: new Date().toISOString() })
+    .eq("user_id", userId);
+  await supabaseAdmin
+    .from("credit_transactions")
+    .insert({ user_id: userId, amount: -amount, operation, metadata });
+  return { ok: true, balance: newBalance };
+}
+
+// Middleware factory — checks credits BEFORE the operation
+function requireCredits(operation) {
+  return async (req, res, next) => {
+    if (!supabaseAdmin) return next(); // skip if supabase not configured
+    const userId = await getUserId(req);
+    if (!userId) return next(); // unauthenticated — let endpoint handle auth
+    const cost = OP_CREDITS[operation] || 0;
+    if (cost === 0) return next();
+    const sub = await getUserSub(userId);
+    if (!sub || sub.credits_balance < cost) {
+      return res.status(402).json({
+        error: "insufficient_credits",
+        credits_balance: sub?.credits_balance || 0,
+        credits_needed:  cost,
+        tier: sub?.tier || "free",
+      });
+    }
+    req._creditUserId    = userId;
+    req._creditOperation = operation;
+    req._creditCost      = cost;
+    next();
+  };
+}
+
+// Call after successful generation to actually deduct
+async function commitCredits(req) {
+  if (!req._creditUserId || !req._creditCost) return;
+  await deductCredits(req._creditUserId, req._creditCost, req._creditOperation, {});
 }
 
 // Multer memory storage for asset uploads (no local disk)
@@ -240,6 +346,19 @@ function protectBigInts(text) {
 // POST /api/kling/video  — create video generation task
 app.post("/api/kling/video", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
+  // Credit check — cost depends on mode/quality/duration
+  const userId = await getUserId(req);
+  if (userId && supabaseAdmin) {
+    const dur  = parseInt(req.body?.duration || req.body?.parameters?.durationSeconds || 5, 10);
+    const mode = (req.body?.mode || req.body?.parameters?.mode || "std").toLowerCase();
+    const isPro = mode === "pro";
+    const is10  = dur >= 10;
+    const op = isPro ? (is10 ? "kling_10s_pro" : "kling_5s_pro") : (is10 ? "kling_10s_std" : "kling_5s_std");
+    const result = await deductCredits(userId, OP_CREDITS[op], op);
+    if (!result.ok) return res.status(402).json({
+      error: "insufficient_credits", credits_balance: result.balance, credits_needed: OP_CREDITS[op],
+    });
+  }
   try {
     const r = await post("api-singapore.klingai.com", "/v1/videos/omni-video",
       { "Authorization": `Bearer ${klingJWT()}` }, req.body);
@@ -389,6 +508,14 @@ app.post("/api/kling/lipsync", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   const { video_url, voice_id, dialogue, voice_language = "en" } = req.body;
   if (!video_url || !voice_id || !dialogue) return res.status(400).send("video_url, voice_id, and dialogue are required");
+  // Credit check
+  const userId = await getUserId(req);
+  if (userId && supabaseAdmin) {
+    const result = await deductCredits(userId, OP_CREDITS.kling_lipsync, "kling_lipsync");
+    if (!result.ok) return res.status(402).json({
+      error: "insufficient_credits", credits_balance: result.balance, credits_needed: OP_CREDITS.kling_lipsync,
+    });
+  }
   const textPayload = dialogue.slice(0, 120);
   const body = { input: { mode: "text2video", video_url, voice_id, voice_language, voice_speed: 1.0, text: textPayload } };
   console.log("[lipsync-legacy] text:", textPayload);
@@ -466,6 +593,21 @@ app.post("/api/gemini/image", async (req, res) => {
 // ── Veo 3.1 Video Generation ─────────────────────────────────────────────────
 // POST /api/veo/video — start generation (returns operation name for polling)
 app.post("/api/veo/video", async (req, res) => {
+  // Credit check — cost depends on model quality and duration
+  const userId = await getUserId(req);
+  if (userId && supabaseAdmin) {
+    const dur     = parseInt(req.body?.parameters?.durationSeconds || 5, 10);
+    const model   = (req.body?._veoModel || "").toLowerCase();
+    const isFast  = model.includes("fast");
+    // Map duration → operation key (fast vs standard, rounded to nearest bracket)
+    let op;
+    if (isFast)     op = dur >= 10 ? "veo_fast_10s" : dur >= 8 ? "veo_fast_8s" : "veo_fast_5s";
+    else            op = dur >= 10 ? "veo_std_10s"  : dur >= 8 ? "veo_std_8s"  : "veo_std_5s";
+    const result = await deductCredits(userId, OP_CREDITS[op] || OP_CREDITS.veo_std_5s, op);
+    if (!result.ok) return res.status(402).json({
+      error: "insufficient_credits", credits_balance: result.balance, credits_needed: OP_CREDITS[op],
+    });
+  }
   try {
     const { _veoModel, ...payload } = req.body;
     const hasFrameGuidance = !!payload?.instances?.[0]?.image || !!payload?.instances?.[0]?.lastFrame;
@@ -1083,10 +1225,191 @@ app.post("/api/elevenlabs/music", (req, res) => {
   upstream.end();
 });
 
+// ── SUBSCRIPTION / BILLING ENDPOINTS ──────────────────────────────────────────
+
+// GET /api/user/credits — returns current balance, tier, monthly allowance
+app.get("/api/user/credits", async (req, res) => {
+  const userId = await getUserId(req);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  const sub = await getUserSub(userId);
+  if (!sub) return res.json({ tier: "free", credits_balance: 0, credits_monthly: 80 });
+  res.json({
+    tier:             sub.tier,
+    credits_balance:  sub.credits_balance,
+    credits_monthly:  sub.credits_monthly,
+    current_period_end: sub.current_period_end,
+    op_costs:         OP_CREDITS,
+  });
+});
+
+// POST /api/stripe/checkout — create Stripe Checkout session for a given tier
+app.post("/api/stripe/checkout", async (req, res) => {
+  if (!stripe) return res.status(500).json({ error: "Stripe not configured" });
+  const userId = await getUserId(req);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  const { tier } = req.body;
+  const priceId = STRIPE_PRICES[tier];
+  if (!priceId) return res.status(400).json({ error: `No price configured for tier: ${tier}` });
+
+  const sub = await getUserSub(userId);
+  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
+  const email = userData?.user?.email;
+
+  // Reuse existing Stripe customer or create new one
+  let customerId = sub?.stripe_customer_id;
+  if (!customerId) {
+    const customer = await stripe.customers.create({ email, metadata: { supabase_user_id: userId } });
+    customerId = customer.id;
+    await supabaseAdmin.from("user_subscriptions")
+      .update({ stripe_customer_id: customerId })
+      .eq("user_id", userId);
+  }
+
+  const appUrl = process.env.APP_URL || "http://localhost:5173";
+  const session = await stripe.checkout.sessions.create({
+    customer:   customerId,
+    mode:       "subscription",
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: `${appUrl}/?payment=success&tier=${tier}`,
+    cancel_url:  `${appUrl}/?payment=cancelled`,
+    metadata:    { supabase_user_id: userId, tier },
+    subscription_data: { metadata: { supabase_user_id: userId, tier } },
+    allow_promotion_codes: true,
+  });
+  res.json({ url: session.url });
+});
+
+// POST /api/stripe/portal — Stripe Customer Portal (manage/cancel subscription)
+app.post("/api/stripe/portal", async (req, res) => {
+  if (!stripe) return res.status(500).json({ error: "Stripe not configured" });
+  const userId = await getUserId(req);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  const sub = await getUserSub(userId);
+  if (!sub?.stripe_customer_id)
+    return res.status(400).json({ error: "No Stripe customer found" });
+  const appUrl = process.env.APP_URL || "http://localhost:5173";
+  const session = await stripe.billingPortal.sessions.create({
+    customer:   sub.stripe_customer_id,
+    return_url: appUrl,
+  });
+  res.json({ url: session.url });
+});
+
+// POST /api/stripe/topup — buy a credit pack (one-time payment)
+app.post("/api/stripe/topup", async (req, res) => {
+  if (!stripe) return res.status(500).json({ error: "Stripe not configured" });
+  const userId = await getUserId(req);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  const TOPUP_PRICES = {
+    "500":  process.env.STRIPE_PRICE_TOPUP_500,
+    "1500": process.env.STRIPE_PRICE_TOPUP_1500,
+    "4000": process.env.STRIPE_PRICE_TOPUP_4000,
+  };
+  const { pack } = req.body; // "500", "1500", "4000"
+  const priceId = TOPUP_PRICES[pack];
+  if (!priceId) return res.status(400).json({ error: `Unknown pack: ${pack}` });
+  const sub = await getUserSub(userId);
+  const appUrl = process.env.APP_URL || "http://localhost:5173";
+  const session = await stripe.checkout.sessions.create({
+    customer:    sub?.stripe_customer_id || undefined,
+    mode:        "payment",
+    line_items:  [{ price: priceId, quantity: 1 }],
+    success_url: `${appUrl}/?payment=topup_success&pack=${pack}`,
+    cancel_url:  `${appUrl}/?payment=cancelled`,
+    metadata:    { supabase_user_id: userId, topup_credits: pack },
+  });
+  res.json({ url: session.url });
+});
+
+// POST /api/stripe/webhook — Stripe events (raw body required)
+app.post("/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    if (!stripe) return res.status(500).send("Stripe not configured");
+    const sig = req.headers["stripe-signature"];
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, secret);
+    } catch (err) {
+      console.error("[stripe-webhook] signature failed:", err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    const data = event.data.object;
+    console.log("[stripe-webhook]", event.type);
+
+    // ── Subscription activated / renewed ──────────────────────────────────────
+    if (event.type === "customer.subscription.created" ||
+        event.type === "customer.subscription.updated") {
+      const tier = data.metadata?.tier || "indie";
+      const userId = data.metadata?.supabase_user_id;
+      if (!userId) { console.warn("[stripe-webhook] no supabase_user_id in metadata"); return res.json({ received: true }); }
+      const monthly = TIER_CREDITS[tier] || 900;
+      const periodEnd = new Date(data.current_period_end * 1000).toISOString();
+
+      // On renewal (new period), reset credits; on update just change tier
+      const isNewPeriod = event.type === "customer.subscription.created" ||
+        data.billing_cycle_anchor === data.current_period_start;
+
+      await supabaseAdmin.from("user_subscriptions").upsert({
+        user_id:                userId,
+        tier,
+        credits_monthly:        monthly,
+        credits_balance:        isNewPeriod ? monthly : undefined,
+        stripe_customer_id:     data.customer,
+        stripe_subscription_id: data.id,
+        stripe_price_id:        data.items?.data?.[0]?.price?.id,
+        current_period_end:     periodEnd,
+        updated_at:             new Date().toISOString(),
+      }, { onConflict: "user_id", ignoreDuplicates: false });
+
+      if (isNewPeriod) {
+        await supabaseAdmin.from("credit_transactions").insert({
+          user_id: userId, amount: monthly, operation: "monthly_reset",
+          metadata: { tier, period_end: periodEnd },
+        });
+      }
+    }
+
+    // ── Subscription cancelled ────────────────────────────────────────────────
+    if (event.type === "customer.subscription.deleted") {
+      const userId = data.metadata?.supabase_user_id;
+      if (userId) {
+        await supabaseAdmin.from("user_subscriptions").update({
+          tier: "free", credits_monthly: 80,
+          stripe_subscription_id: null, stripe_price_id: null,
+          updated_at: new Date().toISOString(),
+        }).eq("user_id", userId);
+      }
+    }
+
+    // ── One-time top-up payment ───────────────────────────────────────────────
+    if (event.type === "checkout.session.completed" && data.mode === "payment") {
+      const userId  = data.metadata?.supabase_user_id;
+      const credits = parseInt(data.metadata?.topup_credits || "0", 10);
+      if (userId && credits > 0) {
+        const sub = await getUserSub(userId);
+        const newBalance = (sub?.credits_balance || 0) + credits;
+        await supabaseAdmin.from("user_subscriptions")
+          .update({ credits_balance: newBalance, updated_at: new Date().toISOString() })
+          .eq("user_id", userId);
+        await supabaseAdmin.from("credit_transactions").insert({
+          user_id: userId, amount: credits, operation: "topup",
+          metadata: { pack: credits, session_id: data.id },
+        });
+      }
+    }
+
+    res.json({ received: true });
+  }
+);
+
 app.get("/health", (req, res) => res.json({ ok: true, node: process.version,
   anthropic: !!process.env.ANTHROPIC_API_KEY, openai: !!process.env.OPENAI_API_KEY,
   gemini: !!process.env.GEMINI_API_KEY, kling: !!process.env.KLING_ACCESS_KEY,
-  elevenlabs: !!process.env.ELEVENLABS_API_KEY }));
+  elevenlabs: !!process.env.ELEVENLABS_API_KEY,
+  stripe: !!process.env.STRIPE_SECRET_KEY }));
 
 const PORT = process.env.PORT || 3000;
 const isProd = process.env.NODE_ENV === "production";
