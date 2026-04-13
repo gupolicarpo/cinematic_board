@@ -3,6 +3,7 @@ import { Film, Video, Image as ImageIcon, Clapperboard, Camera, User, MapPin, Bo
 import { supabase } from "./supabase";
 import LandingPage from "./LandingPage";
 import FeaturesPage from "./FeaturesPage";
+import KlingPage from "./KlingPage";
 
 // Returns { Authorization: "Bearer <token>" } for server asset calls,
 // or {} if no session (local/dev mode falls back gracefully on the server).
@@ -9030,6 +9031,9 @@ export default function App() {
   );
   if (window.location.pathname === "/features") return <FeaturesPage onAuth={() => window.location.href = "/"} />;
   if (window.location.pathname === "/pricing") return <LandingPage onAuth={u => setUser(u)} initialSection="pricing" />;
+  if (window.location.pathname === "/kling-video-generation") return <KlingPage pageKey="kling-video-generation" onAuth={() => window.location.href = "/"} />;
+  if (window.location.pathname === "/kling-3-0") return <KlingPage pageKey="kling-3-0" onAuth={() => window.location.href = "/"} />;
+  if (window.location.pathname === "/kling-lipsync") return <KlingPage pageKey="kling-lipsync" onAuth={() => window.location.href = "/"} />;
   if (!user) return <LandingPage onAuth={u => setUser(u)} />;
 
   // ── Billing helpers (needs user + credits in scope) ──────────────────────

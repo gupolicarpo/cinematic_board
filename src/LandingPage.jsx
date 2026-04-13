@@ -361,6 +361,8 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
                 : <a key={href} href={href} style={{ fontSize:13, fontWeight:500, color:MID, transition:"color 0.15s" }}
                     onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>{label}</a>
             ))}
+            <a href="/kling-video-generation" style={{ fontSize:13, fontWeight:500, color:MID, transition:"color 0.15s" }}
+              onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>Kling</a>
           </nav>
           <div className="lp-nav-actions">
             <button onClick={openAuth} style={{ background:"none", border:"none", fontSize:13, fontWeight:600, color:MID, cursor:"pointer", fontFamily:"inherit" }}
@@ -749,6 +751,18 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
             </div>
           ))}
         </div>
+        <div className="lp-grid-3" style={{ gap:18, marginTop:30 }}>
+          {[
+            { href:"/kling-video-generation", title:"Kling video generation", desc:"See how Cartasis uses scene, shot, and world bible context around Kling generation." },
+            { href:"/kling-3-0", title:"Kling 3.0", desc:"Learn how Cartasis wraps Kling 3.0 in a production-ready node workflow." },
+            { href:"/kling-lipsync", title:"Kling lipsync", desc:"Explore how dialogue, timing, and lipsync fit inside the same canvas." },
+          ].map(link => (
+            <a key={link.href} href={link.href} style={{ display:"block", background:WHITE, border:`1px solid ${BORDER}`, borderRadius:14, padding:"18px 18px" }}>
+              <div style={{ fontSize:14, fontWeight:800, color:DARK, marginBottom:6 }}>{link.title}</div>
+              <div style={{ fontSize:13, color:MUTED, lineHeight:1.6 }}>{link.desc}</div>
+            </a>
+          ))}
+        </div>
       </Section>
 
       {/* ── FROM ZERO TO FINAL CUT ── */}
@@ -867,7 +881,7 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
             },
             {
               q: "Which AI models does it use for video generation?",
-              a: "Currently Kling 1.6 and Google Veo 3.1. Both are available from the same canvas — just drop a Kling or Veo node next to your shots and wire them up. You choose which one to use per scene.",
+              a: "Currently Kling 3.0 and Google Veo 3.1. Both are available from the same canvas — just drop a Kling or Veo node next to your shots and wire them up. You choose which one to use per scene.",
             },
             {
               q: "What is a World Bible and why does it matter?",

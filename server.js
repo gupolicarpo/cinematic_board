@@ -1549,6 +1549,27 @@ const PAGE_META = {
     ogDescription: "Node-based AI video production: script → scene → shot → image → video → lipsync → music → edit. Everything a director needs, powered by Kling, Veo, and ElevenLabs.",
     canonical: `${SITE_ORIGIN}/features`,
   },
+  "/kling-video-generation": {
+    title: "Kling Video Generation in Cartasis | Directed AI Video Workflow",
+    description: "Generate Kling video inside Cartasis with scene, shot, and world bible context. Plan shots, compile prompts, attach references, and direct Kling video generation from one cinematic canvas.",
+    ogTitle: "Kling Video Generation in Cartasis",
+    ogDescription: "Use Cartasis for Kling video generation with shot planning, prompt compilation, reference continuity, and edit-ready outputs.",
+    canonical: `${SITE_ORIGIN}/kling-video-generation`,
+  },
+  "/kling-3-0": {
+    title: "Kling 3.0 in Cartasis | Scene-to-Shot AI Video Workflow",
+    description: "See how Cartasis uses Kling 3.0 inside a production workflow built around scenes, shots, references, and story structure instead of isolated prompts.",
+    ogTitle: "Kling 3.0 in Cartasis",
+    ogDescription: "Cartasis wraps Kling 3.0 in a node-based workflow for directed video generation, continuity, and iteration.",
+    canonical: `${SITE_ORIGIN}/kling-3-0`,
+  },
+  "/kling-lipsync": {
+    title: "Kling Lipsync in Cartasis | Dialogue-Driven Shot Workflow",
+    description: "Plan dialogue shots, manage speaking turns, and run Kling lipsync inside Cartasis with shot timing, character context, and generation history in one canvas.",
+    ogTitle: "Kling Lipsync in Cartasis",
+    ogDescription: "Use Cartasis to connect dialogue, shot timing, and Kling lipsync inside one production graph.",
+    canonical: `${SITE_ORIGIN}/kling-lipsync`,
+  },
 };
 
 function injectPageMeta(html, path) {

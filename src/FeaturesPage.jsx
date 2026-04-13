@@ -68,7 +68,7 @@ const FEATURES = [
     description:
       "Submit any shot node to KLING or VEO for AI video generation. The prompt is compiled automatically from your camera settings, world bible, and director notes. Review, regenerate, or accept — then drag clips into your timeline.",
     items: [
-      { icon: "🎞️", label: "KLING integration", desc: "Up to 6 shots, 15 seconds per sequence. High motion fidelity." },
+      { icon: "🎞️", label: "KLING 3.0 integration", desc: "Use Kling inside a shot-driven workflow with prompt compilation, references, and scene context." },
       { icon: "🌐", label: "VEO integration", desc: "Google's model for cinematic quality and lighting." },
       { icon: "🧠", label: "Auto-prompt compilation", desc: "Your shot data becomes a precise AI prompt — no manual writing." },
       { icon: "🔁", label: "Regeneration control", desc: "Adjust any parameter and regenerate individual shots instantly." },
@@ -290,6 +290,21 @@ export default function FeaturesPage({ onAuth }) {
       {FEATURES.map(f => (
         <FeatureSection key={f.id} feature={f} onAuth={onAuth} />
       ))}
+
+      <section style={{ background: SURFACE, padding: "0 0 88px" }}>
+        <div className="fp-inner fp-feature-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
+          {[
+            { href: "/kling-video-generation", title: "Kling video generation", desc: "Dedicated page on how Cartasis structures Kling generation around scenes, shots, and references." },
+            { href: "/kling-3-0", title: "Kling 3.0", desc: "See how Kling 3.0 fits inside the Cartasis story-to-video workflow." },
+            { href: "/kling-lipsync", title: "Kling lipsync", desc: "Understand how dialogue and lipsync live inside the same production graph." },
+          ].map((link) => (
+            <a key={link.href} href={link.href} style={{ display: "block", background: WHITE, border: `1px solid ${BORDER}`, borderRadius: 14, padding: "18px 18px" }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: DARK, marginBottom: 6 }}>{link.title}</div>
+              <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.6 }}>{link.desc}</div>
+            </a>
+          ))}
+        </div>
+      </section>
 
       {/* ── CTA ── */}
       <section style={{ background: DARK, padding: "96px 0", textAlign: "center" }}>

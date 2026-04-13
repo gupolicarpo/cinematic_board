@@ -7,7 +7,7 @@
   <!-- Homepage -->
   <url>
     <loc>https://www.cartasis.com/</loc>
-    <lastmod>2026-04-13</lastmod>
+    <lastmod>2026-04-14</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
@@ -15,7 +15,7 @@
   <!-- Pricing page -->
   <url>
     <loc>https://www.cartasis.com/pricing</loc>
-    <lastmod>2026-04-13</lastmod>
+    <lastmod>2026-04-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
@@ -23,9 +23,33 @@
   <!-- Features page -->
   <url>
     <loc>https://www.cartasis.com/features</loc>
-    <lastmod>2026-04-13</lastmod>
+    <lastmod>2026-04-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
+  </url>
+
+  <!-- Kling video generation page -->
+  <url>
+    <loc>https://www.cartasis.com/kling-video-generation</loc>
+    <lastmod>2026-04-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- Kling 3.0 page -->
+  <url>
+    <loc>https://www.cartasis.com/kling-3-0</loc>
+    <lastmod>2026-04-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.84</priority>
+  </url>
+
+  <!-- Kling lipsync page -->
+  <url>
+    <loc>https://www.cartasis.com/kling-lipsync</loc>
+    <lastmod>2026-04-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.83</priority>
   </url>
 
 </urlset>
