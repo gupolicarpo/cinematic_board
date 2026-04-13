@@ -9230,7 +9230,8 @@ export default function App() {
                     {credits.credits_balance} / {credits.credits_monthly} cr
                   </span>
                   <div style={{ width:80, height:3, background:th.b0, borderRadius:2, overflow:"hidden" }}>
-                    <div style={{ width:`${pct*100}%`, height:"100%", background: credLow ? "#ef4444" : tierCo                  </div>
+                    <div style={{ width:`${pct*100}%`, height:"100%", background: credLow ? "#ef4444" : tierColor, borderRadius:2, transition:"width 0.3s" }} />
+                  </div>
                 </div>
                 {/* Upgrade / Buy more */}
                 {credits.tier === "free" ? (
