@@ -3694,8 +3694,16 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onIn
   };
   const applyEdit = () => {
     if (!preview || !editTarget) return;
-    onUpdateNode(editTarget.id, preview);
-    upd({ lastResult: preview });
+    let finalPatch = preview;
+    // For SHOT nodes, recompile compiledText from the merged fields so the
+    // video node always gets the updated prompt — unless the user has manually
+    // overridden the compiled prompt (promptOverride flag).
+    if (editTarget.type === T.SHOT && !editTarget.promptOverride) {
+      const merged = { ...editTarget, ...preview };
+      finalPatch = { ...preview, compiledText: compileShotText(merged) };
+    }
+    onUpdateNode(editTarget.id, finalPatch);
+    upd({ lastResult: finalPatch });
     setStatus("applied"); setPreview(null);
   };
 
@@ -3710,17 +3718,27 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onIn
       setMultiPrev(filtered); setStatus("preview");
     } catch(e) { setStatus("failed"); setError(e.message); }
   };
+  // Helper: recompile compiledText for SHOT patches before applying
+  const withRecompile = (nid, patch) => {
+    const target = targetNodes.find(n => n.id === nid);
+    if (target?.type === T.SHOT && !target.promptOverride) {
+      const merged = { ...target, ...patch };
+      return { ...patch, compiledText: compileShotText(merged) };
+    }
+    return patch;
+  };
+
   const applyAllCoherence = () => {
     if (!multiPrev) return;
     let count = 0;
     Object.entries(multiPrev).forEach(([nid, patch]) => {
-      if (Object.keys(patch).length > 0) { onUpdateNode(nid, patch); count++; }
+      if (Object.keys(patch).length > 0) { onUpdateNode(nid, withRecompile(nid, patch)); count++; }
     });
     upd({ lastResult: multiPrev });
     setStatus("applied"); setMultiPrev(null);
   };
   const applySingleCoherence = (nid, patch) => {
-    onUpdateNode(nid, patch);
+    onUpdateNode(nid, withRecompile(nid, patch));
     const remaining = Object.fromEntries(Object.entries(multiPrev).filter(([k]) => k !== nid));
     setMultiPrev(Object.keys(remaining).length ? remaining : null);
     if (Object.keys(remaining).length === 0) setStatus("applied");
