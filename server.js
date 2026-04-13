@@ -1316,11 +1316,20 @@ app.get("/api/stripe/public-pricing", async (_req, res) => {
     ]);
 
     const tierOrder = ["free", "indie", "pro", "studio"];
-    const tiers = [
-      fallback.tiers[0],
-      ...stripeTierPrices.sort((a, b) => tierOrder.indexOf(a.tier) - tierOrder.indexOf(b.tier)),
-    ];
-    const topups = stripeTopups.length ? stripeTopups.sort((a, b) => Number(a.pack) - Number(b.pack)) : fallback.topups;
+    const mergedTierMap = new Map(fallback.tiers.map(t => [t.tier, t]));
+    stripeTierPrices.forEach(t => {
+      mergedTierMap.set(t.tier, { ...mergedTierMap.get(t.tier), ...t });
+    });
+    const tiers = tierOrder
+      .map(tier => mergedTierMap.get(tier))
+      .filter(Boolean);
+
+    const mergedTopupMap = new Map(fallback.topups.map(t => [t.pack, t]));
+    stripeTopups.forEach(pack => {
+      mergedTopupMap.set(pack.pack, { ...mergedTopupMap.get(pack.pack), ...pack });
+    });
+    const topups = Array.from(mergedTopupMap.values())
+      .sort((a, b) => Number(a.pack) - Number(b.pack));
 
     return res.json({ tiers, topups });
   } catch (err) {
