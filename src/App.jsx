@@ -276,6 +276,18 @@ function recommendSceneConfig(sceneText) {
   return              { shots:5, secs:15 };
 }
 
+// Count distinct action beats in a scene text.
+// Each sentence that is long enough to imply a filmable moment counts as one beat.
+// Returns { beats, beatsPerShot(shotCount) } so the UI can warn when shots are overcrowded.
+function countSceneBeats(sceneText) {
+  if (!sceneText?.trim()) return 0;
+  const sentences = sceneText
+    .split(/(?<=[.!?])\s+/)         // split on sentence-ending punctuation
+    .map(s => s.trim())
+    .filter(s => s.length > 20);    // ignore very short fragments / parentheticals
+  return sentences.length;
+}
+
 function estimateSpeechSeconds(text="") {
   const cleaned = (text || "").replace(/\s+/g, " ").trim();
   if (!cleaned) return 0;
@@ -1678,11 +1690,19 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
         {/* ── Scene stats + Kling constraints ── */}
         {(() => {
           const { shotCount: sc, totalDur: td } = sceneStats || { shotCount:0, totalDur:0 };
-          const rec = recommendSceneConfig(node.sceneText);
-          const overShots = sc > KLING_MAX_SHOTS;
-          const overTime  = td > KLING_MAX_SECS;
+          const rec   = recommendSceneConfig(node.sceneText);
+          const beats = countSceneBeats(node.sceneText);
+          const overShots    = sc > KLING_MAX_SHOTS;
+          const overTime     = td > KLING_MAX_SECS;
+          // Overcrowding: more than ~2 beats per shot is a red flag for AI generation.
+          // We only warn when there are actual shots and actual scene text to analyse.
+          const beatsPerShot = sc > 0 && beats > 0 ? beats / sc : 0;
+          const overcrowded  = beatsPerShot > 2.2;
+          // Also warn when the user's shot slider is below the minimum recommended.
+          const tooFewShots  = node.sceneText?.trim() && sc > 0 && sc < rec.shots;
+          const borderColor  = overShots || overTime ? "#f8717144" : overcrowded || tooFewShots ? "#fbbf2444" : th.b0;
           return (
-            <div style={{ background:th.card, border:`1px solid ${th.b0}`, borderRadius:3, padding:"6px 8px", display:"flex", flexDirection:"column", gap:4 }}>
+            <div style={{ background:th.card, border:`1px solid ${borderColor}`, borderRadius:3, padding:"6px 8px", display:"flex", flexDirection:"column", gap:4 }}>
               {/* Stats row */}
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                 <div style={{ display:"flex", gap:10 }}>
@@ -1692,14 +1712,30 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
                   <span style={{ fontSize:7, color: overTime?"#f87171":uac, letterSpacing:"0.1em" }}>
                     {td}/{KLING_MAX_SECS}s {overTime?"⚠":""}
                   </span>
+                  {beats > 0 && (
+                    <span style={{ fontSize:7, color:th.t3, letterSpacing:"0.08em" }}>
+                      ~{beats} beats
+                    </span>
+                  )}
                 </div>
                 <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.08em" }}>
                   rec: {rec.shots} shots / {rec.secs}s
                 </span>
               </div>
-              {/* Kling warnings */}
+              {/* Kling hard limits */}
               {overShots && <div style={{ fontSize:6, color:"#f87171", letterSpacing:"0.06em" }}>⚠ Kling limit: max {KLING_MAX_SHOTS} shots per scene</div>}
               {overTime  && <div style={{ fontSize:6, color:"#f87171", letterSpacing:"0.06em" }}>⚠ Kling limit: max {KLING_MAX_SECS}s total per scene</div>}
+              {/* Overcrowding warning */}
+              {overcrowded && !overShots && (
+                <div style={{ fontSize:6, color:"#fbbf24", letterSpacing:"0.06em", lineHeight:1.6 }}>
+                  △ ~{beats} story beats across {sc} shot{sc!==1?"s":""} — each shot may be too crowded for AI generation ({beatsPerShot.toFixed(1)} beats/shot). Add more shots or simplify the scene.
+                </div>
+              )}
+              {tooFewShots && !overcrowded && (
+                <div style={{ fontSize:6, color:"#fbbf24", letterSpacing:"0.06em", lineHeight:1.6 }}>
+                  △ Scene text suggests ~{rec.shots} shots but only {sc} {sc===1?"is":"are"} planned — some beats may be skipped.
+                </div>
+              )}
             </div>
           );
         })()}
