@@ -9230,4 +9230,333 @@ export default function App() {
                     {credits.credits_balance} / {credits.credits_monthly} cr
                   </span>
                   <div style={{ width:80, height:3, background:th.b0, borderRadius:2, overflow:"hidden" }}>
-                    <div style={{ width:`${pct*100}%`, height:"100%", background: credLow ? "#ef4444" : tierCo
+                    <div style={{ width:`${pct*100}%`, height:"100%", background: credLow ? "#ef4444" : tierCo                  </div>
+                </div>
+                {/* Upgrade / Buy more */}
+                {credits.tier === "free" ? (
+                  <button onClick={()=>setShowPricing(true)}
+                    style={{ background: tierColors.indie, border:"none", color:"#fff", fontFamily:"'Inter',system-ui,sans-serif", fontSize:10, fontWeight:700, padding:"4px 10px", borderRadius:4, cursor:"pointer", letterSpacing:"0.07em" }}>
+                    UPGRADE
+                  </button>
+                ) : credLow ? (
+                  <button onClick={()=>setShowTopup(true)}
+                    style={{ background:"#ef4444", border:"none", color:"#fff", fontFamily:"'Inter',system-ui,sans-serif", fontSize:10, fontWeight:700, padding:"4px 10px", borderRadius:4, cursor:"pointer", letterSpacing:"0.07em" }}>
+                    BUY MORE
+                  </button>
+                ) : null}
+              </div>
+            );
+          })()}
+          <div style={{ width:1,height:22,background:th.b0 }} />
+          {/* User */}
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ width:26, height:26, borderRadius:"50%", background:"#f87171", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <span style={{ fontSize:11, fontWeight:700, color:"#fff" }}>{(user.email||"?")[0].toUpperCase()}</span>
+            </div>
+            <span style={{ fontSize:10, color:th.t3, maxWidth:120, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{user.email}</span>
+            <button onClick={()=>supabase.auth.signOut()}
+              title="Log out"
+              style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t3, borderRadius:5, padding:"5px 9px", cursor:"pointer", display:"flex", alignItems:"center", gap:5, fontSize:11, fontFamily:"'Inter',system-ui,sans-serif" }}>
+              <Ico icon={LogOut} size={12} color={th.t3}/> LOG OUT
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ flex:1,display:"flex",overflow:"hidden",position:"relative" }}>
+
+        {/* LEFT DRAWER */}
+        <LeftDrawer open={sidebarOpen} onToggle={()=>setSidebarOpen(v=>!v)}
+          bible={bible}/>
+
+        {/* CANVAS */}
+        <div ref={cvRef} onClick={onCanvasClick} onMouseDown={onCanvasMD} style={{ flex:1, position:"relative", overflow:"hidden",
+          cursor:"default",
+          background: th.bg,
+          backgroundImage: th.dark
+            ? `radial-gradient(circle,${th.b0} 1px,transparent 1px)`
+            : `radial-gradient(circle,rgba(0,0,0,0.06) 1px,transparent 1px)`,
+          backgroundSize:`${24*zoom}px ${24*zoom}px`,
+          backgroundPosition:`${pan.x%(24*zoom)}px ${pan.y%(24*zoom)}px`
+        }}>
+
+          {/* Transform container */}
+          <div style={{ position:"absolute",top:0,left:0,transformOrigin:"0 0",transform:`translate(${pan.x}px,${pan.y}px) scale(${zoom})`,width:0,height:0 }}>
+            {/* Edges */}
+            <svg style={{ position:"absolute",top:0,left:0,overflow:"visible",pointerEvents:"none",zIndex:1 }}>
+              {edges.map(e=><Edge key={e.id} fx={e.fx} fy={e.fy} tx={e.tx} ty={e.ty} color={e.color} />)}
+              {/* Live wire being dragged */}
+              {wire && (() => {
+                const mx = wire.fromX+(wire.toX-wire.fromX)*0.5;
+                return <path d={`M${wire.fromX},${wire.fromY} C${mx},${wire.fromY} ${mx},${wire.toY} ${wire.toX},${wire.toY}`}
+                  stroke="#38bdf8" strokeWidth="2" fill="none" strokeDasharray="6 3" opacity="0.8"
+                  style={{ filter:"drop-shadow(0 0 4px #38bdf8)" }} />;
+              })()}
+            </svg>
+
+            {/* Nodes */}
+            {nodes.map(n=>{
+              const p=pos[n.id]||{x:80,y:80};
+              const z=zMap[n.id]||10;
+              return (
+                <Drag key={n.id} id={n.id} x={p.x} y={p.y} onMove={moveNode} z={z} zoom={zoom} onFocus={()=>{setSelId(n.id);front(n.id);}}>
+                  {renderNodeCard(n)}
+                </Drag>
+              );
+            })}
+
+            {/* Empty hint */}
+            {nodes.length===0&&(
+              <div style={{ position:"absolute",left:0,top:0,transform:`translate(${(cvRef.current?.offsetWidth||800)/2/zoom-160}px,${(cvRef.current?.offsetHeight||600)/2/zoom-60}px)`,pointerEvents:"none",textAlign:"center",width:320 }}>
+                <div style={{ opacity:0.07,marginBottom:10 }}><Ico icon={Clapperboard} size={36} color={th.t0}/></div>
+                <div style={{ fontSize:12,color:th.t4,letterSpacing:"0.12em",lineHeight:2.2 }}>
+                  CLICK A NODE IN THE FLOATING TOOLBAR<br/>TO ADD NODES TO THE CANVAS
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {inspectNode && (
+          <div style={{
+            position:"absolute",
+            top:0,
+            right:0,
+            width:560,
+            height:"100%",
+            background:th.card,
+            borderLeft:`1px solid ${th.b0}`,
+            boxShadow:`-16px 0 40px ${th.sh}`,
+            zIndex:260,
+            display:"flex",
+            flexDirection:"column",
+          }}>
+            <div style={{
+              display:"flex",
+              alignItems:"center",
+              justifyContent:"space-between",
+              padding:"14px 16px",
+              borderBottom:`1px solid ${th.b0}`,
+              background:th.card2,
+            }}>
+              <div>
+                <div style={{ fontSize:10, letterSpacing:"0.16em", color:th.t3, fontFamily:"'Inter',system-ui,sans-serif" }}>NODE INSPECTOR</div>
+                <div style={{ fontSize:12, color:th.t1, fontWeight:700, marginTop:4, fontFamily:"'Inter',system-ui,sans-serif" }}>
+                  {(inspectNode.type || "node").toUpperCase()} {inspectNode.index ? `#${inspectNode.index}` : ""}
+                </div>
+              </div>
+              <button
+                onClick={()=>setInspectId(null)}
+                style={{
+                  background:"transparent",
+                  border:`1px solid ${th.b0}`,
+                  color:th.t2,
+                  cursor:"pointer",
+                  borderRadius:6,
+                  padding:"6px 10px",
+                  fontSize:10,
+                  letterSpacing:"0.1em",
+                  fontFamily:"'Inter',system-ui,sans-serif",
+                }}
+              >
+                CLOSE
+              </button>
+            </div>
+            <div style={{ flex:1, overflow:"auto", padding:"18px 18px 40px" }}>
+              <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+                {renderInspectorContent(inspectNode)}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* FLOATING NODE TOOLBAR */}
+        <div style={{ position:"absolute", bottom:28, left:"50%", transform:"translateX(-50%)", zIndex:200, display:"flex", flexDirection:"column", alignItems:"center", gap:6, pointerEvents:"none" }}>
+          {/* Stats micro-pill */}
+          <div style={{ display:"flex",gap:16,background:th.card,border:`1px solid ${th.b0}`,borderRadius:20,padding:"5px 18px",boxShadow:`0 2px 16px ${th.sh}`,pointerEvents:"auto" }}>
+            {[`${nodes.filter(n=>n.type===T.SCENE).length} SCENES`,`${shotCount} SHOTS`,`${totalDur}s`,`${nodes.filter(n=>n.type===T.IMAGE).length} IMG`].map((t,i)=>(
+              <span key={i} style={{ fontSize:10,color:th.t3,letterSpacing:"0.1em",fontFamily:"'Inter',system-ui,sans-serif" }}>{t}</span>
+            ))}
+          </div>
+          {/* Main capsule toolbar */}
+          <div style={{ display:"flex",alignItems:"center",gap:2,background:th.card,border:`1px solid ${th.b0}`,borderRadius:40,padding:"8px 16px",boxShadow:`0 8px 40px rgba(0,0,0,0.22),0 2px 10px rgba(0,0,0,0.10)`,pointerEvents:"auto" }}>
+            {/* Bible / Elements icon — before Scene */}
+            <button
+              onClick={()=>setBibleOpen(v=>!v)}
+              title="World Bible — Characters, Objects, Locations"
+              style={{ display:"flex",alignItems:"center",justifyContent:"center",width:46,height:46,
+                background: bibleOpen ? th.b1 : "transparent",
+                border: bibleOpen ? `1px solid ${th.b0}` : "1px solid transparent",
+                borderRadius:14,cursor:"pointer",outline:"none",
+                transition:"background 0.15s, border-color 0.15s, transform 0.12s",padding:0 }}
+              onMouseEnter={e=>{e.currentTarget.style.background=th.b1;e.currentTarget.style.borderColor=th.b0;e.currentTarget.style.transform="scale(1.08)";}}
+              onMouseLeave={e=>{if(!bibleOpen){e.currentTarget.style.background="transparent";e.currentTarget.style.borderColor="transparent";}e.currentTarget.style.transform="scale(1)";}}
+            >
+              <Ico icon={BookOpen} size={26} color={th.t0} sw={1.4}/>
+            </button>
+            {/* Templates button */}
+            <button
+              onClick={()=>setTemplatePickerOpen(v=>!v)}
+              title="Start from a template"
+              style={{ display:"flex",alignItems:"center",justifyContent:"center",width:46,height:46,
+                background: templatePickerOpen ? th.b1 : "transparent",
+                border: templatePickerOpen ? `1px solid ${th.b0}` : "1px solid transparent",
+                borderRadius:14,cursor:"pointer",outline:"none",
+                transition:"background 0.15s, border-color 0.15s, transform 0.12s",padding:0 }}
+              onMouseEnter={e=>{e.currentTarget.style.background=th.b1;e.currentTarget.style.borderColor=th.b0;e.currentTarget.style.transform="scale(1.08)";}}
+              onMouseLeave={e=>{if(!templatePickerOpen){e.currentTarget.style.background="transparent";e.currentTarget.style.borderColor="transparent";}e.currentTarget.style.transform="scale(1)";}}
+            >
+              <Ico icon={LayoutTemplate} size={26} color={th.t0} sw={1.4}/>
+            </button>
+            <div style={{ width:1,height:26,background:th.b0,margin:"0 10px" }}/>
+
+            {TOOLS.map((t,i)=>(
+              <div key={t.type} style={{ display:"flex",alignItems:"center" }}>
+                {i===1&&<div style={{ width:1,height:26,background:th.b0,margin:"0 10px" }} />}
+                {i===4&&<div style={{ width:1,height:26,background:th.b0,margin:"0 10px" }} />}
+                {i===6&&<div style={{ width:1,height:26,background:th.b0,margin:"0 10px" }} />}
+                <button
+                  onClick={()=>spawnNode(t.type)}
+                  title={`${t.label} — ${t.desc}`}
+                  style={{ display:"flex",alignItems:"center",justifyContent:"center",width:46,height:46,background:"transparent",border:"1px solid transparent",borderRadius:14,cursor:"pointer",outline:"none",transition:"background 0.15s, border-color 0.15s, transform 0.12s",padding:0 }}
+                  onMouseEnter={e=>{e.currentTarget.style.background=th.b1;e.currentTarget.style.borderColor=th.b0;e.currentTarget.style.transform="scale(1.08)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.borderColor="transparent";e.currentTarget.style.transform="scale(1)";}}
+                >
+                  {t.brandText
+                    ? <span style={{ fontSize:10, fontWeight:800, letterSpacing:"0.04em", color:t.color, fontFamily:"'Inter',system-ui,sans-serif", lineHeight:1 }}>{t.brandText}</span>
+                    : <Ico icon={t.icon} size={26} color={th.t0} sw={1.4}/>
+                  }
+                </button>
+              </div>
+            ))}
+          </div>
+          {/* Hint */}
+          <span style={{ fontSize:10,color:th.t4,letterSpacing:"0.06em",fontFamily:"'Inter',system-ui,sans-serif",opacity:0.7,pointerEvents:"none" }}>ALT+DRAG · scroll to zoom · middle-click to pan</span>
+        </div>
+
+        {/* TEMPLATE PICKER */}
+        {templatePickerOpen && (
+          <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.55)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center" }}
+            onClick={()=>setTemplatePickerOpen(false)}>
+            <div onClick={e=>e.stopPropagation()}
+              style={{ background:th.card, border:`1px solid ${th.b0}`, borderRadius:16, padding:28, width:520, maxWidth:"90vw", maxHeight:"80vh", overflowY:"auto", boxShadow:`0 24px 80px rgba(0,0,0,0.4)`, fontFamily:"'Inter',system-ui,sans-serif" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:700, color:th.t0, letterSpacing:"0.12em" }}>TEMPLATES</div>
+                  <div style={{ fontSize:10, color:th.t3, marginTop:3 }}>Start from a complete pre-built project. You can edit everything.</div>
+                </div>
+                <button onClick={()=>setTemplatePickerOpen(false)} style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", padding:4 }}>
+                  <Ico icon={X} size={16} color={th.t3}/>
+                </button>
+              </div>
+              {/* Built-in templates */}
+              <div style={{ fontSize:9, color:th.t4, letterSpacing:"0.14em", marginBottom:8 }}>BUILT-IN</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:20 }}>
+                {TEMPLATES.map(t=>(
+                  <div key={t.id}
+                    style={{ border:`1px solid ${th.b0}`, borderRadius:10, padding:"14px 16px", cursor:"pointer", transition:"all 0.15s", background:th.card2 }}
+                    onMouseEnter={e=>{ e.currentTarget.style.borderColor=th.t2; e.currentTarget.style.background=th.card3; }}
+                    onMouseLeave={e=>{ e.currentTarget.style.borderColor=th.b0;  e.currentTarget.style.background=th.card2; }}
+                    onClick={()=>loadTemplate(t)}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
+                      <span style={{ fontSize:20 }}>{t.emoji}</span>
+                      <span style={{ fontSize:11, fontWeight:700, color:th.t0, letterSpacing:"0.08em" }}>{t.label}</span>
+                    </div>
+                    <div style={{ fontSize:10, color:th.t3, lineHeight:1.6 }}>{t.description}</div>
+                    <div style={{ marginTop:10, display:"flex", gap:6, flexWrap:"wrap" }}>
+                      {(t.tags||[]).map(tag=>(
+                        <span key={tag} style={{ fontSize:8, color:th.t2, border:`1px solid ${th.b0}`, borderRadius:20, padding:"2px 8px", letterSpacing:"0.08em" }}>{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* User templates */}
+              {userTemplates.length > 0 && (
+                <>
+                  <div style={{ fontSize:9, color:th.t4, letterSpacing:"0.14em", marginBottom:8 }}>MY TEMPLATES</div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:16 }}>
+                    {userTemplates.map(t=>(
+                      <div key={t.id}
+                        style={{ border:`1px solid ${th.b0}`, borderRadius:10, padding:"14px 16px", cursor:"pointer", transition:"all 0.15s", background:th.card2 }}
+                        onMouseEnter={e=>{ e.currentTarget.style.borderColor="#a855f7"; e.currentTarget.style.background=th.card3; }}
+                        onMouseLeave={e=>{ e.currentTarget.style.borderColor=th.b0; e.currentTarget.style.background=th.card2; }}
+                        onClick={()=>loadTemplate(t)}>
+                        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
+                          <span style={{ fontSize:20 }}>{t.emoji}</span>
+                          <span style={{ fontSize:11, fontWeight:700, color:th.t0, letterSpacing:"0.08em" }}>{t.label}</span>
+                          <span style={{ marginLeft:"auto", fontSize:8, color:"#a855f7", border:"1px solid #a855f744", borderRadius:10, padding:"2px 7px" }}>MINE</span>
+                        </div>
+                        {t.description && <div style={{ fontSize:10, color:th.t3, lineHeight:1.6 }}>{t.description}</div>}
+                        <div style={{ marginTop:8, display:"flex", gap:6, flexWrap:"wrap" }}>
+                          {(t.tags||[]).map(tag=>(
+                            <span key={tag} style={{ fontSize:8, color:"#a855f7", border:`1px solid ${th.b0}`, borderRadius:20, padding:"2px 8px", letterSpacing:"0.08em" }}>{tag}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <div style={{ fontSize:9, color:th.t4, textAlign:"center", lineHeight:1.6 }}>
+                Loading a template replaces the current canvas. Save your work first.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SAVE AS TEMPLATE DIALOG */}
+        {saveTemplateOpen && (
+          <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.55)", zIndex:600, display:"flex", alignItems:"center", justifyContent:"center" }}
+            onClick={()=>setSaveTemplateOpen(false)}>
+            <div onClick={e=>e.stopPropagation()}
+              style={{ background:th.card, border:`1px solid ${th.b0}`, borderRadius:16, padding:28, width:420, maxWidth:"90vw", boxShadow:`0 24px 80px rgba(0,0,0,0.4)`, fontFamily:"'Inter',system-ui,sans-serif" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:th.t0, letterSpacing:"0.12em" }}>SAVE AS TEMPLATE</div>
+                <button onClick={()=>setSaveTemplateOpen(false)} style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer" }}>
+                  <Ico icon={X} size={16} color={th.t3}/>
+                </button>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                <div>
+                  <label style={{ fontSize:9, color:th.t3, letterSpacing:"0.12em", display:"block", marginBottom:5 }}>EMOJI</label>
+                  <input value={templateSaveEmoji} onChange={e=>setTemplateSaveEmoji(e.target.value)}
+                    style={{ width:56, background:th.card2, border:`1px solid ${th.b0}`, borderRadius:6, color:th.t0, fontSize:20, padding:"6px 10px", outline:"none", textAlign:"center" }}/>
+                </div>
+                <div>
+                  <label style={{ fontSize:9, color:th.t3, letterSpacing:"0.12em", display:"block", marginBottom:5 }}>TEMPLATE NAME *</label>
+                  <input value={templateSaveName} onChange={e=>setTemplateSaveName(e.target.value)}
+                    placeholder="e.g. Hip Hop Campaign v2"
+                    style={{ width:"100%", boxSizing:"border-box", background:th.card2, border:`1px solid ${th.b0}`, borderRadius:6, color:th.t0, fontSize:12, padding:"8px 10px", outline:"none", fontFamily:"'Inter',system-ui,sans-serif" }}/>
+                </div>
+                <div>
+                  <label style={{ fontSize:9, color:th.t3, letterSpacing:"0.12em", display:"block", marginBottom:5 }}>DESCRIPTION</label>
+                  <textarea value={templateSaveDesc} onChange={e=>setTemplateSaveDesc(e.target.value)}
+                    placeholder="What is this template for?"
+                    rows={3}
+                    style={{ width:"100%", boxSizing:"border-box", background:th.card2, border:`1px solid ${th.b0}`, borderRadius:6, color:th.t0, fontSize:11, padding:"8px 10px", outline:"none", resize:"none", fontFamily:"'Inter',system-ui,sans-serif", lineHeight:1.6 }}/>
+                </div>
+                <div style={{ fontSize:9, color:th.t4, lineHeight:1.6 }}>
+                  Saves the current canvas ({nodes.length} nodes) including all generated images. Load it any time from the Templates picker under MY TEMPLATES.
+                </div>
+                <button onClick={saveAsTemplate} disabled={!templateSaveName.trim()}
+                  style={{ background: templateSaveName.trim() ? th.t0 : th.card2, border:"none", borderRadius:8, color:"#fff",
+                    fontFamily:"'Inter',system-ui,sans-serif", fontWeight:700, fontSize:12, padding:"11px",
+                    cursor: templateSaveName.trim() ? "pointer" : "not-allowed", letterSpacing:"0.1em",
+                    opacity: templateSaveName.trim() ? 1 : 0.4 }}>
+                  SAVE TEMPLATE
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* BIBLE POPUP */}
+        {bibleOpen && (
+          <BiblePopup bible={bible} setBible={setBible} onClose={()=>setBibleOpen(false)}/>
+        )}
+      </div>
+    </div>
+    </ThemeCtx.Provider>
+  );
+}
