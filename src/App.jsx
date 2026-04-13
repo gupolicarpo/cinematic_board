@@ -1232,6 +1232,30 @@ function F({ label, children, th }) {
   return <div><span style={lb}>{label}</span>{children}</div>;
 }
 
+function InspectAction({ onClick, th }) {
+  return (
+    <button
+      onMouseDown={e=>e.stopPropagation()}
+      onClick={e=>{ e.stopPropagation(); onClick && onClick(); }}
+      style={{
+        background:"transparent",
+        border:`1px solid ${th.b0}`,
+        color:th.t2,
+        cursor:"pointer",
+        fontSize:8,
+        padding:"2px 7px",
+        borderRadius:4,
+        lineHeight:1.2,
+        letterSpacing:"0.08em",
+        fontFamily:"'Inter',system-ui,sans-serif",
+      }}
+      title="Open node in side inspector"
+    >
+      INSPECT
+    </button>
+  );
+}
+
 // ─── SCENE NODE ───────────────────────────────────────────────────────────────
 function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected, onStartWire, nodePos, model, sceneStats, onExport, globalBible = [] }) {
   const th = useTheme();
@@ -7737,6 +7761,7 @@ export default function App() {
   const [zMap, setZMap] = useState({});
   const [zTop, setZTop] = useState(10);
   const [selId, setSelId] = useState(null);
+  const [inspectId, setInspectId] = useState(null);
   // wire dragging: { fromId, fromX, fromY, toX, toY }
   const [wire, setWire] = useState(null);
   const [hoverTarget, setHoverTarget] = useState(null);
@@ -8202,7 +8227,53 @@ export default function App() {
       }));
     }
   }, []);
-  const delNode = (id) => { setNodes(prev=>prev.filter(n=>n.id!==id)); setPos(p=>{const c={...p};delete c[id];return c;}); if(selId===id)setSelId(null); };
+  const delNode = (id) => {
+    setNodes(prev=>prev.filter(n=>n.id!==id));
+    setPos(p=>{const c={...p};delete c[id];return c;});
+    if(selId===id)setSelId(null);
+    if(inspectId===id)setInspectId(null);
+  };
+  const openInspector = useCallback((id) => {
+    setInspectId(id);
+    setSelId(id);
+    front(id);
+  }, [front]);
+  useEffect(() => {
+    if (inspectId && !nodes.some(n => n.id === inspectId)) setInspectId(null);
+  }, [nodes, inspectId]);
+  const inspectNode = inspectId ? (nodes.find(n => n.id === inspectId) || null) : null;
+
+  const renderNodeCard = (n, { inspectMode = false } = {}) => {
+    const nodePosValue = inspectMode ? { x: 0, y: 0 } : (pos[n.id] || { x: 80, y: 80 });
+    const isSel = inspectMode ? true : selId === n.id;
+    const linkedShot = n.type===T.IMAGE ? (nodes.find(x=>x.id===n.shotId)||null) : null;
+    const linkedScene = n.type===T.IMAGE ? (nodes.find(x=>x.id===(n.sceneId||(linkedShot && linkedShot.sceneId)))||null) : null;
+    const sceneNode = n.type===T.SHOT ? (nodes.find(x=>x.id===n.sceneId)||null) : null;
+    const nodeCard = (
+      <>
+        {n.type===T.SCENE&&<SceneCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onGenShots={onGenShots} onGenVersionB={onGenVersionB} onDel={()=>delNode(n.id)} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} model={shotModel} sceneStats={getSceneShotStats(nodes,n.id)} onExport={()=>exportScene(n)} globalBible={globalBibleFlat} />}
+        {n.type===T.SHOT&&<ShotCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} sceneBible={sceneNode?.bible||[]} linkedScene={sceneNode} onLink={sceneId=>linkShot(n.id,sceneId)} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} sceneStats={getSceneShotStats(nodes,n.sceneId)} globalBible={globalBibleFlat} onRetrySingleShot={onRetrySingleShot} />}
+        {n.type===T.IMAGE&&<ImageCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} linkedShot={linkedShot} linkedScene={linkedScene} onUnlinkShot={()=>updNode(n.id,{shotId:null,prompt:""})} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onSaveToBible={saveToBible} />}
+        {n.type===T.KLING&&<KlingCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} />}
+        {n.type===T.VEO&&<VeoCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} />}
+        {n.type===T.LLM&&<LlmCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onUpdateNode={updNode} />}
+        {n.type===T.VIDEOEDIT&&<VideoEditCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} audioNode={nodes.find(x=>x.id===n.audioNodeId)||null} />}
+        {n.type===T.AUDIO&&<AudioTrackCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} allNodes={nodes} />}
+        {n.type===T.SCRIPT&&<ScriptCard node={n} sel={isSel} upd={pr=>updNode(n.id,pr)} onDel={()=>delNode(n.id)} onSplitScenes={scenes=>onSplitScenes(n.id,scenes)} />}
+        {n.type===T.CLIP&&<ClipCard node={n} sel={isSel} upd={pr=>updNode(n.id,pr)} onDel={()=>delNode(n.id)} onStartWire={inspectMode ? (()=>{}) : startWire} nodePos={nodePosValue} />}
+      </>
+    );
+    return (
+      <div style={{ position:"relative", display:"inline-block", zoom: inspectMode ? 1.12 : 1 }}>
+        {!inspectMode && (
+          <div style={{ position:"absolute", top:8, right:8, zIndex:40 }}>
+            <InspectAction onClick={()=>openInspector(n.id)} th={th} />
+          </div>
+        )}
+        {nodeCard}
+      </div>
+    );
+  };
   const moveNode = (id,x,y) => setPos(prev=>({...prev,[id]:{x,y}}));
 
   // ── Batch generate all empty Image nodes sequentially ─────────────────────────
@@ -8924,21 +8995,9 @@ export default function App() {
             {nodes.map(n=>{
               const p=pos[n.id]||{x:80,y:80};
               const z=zMap[n.id]||10;
-              const isSel=selId===n.id;
-              const imgLinkedShot = n.type===T.IMAGE ? (nodes.find(x=>x.id===n.shotId)||null) : null;
-              const imgLinkedScene = n.type===T.IMAGE ? (nodes.find(x=>x.id===(n.sceneId||(imgLinkedShot && imgLinkedShot.sceneId)))||null) : null;
               return (
                 <Drag key={n.id} id={n.id} x={p.x} y={p.y} onMove={moveNode} z={z} zoom={zoom} onFocus={()=>{setSelId(n.id);front(n.id);}}>
-                  {n.type===T.SCENE&&<SceneCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onGenShots={onGenShots} onGenVersionB={onGenVersionB} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={p} model={shotModel} sceneStats={getSceneShotStats(nodes,n.id)} onExport={()=>exportScene(n)} globalBible={globalBibleFlat} />}
-                  {n.type===T.SHOT&&<ShotCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} sceneBible={nodes.find(x=>x.id===n.sceneId)?.bible||[]} linkedScene={nodes.find(x=>x.id===n.sceneId)||null} onLink={sceneId=>linkShot(n.id,sceneId)} onStartWire={startWire} nodePos={p} sceneStats={getSceneShotStats(nodes,n.sceneId)} globalBible={globalBibleFlat} onRetrySingleShot={onRetrySingleShot} />}
-                  {n.type===T.IMAGE&&<ImageCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} linkedShot={imgLinkedShot} linkedScene={imgLinkedScene} onUnlinkShot={()=>updNode(n.id,{shotId:null,prompt:""})} onStartWire={startWire} nodePos={p} globalBible={globalBibleFlat} onSaveToBible={saveToBible} />}
-                  {n.type===T.KLING&&<KlingCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={p} globalBible={globalBibleFlat} />}
-                  {n.type===T.VEO&&<VeoCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={p} globalBible={globalBibleFlat} />}
-                  {n.type===T.LLM&&<LlmCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onUpdateNode={updNode} />}
-                  {n.type===T.VIDEOEDIT&&<VideoEditCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} audioNode={nodes.find(x=>x.id===n.audioNodeId)||null} />}
-                  {n.type===T.AUDIO&&<AudioTrackCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={p} allNodes={nodes} />}
-                  {n.type===T.SCRIPT&&<ScriptCard node={n} sel={isSel} upd={pr=>updNode(n.id,pr)} onDel={()=>delNode(n.id)} onSplitScenes={scenes=>onSplitScenes(n.id,scenes)} />}
-                  {n.type===T.CLIP&&<ClipCard node={n} sel={isSel} upd={pr=>updNode(n.id,pr)} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={p} />}
+                  {renderNodeCard(n)}
                 </Drag>
               );
             })}
@@ -8954,6 +9013,59 @@ export default function App() {
             )}
           </div>
         </div>
+
+        {inspectNode && (
+          <div style={{
+            position:"absolute",
+            top:0,
+            right:0,
+            width:560,
+            height:"100%",
+            background:th.card,
+            borderLeft:`1px solid ${th.b0}`,
+            boxShadow:`-16px 0 40px ${th.sh}`,
+            zIndex:260,
+            display:"flex",
+            flexDirection:"column",
+          }}>
+            <div style={{
+              display:"flex",
+              alignItems:"center",
+              justifyContent:"space-between",
+              padding:"14px 16px",
+              borderBottom:`1px solid ${th.b0}`,
+              background:th.card2,
+            }}>
+              <div>
+                <div style={{ fontSize:10, letterSpacing:"0.16em", color:th.t3, fontFamily:"'Inter',system-ui,sans-serif" }}>NODE INSPECTOR</div>
+                <div style={{ fontSize:12, color:th.t1, fontWeight:700, marginTop:4, fontFamily:"'Inter',system-ui,sans-serif" }}>
+                  {(inspectNode.type || "node").toUpperCase()} {inspectNode.index ? `#${inspectNode.index}` : ""}
+                </div>
+              </div>
+              <button
+                onClick={()=>setInspectId(null)}
+                style={{
+                  background:"transparent",
+                  border:`1px solid ${th.b0}`,
+                  color:th.t2,
+                  cursor:"pointer",
+                  borderRadius:6,
+                  padding:"6px 10px",
+                  fontSize:10,
+                  letterSpacing:"0.1em",
+                  fontFamily:"'Inter',system-ui,sans-serif",
+                }}
+              >
+                CLOSE
+              </button>
+            </div>
+            <div style={{ flex:1, overflow:"auto", padding:"18px 18px 40px" }}>
+              <div style={{ display:"inline-block" }}>
+                {renderNodeCard(inspectNode, { inspectMode:true })}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* FLOATING NODE TOOLBAR */}
         <div style={{ position:"absolute", bottom:28, left:"50%", transform:"translateX(-50%)", zIndex:200, display:"flex", flexDirection:"column", alignItems:"center", gap:6, pointerEvents:"none" }}>
