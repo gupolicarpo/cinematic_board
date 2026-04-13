@@ -384,7 +384,7 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
           </div>
           <h1 className="fu fu1" style={{ fontSize:"clamp(40px,6vw,72px)", fontWeight:900, lineHeight:1.05,
             letterSpacing:"-0.03em", color:WHITE, marginBottom:24 }}>
-            From Ideas<br /><span style={{ color:ACCENT }}>to Movies.</span>
+            Write your story.<br /><span style={{ color:ACCENT }}>Direct every frame.</span>
           </h1>
           <p className="fu fu2" style={{ fontSize:"clamp(15px,1.8vw,19px)", color:"rgba(255,255,255,0.82)",
             lineHeight:1.7, maxWidth:600, margin:"0 auto 32px" }}>
