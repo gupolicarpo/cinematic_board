@@ -109,7 +109,8 @@ const GlobalStyle = () => (
     @media (max-width: 768px) {
       .lp-inner   { padding:0 20px; }
       .lp-section { padding-top:64px; padding-bottom:64px; }
-      .lp-nav-links   { display:none; }
+      .lp-nav-links   { gap:16px; }
+      .lp-nav-links a { font-size:11px !important; }
       .lp-grid-2  { grid-template-columns:1fr; gap:36px; }
       .lp-grid-2-sm { grid-template-columns:1fr; gap:16px; }
       .lp-grid-3  { grid-template-columns:1fr; gap:16px; }
