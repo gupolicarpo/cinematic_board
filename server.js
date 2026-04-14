@@ -114,6 +114,8 @@ const OP_CREDITS = {
   kling_10s_pro: 80,
   kling_lipsync: 8,
   kling_tts:     2,
+  music_gen:     5,
+  music_video_sync: 8,
   veo_fast_5s:   45,
   veo_fast_8s:   70,
   veo_fast_10s:  88,
@@ -1169,6 +1171,13 @@ ${script}`;
 app.post("/api/elevenlabs/video-to-music", async (req, res) => {
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) return res.status(500).json({ error: "ELEVENLABS_API_KEY not set" });
+  const userId = await getUserId(req);
+  if (userId && supabaseAdmin) {
+    const result = await deductCredits(userId, OP_CREDITS.music_video_sync, "music_video_sync");
+    if (!result.ok) return res.status(402).json({
+      error: "insufficient_credits", credits_balance: result.balance, credits_needed: OP_CREDITS.music_video_sync,
+    });
+  }
   const { videoUrl, description = "", tags = [] } = req.body;
   if (!videoUrl) return res.status(400).json({ error: "videoUrl required" });
   try {
@@ -1239,10 +1248,16 @@ app.post("/api/elevenlabs/video-to-music", async (req, res) => {
 // POST /api/elevenlabs/music
 // Body: { prompt: string, tags: string[] }
 // Returns: audio/mpeg binary streamed directly from ElevenLabs
-app.post("/api/elevenlabs/music", (req, res) => {
+app.post("/api/elevenlabs/music", async (req, res) => {
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) return res.status(500).json({ error: "ELEVENLABS_API_KEY not set" });
-
+  const userId = await getUserId(req);
+  if (userId && supabaseAdmin) {
+    const result = await deductCredits(userId, OP_CREDITS.music_gen, "music_gen");
+    if (!result.ok) return res.status(402).json({
+      error: "insufficient_credits", credits_balance: result.balance, credits_needed: OP_CREDITS.music_gen,
+    });
+  }
   const { prompt = "", tags = [], duration = 30 } = req.body;
   // ElevenLabs compose uses "music_length_ms" in milliseconds (3000–600000)
   const durationMs = Math.max(3000, Math.min(600000, Math.round(Number(duration) * 1000)));
