@@ -90,7 +90,7 @@ const GlobalStyle = () => (
     /* ── Responsive layout classes ── */
     .lp-inner  { max-width:1120px; margin:0 auto; padding:0 32px; }
     .lp-section { padding-top:96px; padding-bottom:96px; }
-    .lp-nav-links { display:flex; align-items:center; gap:32px; }
+    .lp-nav-links { display:flex; align-items:center; gap:20px; }
     .lp-nav-actions { display:flex; align-items:center; gap:12px; }
     .lp-hero-ctas { display:flex; align-items:center; gap:16px; justify-content:center; flex-wrap:wrap; }
     .lp-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:72px; }
@@ -356,12 +356,12 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
           <nav className="lp-nav-links">
             {[["#nodes","Node System"],["#storyboard","Scene & Shots"],["#bible","World Bible"],["#video","AI Video"],["/pricing","Pricing"],["#workflow","Script → Cut"],["/features","Features"]].map(([href,label]) => (
               href.startsWith("/")
-                ? <a key={href} href={href} style={{ fontSize:13, fontWeight:500, color:MID, transition:"color 0.15s" }}
+                ? <a key={href} href={href} style={{ fontSize:12, fontWeight:500, color:MID, transition:"color 0.15s", whiteSpace:"nowrap" }}
                     onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>{label}</a>
-                : <a key={href} href={href} style={{ fontSize:13, fontWeight:500, color:MID, transition:"color 0.15s" }}
+                : <a key={href} href={href} style={{ fontSize:12, fontWeight:500, color:MID, transition:"color 0.15s", whiteSpace:"nowrap" }}
                     onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>{label}</a>
             ))}
-            <a href="/kling-video-generation" style={{ fontSize:13, fontWeight:500, color:MID, transition:"color 0.15s" }}
+            <a href="/kling-video-generation" style={{ fontSize:12, fontWeight:500, color:MID, transition:"color 0.15s", whiteSpace:"nowrap" }}
               onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>Kling</a>
           </nav>
           <div className="lp-nav-actions">
