@@ -434,7 +434,7 @@ function formatSceneMd(sceneNode, shots) {
 function mkScene() { return { id:`sc_${uid()}`, type:T.SCENE, sceneText:"", cinematicStyle:"thriller", visualStyle:"none", shotCount:3, bible:[], dialogueLines:[] }; }
 function mkShot(sceneId,index=1) { return { id:`sh_${uid()}`, type:T.SHOT, sceneId, index, durationSec:3, sourceAnchor:"", where:"", entityTags:[], how:"", when:"", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"natural-soft", visualGoal:"", visualStyle:"inherit", compiledText:"", bible:[], dialogue:"" }; }
 function mkImage(sceneId=null, shotId=null) { return { id:`im_${uid()}`, type:T.IMAGE, sceneId, shotId, prompt:"", generatedUrl:null, entityTag:"", aspect_ratio:"1:1", resolution:"1K", refImageUrl:null }; }
-function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", resolution:"720p", sound:"off", prevKlingId:null, voice:"none", lipsync:false }; }
+function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", resolution:"720p", sound:"off", prevKlingId:null, voice:"none", lipsync:false, klingVersion:"v3", klingVideoId:null, klingVideoDuration:null }; }
 function mkVeo()   { return { id:`veo_${uid()}`, type:T.VEO, shotId:null, videoUrl:null, aspect_ratio:"16:9", duration:8, resolution:"720p", startFrameNodeId:null, endFrameNodeId:null, refNodeIds:[], useRefs:true, refType:"asset", manualPrompt:"" }; }
 function mkLlm()   { return { id:`llm_${uid()}`, type:T.LLM, targetNodeIds:[], targetNodeId:null, llmMode:"edit", command:"", model:"claude-sonnet-4-5", lastResult:null }; }
 function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p" }; }
@@ -1045,7 +1045,7 @@ function dataUrlToBase64(dataUrl) {
 // Create a video generation task — single-shot or multi-shot
 // options: { multiShot, sceneShots, aspect_ratio, mode, sound }
 async function aiKlingCreate(shot, sceneBible = [], options = {}) {
-  const { multiShot = false, sceneShots = [], aspect_ratio = "16:9", mode = "pro", resolution = "720p", sound = "off", prevVideoUrl = null, imageRefUrls = [], voice = "none" } = options;
+  const { multiShot = false, sceneShots = [], aspect_ratio = "16:9", mode = "pro", resolution = "720p", sound = "off", prevVideoUrl = null, imageRefUrls = [], voice = "none", klingVersion = "v3" } = options;
 
   // When a previous video is used as reference, Kling limits total images+elements to 4
   const maxImages = prevVideoUrl ? 4 : 7;
@@ -1114,32 +1114,33 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
     });
 
     body = {
-      model_name:   "kling-v3-omni",
-      multi_shot:   true,
+      model_name:   klingVersion === "v1.6" ? "kling-v1-6" : "kling-v3-omni",
+      multi_shot:   klingVersion === "v3",  // multi-shot is V3 omni only
       shot_type:    "customize",
-      prompt:       "",
-      multi_prompt,
+      prompt:       klingVersion === "v3" ? "" : (multi_prompt[0]?.prompt || ""),
+      ...(klingVersion === "v3" ? { multi_prompt } : {}),
       duration:     String(total),
       aspect_ratio,
       mode,
       resolution,
-      sound: prevVideoUrl ? "off" : sound,  // API requires sound:off when video_list is set
+      sound: prevVideoUrl ? "off" : sound,
+      klingVersion,
     };
   } else {
     // ── SINGLE-SHOT MODE ────────────────────────────────────────────────────
     const rawPrompt = shot.compiledText || `${shot.how} in ${shot.where}`;
     const promptWithRefs = injectRefs(applyVisualStylePrompt(rawPrompt, shot.visualStyle, "video"));
-    // Prepend explicit image ref tags so Kling uses wired images as visual references
     const promptFinal = refTagStr ? `${refTagStr} ${promptWithRefs}` : promptWithRefs;
     body = {
-      model_name:   "kling-v3-omni",
+      model_name:   klingVersion === "v1.6" ? "kling-v1-6" : "kling-v3-omni",
       multi_shot:   false,
       prompt:       prevVideoUrl ? `<<<video_1>>> ${promptFinal}` : promptFinal,
       duration:     String(buildKlingShotPlan([shot], false)[0]?.durationSec || 5),
       aspect_ratio,
       mode,
       resolution,
-      sound: prevVideoUrl ? "off" : sound,  // API requires sound:off when video_list is set
+      sound: prevVideoUrl ? "off" : sound,
+      klingVersion,
     };
   }
 
@@ -1173,10 +1174,11 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
 }
 
 // Poll until succeed/failed — returns { id, url, durationMs } on success
-async function aiKlingPoll(taskId, onStatus) {
+async function aiKlingPoll(taskId, onStatus, klingVersion = "v3") {
+  const verParam = klingVersion === "v1.6" ? "?ver=v1.6" : "";
   for (let i = 0; i < 180; i++) {   // max ~6 min polling
     await new Promise(r => setTimeout(r, 2000));
-    const res = await fetch(`/api/kling/video/${taskId}`);
+    const res = await fetch(`/api/kling/video/${taskId}${verParam}`);
     const raw = await res.text();
     if (!res.ok) throw new Error(`Poll ${res.status}: ${raw.slice(0, 200)}`);
     const d = JSON.parse(raw);
@@ -2765,8 +2767,9 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
         .map(n => n.generatedUrl)
         .filter(Boolean);
 
+      const klingVersion = node.klingVersion || "v3";
       const taskId = await aiKlingCreate(styledShotNodes[0], allBible, {
-        multiShot:    styledShotNodes.length > 1,
+        multiShot:    klingVersion === "v3" && styledShotNodes.length > 1,
         sceneShots:   styledShotNodes,
         aspect_ratio: node.aspect_ratio || "16:9",
         mode:         node.mode         || "pro",
@@ -2775,10 +2778,14 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
         prevVideoUrl,
         imageRefUrls,
         voice:        node.voice        || "none",
+        klingVersion,
       });
       setKlingTaskId(taskId);
       setKlingStatus("polling"); setKlingPollMsg("Processing…");
-      const { id: generatedVideoId, url, durationMs: generatedVideoDurationMs } = await aiKlingPoll(taskId, s=>setKlingPollMsg(s));
+      const { id: generatedVideoId, url, durationMs: generatedVideoDurationMs } = await aiKlingPoll(taskId, s=>setKlingPollMsg(s), klingVersion);
+
+      // Store the video ID for extension (V1.6 only) and duration tracking
+      upd({ klingVideoId: generatedVideoId || null, klingVideoDuration: generatedVideoDurationMs || null });
 
       // ── LIPSYNC PASS ────────────────────────────────────────────────────────
       // Two modes:
@@ -3310,7 +3317,23 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                 );
               })()}
             </div>
+            {/* Model version */}
+            <div style={{ flex:1 }}>
+              <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.1em", display:"block", marginBottom:2 }}>MODEL</span>
+              <select onMouseDown={e=>e.stopPropagation()}
+                value={node.klingVersion||"v3"}
+                onChange={e=>upd({ klingVersion:e.target.value, klingVideoId:null, klingVideoDuration:null })}
+                style={fSel}>
+                <option value="v3">V3 (Omni)</option>
+                <option value="v1.6">V1.6 + Extend</option>
+              </select>
+            </div>
           </div>
+          {(node.klingVersion||"v3") === "v1.6" && (
+            <div style={{ fontSize:6, color:"#f59e0b", letterSpacing:"0.08em", marginTop:2 }}>
+              ⚡ V1.6 — single shot only · supports video extension up to 3 min
+            </div>
+          )}
 
           {/* Dialogue / Voice / Lipsync row */}
           {(() => {
@@ -3519,6 +3542,85 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
               {klingTaskId ? `task: ${klingTaskId.slice(0,16)}…` : "waiting for task ID…"}
             </div>
           )}
+
+          {/* ── EXTEND VIDEO (V1.6 only) ── */}
+          {(node.klingVersion||"v3") === "v1.6" && node.klingVideoId && node.videoUrl && (() => {
+            const totalSec = node.klingVideoDuration ? Math.round(node.klingVideoDuration / 1000) : null;
+            const canExtend = !totalSec || totalSec < 175; // 3min = 180s, leave buffer
+            const [extStatus, setExtStatus] = React.useState("idle");
+            const [extPrompt, setExtPrompt] = React.useState("");
+
+            const runExtend = async () => {
+              if (extStatus === "creating" || extStatus === "polling") return;
+              setExtStatus("creating");
+              try {
+                const r = await fetch("/api/kling/extend", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ video_id: node.klingVideoId, prompt: extPrompt }),
+                });
+                if (r.status === 402) {
+                  const d = await r.json();
+                  onOutOfCredits?.({ needed: d.credits_needed, balance: d.credits_balance, op: "kling_extend" });
+                  setExtStatus("idle"); return;
+                }
+                if (!r.ok) throw new Error(await r.text());
+                const d = await r.json();
+                if (d.code && d.code !== 0) throw new Error(`Kling ${d.code}: ${d.message}`);
+                const extTaskId = d.data?.task_id;
+                setExtStatus("polling");
+                // Poll extend task
+                for (let i = 0; i < 180; i++) {
+                  await new Promise(res => setTimeout(res, 2000));
+                  const pr = await fetch(`/api/kling/extend/${extTaskId}`);
+                  const pd = await pr.json();
+                  const status = pd.data?.task_status;
+                  if (status === "succeed") {
+                    const vid = pd.data?.task_result?.videos?.[0];
+                    if (vid?.url) {
+                      const newDurMs = Math.round(parseFloat(vid.duration || 0) * 1000);
+                      upd({ videoUrl: vid.url, klingVideoId: vid.id, klingVideoDuration: newDurMs });
+                    }
+                    setExtStatus("done"); return;
+                  }
+                  if (status === "failed") throw new Error(pd.data?.task_status_msg || "Extension failed");
+                }
+                throw new Error("Extension timed out");
+              } catch(e) { setExtStatus("failed"); console.error("Extend failed:", e.message); }
+            };
+
+            return (
+              <div style={{ borderTop:`1px solid ${th.b0}`, paddingTop:8, marginTop:4 }}>
+                <div style={{ fontSize:6, color:"#f59e0b", letterSpacing:"0.1em", marginBottom:6, fontWeight:700 }}>
+                  ⚡ EXTEND VIDEO
+                  {totalSec && <span style={{ color:th.t3, fontWeight:400 }}> · {totalSec}s / 180s max</span>}
+                  {!canExtend && <span style={{ color:"#ef4444" }}> · MAX DURATION REACHED</span>}
+                </div>
+                {canExtend && (
+                  <>
+                    <input onMouseDown={e=>e.stopPropagation()}
+                      placeholder="Optional prompt to guide the extension…"
+                      value={extPrompt} onChange={e=>setExtPrompt(e.target.value)}
+                      style={{ ...mkInp(th), width:"100%", marginBottom:6, fontSize:7 }}/>
+                    <button onMouseDown={e=>e.stopPropagation()} onClick={runExtend}
+                      disabled={extStatus==="creating"||extStatus==="polling"}
+                      style={{ width:"100%", border:`1px solid #f59e0b44`, background:"#f59e0b18",
+                        color:"#f59e0b", borderRadius:4, padding:"6px 10px", fontSize:8, fontWeight:700,
+                        fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.1em",
+                        cursor:(extStatus==="creating"||extStatus==="polling")?"not-allowed":"pointer",
+                        opacity:(extStatus==="creating"||extStatus==="polling")?0.6:1,
+                        display:"flex", alignItems:"center", justifyContent:"center", gap:5 }}>
+                      {extStatus==="idle"    && <><span>+5s</span> EXTEND VIDEO · 20 credits</>}
+                      {extStatus==="creating"&& <><span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>⟳</span> SUBMITTING…</>}
+                      {extStatus==="polling" && <><span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>⟳</span> EXTENDING…</>}
+                      {extStatus==="done"    && <><span>✓</span> EXTENDED — EXTEND AGAIN?</>}
+                      {extStatus==="failed"  && <><span>↺</span> RETRY EXTENSION</>}
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })()}
+
         </div>
       </div>
     </div>
