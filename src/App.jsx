@@ -249,7 +249,9 @@ function buildKlingShotPlan(shots, multiShot = false) {
 function compileShotText(s) {
   const tags = s.entityTags?.length ? s.entityTags.join(" ") : "";
   const base = `${capitalize(s.cameraSize)} cinematic shot at ${s.when}, ${s.cameraAngle}, ${humanizeMove(s.cameraMovement)}, lens ${s.lens}, ${humanizeLighting(s.lighting)}.${tags ? " "+tags : ""} ${s.how} in ${s.where}. Visual goal: ${s.visualGoal}.`;
-  const withDirector = s.directorNote ? `${base} Director's intent: ${s.directorNote}` : base;
+  // visualHint = AI-translated concrete version of directorNote (set by coherence check / AI node)
+  // raw directorNote is kept as human intent reference only — never sent to video models directly
+  const withDirector = s.visualHint ? `${base} ${s.visualHint}` : base;
   const dialogueBlock = (s.dialogue || "")
     .split("\n")
     .map(line => line.trim())
@@ -867,6 +869,7 @@ async function aiCoherenceCheck(nodes, command) {
         cameraMovement: sh.cameraMovement || "",
         lighting: sh.lighting || "",
         visualGoal: sh.visualGoal || "",
+        directorNote: sh.directorNote || "",
         dialogue: sh.dialogue || "",
         durationSec: sh.durationSec || 0,
       })),
@@ -930,8 +933,9 @@ You receive SCENE nodes (with the full scene prose) and their child SHOT nodes (
 ────────────────────────────────────────────
 OUTPUT RULES:
 • Return a JSON object where each key is a node ID (scene or shot) and each value is a patch with ONLY the fields to change.
-• For shots: patchable fields are sourceAnchor, how, where, when, visualGoal, cameraSize, cameraAngle, cameraMovement, lighting, directorNote.
+• For shots: patchable fields are sourceAnchor, how, where, when, visualGoal, cameraSize, cameraAngle, cameraMovement, lighting, directorNote, visualHint.
 • Use directorNote to explain a coherence issue without changing creative intent (e.g. "Check 180° — previous shot has character entering from left").
+• If a shot has a directorNote, always output a visualHint: translate the director's abstract intent into ONE concrete sentence describing observable camera/framing/timing behavior (e.g. directorNote "this should feel like inevitability" → visualHint "locked-off wide frame, subject centred, no camera movement"). visualHint is what goes into the video generation prompt — it must be purely visual, no abstract language.
 • ONLY include nodes that actually need changes. Empty patches are forbidden.
 • Return ONLY raw JSON. No markdown, no explanation outside the JSON.
 
