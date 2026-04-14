@@ -354,13 +354,15 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
             <span style={{ fontSize:13, fontWeight:800, letterSpacing:"0.18em", color:DARK }}>CINEMATIC GRAPH</span>
           </div>
           <nav className="lp-nav-links">
-            {[["#nodes","Node System"],["#storyboard","Scene & Shots"],["#bible","World Bible"],["#video","AI Video"],["/pricing","Pricing"],["#workflow","Script → Cut"],["/features","Features"]].map(([href,label]) => (
+            {[["#nodes","Node System"],["#storyboard","Scene & Shots"],["#bible","World Bible"],["#video","AI Video"],["#workflow","Script → Cut"],["/features","Features"]].map(([href,label]) => (
               href.startsWith("/")
                 ? <a key={href} href={href} style={{ fontSize:12, fontWeight:500, color:MID, transition:"color 0.15s", whiteSpace:"nowrap" }}
                     onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>{label}</a>
                 : <a key={href} href={href} style={{ fontSize:12, fontWeight:500, color:MID, transition:"color 0.15s", whiteSpace:"nowrap" }}
                     onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>{label}</a>
             ))}
+            <a href="/pricing" style={{ fontSize:12, fontWeight:700, color:WHITE, background:DARK, padding:"6px 14px", borderRadius:7, whiteSpace:"nowrap", textDecoration:"none", transition:"background 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.background="#1F2937"} onMouseLeave={e => e.currentTarget.style.background=DARK}>Pricing</a>
             <a href="/kling-video-generation" style={{ fontSize:12, fontWeight:500, color:MID, transition:"color 0.15s", whiteSpace:"nowrap" }}
               onMouseEnter={e => e.target.style.color=DARK} onMouseLeave={e => e.target.style.color=MID}>Kling</a>
           </nav>

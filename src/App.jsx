@@ -7609,6 +7609,256 @@ function makeTrapMusicVideoTemplate() {
   return { nodes, pos, bible };
 }
 
+// ─── TEMPLATE: PIRATE ANIMATION — ADULTS ─────────────────────────────────────
+// Dark, cinematic pirate animation for adults — 4 scenes, 15 shots.
+// A pirate captain hunts a cursed treasure, is betrayed by her navigator,
+// and must choose between the gold and her crew's freedom.
+function makePirateAnimationTemplate() {
+
+  // ── Bible entities ─────────────────────────────────────────────────────────
+  const eMara   = { id:`e_${uid()}`, kind:"character", name:"Captain Mara Vane",  tag:"@mara",    description:"A fearless pirate captain in her early 30s. Dark skin, silver-braided hair, a jagged scar through her left brow. She wears a stolen admiral's coat — deep navy, gold epaulettes, bullet holes patched with red thread. A pistol on each hip. Her eyes are amber and see through everything. Commands by presence alone — she never needs to raise her voice.", notes:"Primary hero — establish her face and coat as visual constants across all scenes. The admiral's coat is the key costume detail.", _imgUrl:"", assetId:"" };
+  const eDrago  = { id:`e_${uid()}`, kind:"character", name:"First Mate Drago",   tag:"@drago",   description:"A massive man in his mid-40s. Polynesian features, neck-to-knuckle tattoos in a dark geometric pattern, shaved head. Hands the size of hammers. A voice like rolling thunder that he uses rarely. A weathered cutlass always drawn at half-mast. Completely loyal to Mara — his moral compass is the crew's survival.", notes:"Drago is the emotional anchor of the crew. When he is frightened, the audience should be terrified.", _imgUrl:"", assetId:"" };
+  const eSilas  = { id:`e_${uid()}`, kind:"character", name:"Silas the Navigator", tag:"@silas",  description:"A lean, calculating man in his early 30s. Pale, sharp-featured, always a little too clean for a pirate ship. Expensive rings on his fingers. Eyes like coins — always counting. He wears a navigator's coat with too many pockets. His betrayal was planned from the first day he stepped aboard.", notes:"Antagonist — his elegance contrasts with the rest of the crew. Use tight close-ups on his hands to foreshadow his betrayal.", _imgUrl:"", assetId:"" };
+  const eCompass = { id:`e_${uid()}`, kind:"object",   name:"The Vane Compass",   tag:"@compass", description:"A brass navigator's compass, old and heavy. But the needle never points north — it points southeast, always. The legend says it points toward whatever the holder desires most, not magnetic north. When held by Silas, it begins spinning. The glass face is cracked. Engraved on the back: 'Only the honest find what they seek.'", notes:"Key prop — must be visually consistent. Always close-up when featured. The spinning needle is the betrayal signal.", _imgUrl:"", assetId:"" };
+  const eCove   = { id:`e_${uid()}`, kind:"location",  name:"The Black Cove",     tag:"@cove",    description:"A hidden sea cave carved into volcanic black rock. The ship, Vane's Fury, is anchored in dark water within. Torches burn in iron brackets on the cave walls — orange fire, deep shadows. The sound of water echoing. Stalactites above. A stone dock. The crew moves through the half-dark with practiced ease. Feels like a cathedral of crime.", notes:"Opening and closing location — visual bookend. Establish the ship in the first shot.", _imgUrl:"", assetId:"" };
+  const eSea    = { id:`e_${uid()}`, kind:"location",  name:"The Open Sea",       tag:"@sea",     description:"Storm-grey Atlantic. Long deep swells, no land visible anywhere, horizon flat as a blade. The sky is iron and moving. A Royal Navy frigate on the horizon in pursuit — white sails, brass cannons. Vane's Fury cuts through the water ahead of it, sails full, hull leaning. The sea is alive and indifferent to both ships.", notes:"Action scene location — the scale of the ocean makes both ships feel small. The Navy frigate should always be visible in the background.", _imgUrl:"", assetId:"" };
+  const eWreck  = { id:`e_${uid()}`, kind:"location",  name:"The Sunken Wreck",   tag:"@wreck",   description:"A merchant galleon resting at 40 feet on white sand. Turquoise light from above, shafts cutting through the water in god-rays. Schools of silver fish move through the rigging. Coral has claimed the hull. The captain's cabin is intact — inside it, a chest of cursed gold. Beautiful and haunting. Silent except for the sound of the deep.", notes:"Underwater scene — entirely different visual register from the other locations. Light is the key element.", _imgUrl:"", assetId:"" };
+
+  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:e._imgUrl||"", assetId:e.assetId||"" });
+
+  // ── Scene 1: THE BLACK COVE — THE PLAN ────────────────────────────────────
+  const sc1id = `sc_${uid()}`;
+  const sc1 = {
+    id:sc1id, type:T.SCENE, cinematicStyle:"animated-dark",  shotCount:4,
+    bible:[ sbEntry(eMara), sbEntry(eDrago), sbEntry(eSilas), sbEntry(eCompass), sbEntry(eCove) ],
+    dialogueLines:[
+      { speaker:"Captain Mara Vane", line:"The wreck is real. Three days south, forty feet down. Anyone who says otherwise is selling something." },
+      { speaker:"Silas the Navigator", line:"I can get us there in two. I know the current." },
+      { speaker:"First Mate Drago", line:"He always knows something." },
+    ],
+    sceneText:`@cove, deep night. Torchlight on salt-wet rock. @mara stands at a stone table — a map spread under her fists, @compass at its centre, needle pointing southeast as always. @drago to her left, arms crossed, watching @silas. @silas traces the route with one ring-heavy finger, too smooth, too certain. @mara looks at @compass, then at @silas. She picks up @compass and turns it over in her hand, reading the inscription. She sets it down and gives the order. The crew moves. Vane's Fury prepares to sail.`,
+    directorCoherence:{ score:97, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: world establishment → the map and compass → the tension between Drago and Silas → the order given. Let the silence between @drago and @silas do the work. This scene plants the betrayal." },
+  };
+  const sh1a = { ...mkShot(sc1id,1), id:`sh_${uid()}`, sceneId:sc1id, index:1,
+    how:"Slow wide crane down from the cave mouth into @cove — Vane's Fury filling the frame below, torches reflecting in the black water, the crew small figures moving on deck in preparation", where:"@cove — aerial entry into the cave", when:"opening frame, deep night", cameraSize:"extreme-wide", cameraAngle:"high-angle", cameraMovement:"crane-down", lens:"24mm", lighting:"practical-fire",
+    visualGoal:"The ship and the cave together establish this world's scale and secrecy — dark, beautiful, dangerous",
+    entityTags:["@cove"], directorNote:"The crane reveals the ship last, emerging from the dark water. The torchlight should feel warm against the cold black rock. Let the audience find the crew before the camera does.", directorQuality:"good", directorIssue:"" };
+  const sh1b = { ...mkShot(sc1id,2), id:`sh_${uid()}`, sceneId:sc1id, index:2,
+    how:"Medium on @mara at the stone table — map spread under her fists, @compass at its centre. Her face lit from below by torchlight. She studies the map, then glances up at @silas with amber eyes that give nothing away.", where:"@cove — stone table, torchlight", when:"the plan", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"slow-push-in", lens:"50mm", lighting:"practical-fire",
+    visualGoal:"@mara is the gravity of every scene — this push-in establishes her as someone who reads rooms and people, not just maps",
+    dialogue:`MARA\nThe wreck is real. Three days south, forty feet down. Anyone who says otherwise is selling something.`,
+    entityTags:["@mara","@compass","@cove"], directorNote:"The push-in stops when we're at a medium close-up. Her eyes move from the map to @silas before she speaks. The pause before the line is as important as the line itself.", directorQuality:"good", directorIssue:"" };
+  const sh1c = { ...mkShot(sc1id,3), id:`sh_${uid()}`, sceneId:sc1id, index:3,
+    how:"Over @mara's shoulder — @silas tracing the route on the map, finger moving too quickly, rings catching the torchlight. @drago in the background, watching @silas with flat, unreadable eyes.", where:"@cove — stone table, over @mara's shoulder", when:"@silas offers the route", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"practical-fire",
+    visualGoal:"The three-way composition plants the triangle — @mara's back to us, @silas performing, @drago watching. The audience should sense danger before anyone speaks it.",
+    dialogue:`SILAS\nI can get us there in two. I know the current.\n\nDRAGO\nHe always knows something.`,
+    entityTags:["@mara","@silas","@drago","@cove"], directorNote:"@drago's line lands like a stone in still water — he doesn't move when he says it. @silas's smile in response is the first signal something is wrong. Hold the composition.", directorQuality:"good", directorIssue:"" };
+  const sh1d = { ...mkShot(sc1id,4), id:`sh_${uid()}`, sceneId:sc1id, index:4,
+    how:"Close on @compass in @mara's hand — she turns it over, reading the inscription. The needle swings southeast. She sets it down. Wide pull-back to reveal the whole crew watching her. She gives a single nod. The cave erupts in movement.", where:"@cove — wide reveal of the crew", when:"the order", cameraSize:"close-up then wide", cameraAngle:"eye-level", cameraMovement:"pull-back", lens:"85mm to 35mm", lighting:"practical-fire",
+    visualGoal:"The compass close-up is the scene's pivot — the pull-back to the crew makes @mara's decision feel like it has weight and consequence",
+    entityTags:["@mara","@compass","@cove"], directorNote:"The inscription read is the scene's hidden line — the audience should just catch it. The pull-back to the crew must be wide enough to feel the scale of the commitment she's just made.", directorQuality:"good", directorIssue:"" };
+  sh1a.compiledText = compileShotText(sh1a); sh1b.compiledText = compileShotText(sh1b);
+  sh1c.compiledText = compileShotText(sh1c); sh1d.compiledText = compileShotText(sh1d);
+
+  // ── Scene 2: THE OPEN SEA — THE PURSUIT ───────────────────────────────────
+  const sc2id = `sc_${uid()}`;
+  const sc2 = {
+    id:sc2id, type:T.SCENE, cinematicStyle:"animated-dark", shotCount:4,
+    bible:[ sbEntry(eMara), sbEntry(eDrago), sbEntry(eSilas), sbEntry(eSea) ],
+    dialogueLines:[
+      { speaker:"First Mate Drago", line:"They're gaining. We go south now or we don't go at all." },
+      { speaker:"Captain Mara Vane", line:"South. Full sail. Let them follow us to the bottom of the world." },
+    ],
+    sceneText:`@sea, midday, storm-light. Vane's Fury running hard before the wind, hull leaning, spray exploding from the bow. A Royal Navy frigate on the horizon behind her — closing. @drago at the helm, knuckles white. @mara on the bow, coat snapping in the wind, watching the frigate over her shoulder. @silas below decks with @compass — alone. The needle is spinning now, not pointing southeast anymore. @silas watches it and smiles. On deck, @mara calls the order. Full sail south. The crew leaps to it.`,
+    directorCoherence:{ score:95, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: the pursuit established → @drago at the helm under pressure → @silas below decks with the compass (the betrayal signal) → @mara's order. The below-decks cutaway is the scene's hidden knife." },
+  };
+  const sh2a = { ...mkShot(sc2id,1), id:`sh_${uid()}`, sceneId:sc2id, index:1,
+    how:"Wide aerial over Vane's Fury — the ship cutting south through long grey swells, the Navy frigate a white smear on the horizon behind her, both tiny against the endless @sea", where:"@sea — aerial, both ships", when:"the chase, midday", cameraSize:"extreme-wide", cameraAngle:"high-angle", cameraMovement:"slow-track", lens:"24mm", lighting:"overcast",
+    visualGoal:"Scale the danger — the ocean makes both ships feel fragile, but the closing gap is unmistakable",
+    entityTags:["@sea"], directorNote:"The wide must show the gap between the ships clearly. Vane's Fury should be leading but not comfortably. The grey sea is the third character in this shot.", directorQuality:"good", directorIssue:"" };
+  const sh2b = { ...mkShot(sc2id,2), id:`sh_${uid()}`, sceneId:sc2id, index:2,
+    how:"Medium on @drago at the helm — both hands on the wheel, ship heeling, spray on his face. His eyes shift from the compass heading to the frigate behind. Behind him @mara watches, coat full of wind, utterly still against the chaos.", where:"@sea — helm deck, tight", when:"@drago under pressure", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"handheld", lens:"50mm", lighting:"overcast",
+    visualGoal:"The contrast between @drago's physical effort and @mara's stillness defines both characters in a single frame",
+    dialogue:`DRAGO\nThey're gaining. We go south now or we don't go at all.`,
+    entityTags:["@drago","@mara","@sea"], directorNote:"Handheld should feel like the ship's motion — not queasy, but alive. @mara is an island of calm in the frame. @drago's hands never leave the wheel.", directorQuality:"good", directorIssue:"" };
+  const sh2c = { ...mkShot(sc2id,3), id:`sh_${uid()}`, sceneId:sc2id, index:3,
+    how:"Below decks — @silas alone in the navigation cabin. @compass on the table. The needle is spinning. @silas watches it with a small private smile. He closes his fist around @compass. A decision made. Cut before anyone sees him.", where:"@sea — below decks, navigation cabin", when:"the hidden betrayal", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"practical-fire",
+    visualGoal:"The spinning compass is the audience's first clear signal — @silas's smile makes it unmistakable. This is the scene's hidden knife.",
+    entityTags:["@silas","@compass"], directorNote:"This cutaway is the pivot of the entire story. The compass needle spinning is the visual payoff of the inscription from Scene 1. @silas's smile should be small — pleasure, not villainy. More dangerous that way.", directorQuality:"good", directorIssue:"" };
+  const sh2d = { ...mkShot(sc2id,4), id:`sh_${uid()}`, sceneId:sc2id, index:4,
+    how:"Wide on deck — @mara at the bow, face into the wind, looking south. She calls the order. Every crew member moves at once. Sails catch the wind and billow full. Vane's Fury surges forward. The frigate behind falls back a degree.", where:"@sea — full deck, bow", when:"the order, surge south", cameraSize:"wide", cameraAngle:"low-angle", cameraMovement:"static", lens:"35mm", lighting:"overcast",
+    visualGoal:"The crew's unity in response to @mara's order is the emotional spine of the film — they move as one body",
+    dialogue:`MARA\nSouth. Full sail. Let them follow us to the bottom of the world.`,
+    entityTags:["@mara","@sea"], directorNote:"The wide low-angle makes the sails filling feel enormous and triumphant. @mara's line lands just as the sails go full. The surge forward is the payoff. Cut on the surge.", directorQuality:"good", directorIssue:"" };
+  sh2a.compiledText = compileShotText(sh2a); sh2b.compiledText = compileShotText(sh2b);
+  sh2c.compiledText = compileShotText(sh2c); sh2d.compiledText = compileShotText(sh2d);
+
+  // ── Scene 3: THE SUNKEN WRECK — THE DIVE ──────────────────────────────────
+  const sc3id = `sc_${uid()}`;
+  const sc3 = {
+    id:sc3id, type:T.SCENE, cinematicStyle:"animated-dark", shotCount:4,
+    bible:[ sbEntry(eMara), sbEntry(eSilas), sbEntry(eCompass), sbEntry(eWreck) ],
+    dialogueLines:[
+      { speaker:"Captain Mara Vane", line:"That's not treasure. That's a warning." },
+      { speaker:"Silas the Navigator", line:"Warnings are for people who can't afford what they're warning you about." },
+    ],
+    sceneText:`@wreck, forty feet down. @mara and @silas dive together — only the two of them. The @wreck is breathtaking — coral-crusted hull, god-rays from above, silver fish in the rigging. They find the chest in the captain's cabin. @mara opens it — gold coins, yes, but each one has a face pressed into it. The face of someone who died for it. She stares at one coin. @silas is already filling a sack. @mara reaches to stop him. He turns — @compass in his hand, needle spinning freely. His hand is on his knife. The standoff is underwater, silent, beautiful, deadly.`,
+    directorCoherence:{ score:96, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: the dive and arrival → the chest opened → the warning coins → the betrayal revealed underwater. The silence of the underwater setting makes every movement carry enormous weight." },
+  };
+  const sh3a = { ...mkShot(sc3id,1), id:`sh_${uid()}`, sceneId:sc3id, index:1,
+    how:"Wide underwater — @mara and @silas descend toward @wreck below them, turquoise light from above, the ship's hull looming ahead, coral and fish making it look alive", where:"@wreck — descent, exterior", when:"the dive, underwater", cameraSize:"wide", cameraAngle:"low-angle", cameraMovement:"slow-push-in", lens:"24mm", lighting:"underwater-rays",
+    visualGoal:"The beauty of the @wreck must be overwhelming — the audience should understand immediately why people die for this place",
+    entityTags:["@mara","@silas","@wreck"], directorNote:"The underwater light rays are the primary visual element. @wreck should feel like a cathedral — ancient, beautiful, sacred. The two figures descending into it should feel like they're crossing a threshold.", directorQuality:"good", directorIssue:"" };
+  const sh3b = { ...mkShot(sc3id,2), id:`sh_${uid()}`, sceneId:sc3id, index:2,
+    how:"Inside the cabin — @mara's hands lifting the chest lid. Coins spill out in slow motion, tumbling in the water. She picks one up — extreme close-up on the face pressed into the gold. A human face, eyes closed, peaceful and terrible.", where:"@wreck — captain's cabin interior", when:"the chest opened", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"underwater-rays",
+    visualGoal:"The coin face is the film's moral pivot — gold that cost someone everything. @mara's recognition of it is the heart of the scene.",
+    entityTags:["@mara","@wreck"], directorNote:"The close-up on the face in the coin must be held long enough for the audience to understand what they're seeing. Slow motion on the spilling coins. @mara's face when she sees the face — hold that too.", directorQuality:"good", directorIssue:"" };
+  const sh3c = { ...mkShot(sc3id,3), id:`sh_${uid()}`, sceneId:sc3id, index:3,
+    how:"@mara reaches toward @silas, who is already filling his sack with coins, his back to her. She grabs his shoulder. He turns — close on his face, then her face, their words inaudible bubbles underwater.", where:"@wreck — cabin, underwater confrontation", when:"the warning, the disagreement", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"underwater-rays",
+    visualGoal:"Dialogue rendered as mute underwater — the audience reads their faces and bodies. @silas's contempt, @mara's alarm.",
+    dialogue:`MARA\nThat's not treasure. That's a warning.\n\nSILAS\nWarnings are for people who can't afford what they're warning you about.`,
+    entityTags:["@mara","@silas","@wreck"], directorNote:"The dialogue bubbles underwater — we lip-read and read expressions. @silas's contempt is fully readable. The words appear as subtitles. His dismissal of her concern is the last beat before the betrayal.", directorQuality:"good", directorIssue:"" };
+  const sh3d = { ...mkShot(sc3id,4), id:`sh_${uid()}`, sceneId:sc3id, index:4,
+    how:"Low angle on @silas — @compass in one hand, sack of gold in the other, knife half-drawn. Framed against the god-rays from above. @mara faces him, unarmed, still. The standoff. Beautiful and deadly.", where:"@wreck — cabin, the standoff", when:"betrayal revealed", cameraSize:"medium", cameraAngle:"low-angle", cameraMovement:"static", lens:"35mm", lighting:"underwater-rays",
+    visualGoal:"The betrayal is now visible — the choice @silas made in Scene 2 arrives here. The god-rays make the moment achingly beautiful.",
+    entityTags:["@mara","@silas","@compass","@wreck"], directorNote:"@silas should look genuinely regretful — he liked @mara, which makes this worse. The god-rays behind him are almost saintly, which is the irony. @mara's stillness in response is her strength.", directorQuality:"good", directorIssue:"" };
+  sh3a.compiledText = compileShotText(sh3a); sh3b.compiledText = compileShotText(sh3b);
+  sh3c.compiledText = compileShotText(sh3c); sh3d.compiledText = compileShotText(sh3d);
+
+  // ── Scene 4: THE BLACK COVE — THE RECKONING ───────────────────────────────
+  const sc4id = `sc_${uid()}`;
+  const sc4 = {
+    id:sc4id, type:T.SCENE, cinematicStyle:"animated-dark", shotCount:3,
+    bible:[ sbEntry(eMara), sbEntry(eDrago), sbEntry(eCompass), sbEntry(eCove) ],
+    dialogueLines:[
+      { speaker:"First Mate Drago", line:"Where's Silas?" },
+      { speaker:"Captain Mara Vane", line:"Gone. And the gold with him." },
+      { speaker:"First Mate Drago", line:"And the compass?" },
+      { speaker:"Captain Mara Vane", line:"Right here. Still pointing southeast. Just like it always did." },
+    ],
+    sceneText:`@cove. Vane's Fury back at anchor, torches burning. @mara climbs aboard alone — no sack of gold, no @silas. @drago waits on deck, reads the situation in her face, says nothing for a long moment. Then he asks where @silas is. @mara's answer is flat: gone, gold with him. @drago asks about @compass. @mara pulls it from her coat. The needle points southeast — steady, not spinning. She holds it up in the torchlight. The crew watches. She closes her fist around it, turns and walks toward the captain's cabin. @drago looks at the crew. The crew looks at him. The ship is still theirs.`,
+    directorCoherence:{ score:99, skippedBeats:[], overlapIssues:[], recommendation:"Three-beat close: @mara returns alone → the exchange with @drago → @mara keeps @compass and moves forward. The final frame must echo the first — the ship in the cove. What was lost was the gold. What was kept was everything else." },
+  };
+  const sh4a = { ...mkShot(sc4id,1), id:`sh_${uid()}`, sceneId:sc4id, index:1,
+    how:"@cove — wide static. Vane's Fury at anchor, torches burning. @mara climbs up the side alone, no sack, water dripping from her coat. @drago at the rail watching her, the crew behind him. Nobody speaks.", where:"@cove — ship's rail, return", when:"@mara's return", cameraSize:"wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"35mm", lighting:"practical-fire",
+    visualGoal:"The visual echo of Scene 1 — same ship, same cove, same torches. But @mara is alone now, and the crew can read the loss in how she moves.",
+    entityTags:["@mara","@drago","@cove"], directorNote:"Mirror the wide from Scene 1 exactly — but the energy is completely different now. The absence of the gold sack speaks before any dialogue. The crew's silence is a held breath.", directorQuality:"good", directorIssue:"" };
+  const sh4b = { ...mkShot(sc4id,2), id:`sh_${uid()}`, sceneId:sc4id, index:2,
+    how:"Two-shot: @mara and @drago face to face on deck — torchlight between them. His question, her answer. Close enough to see the small muscle in @mara's jaw. She doesn't look away.", where:"@cove — deck, two-shot", when:"the exchange", cameraSize:"medium-close", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"practical-fire",
+    visualGoal:"The exchange between @mara and @drago is the emotional close of the story — honesty between people who have earned it",
+    dialogue:`DRAGO\nWhere's Silas?\n\nMARA\nGone. And the gold with him.\n\nDRAGO\nAnd the compass?\n\nMARA\nRight here. Still pointing southeast. Just like it always did.`,
+    entityTags:["@mara","@drago","@cove"], directorNote:"Two-shot, static. No movement. Let the dialogue carry the scene. @drago's face when she says 'still pointing southeast' — the smallest possible smile. He understood what she chose.", directorQuality:"good", directorIssue:"" };
+  const sh4c = { ...mkShot(sc4id,3), id:`sh_${uid()}`, sceneId:sc4id, index:3,
+    how:"Slow crane-up from @mara's fist closed around @compass on the deck — pulling up and back to reveal the whole ship, the whole cove, the torches burning in the black rock. @mara walks toward the cabin. @drago turns to the crew. Wide holds until the cave mouth frames the ship like a painting.", where:"@cove — full reveal, closing frame", when:"the final frame", cameraSize:"extreme-wide", cameraAngle:"crane-up", cameraMovement:"crane-up", lens:"35mm", lighting:"practical-fire",
+    visualGoal:"The mirror of the opening crane-down — the ship is still here, the crew is still together, the compass is in the right hands. Everything lost was replaceable. The final frame is the thesis.",
+    entityTags:["@mara","@drago","@compass","@cove"], directorNote:"Echo the opening crane exactly. Down became up. The ship in the cove at the end must feel identical to the beginning — same composition, same torchlight — but the audience knows everything has changed. Fade on the cave mouth framing the ship.", directorQuality:"good", directorIssue:"" };
+  sh4a.compiledText = compileShotText(sh4a); sh4b.compiledText = compileShotText(sh4b); sh4c.compiledText = compileShotText(sh4c);
+
+  // ── Per-scene pipeline nodes ───────────────────────────────────────────────
+  const m1Kling = mkKling(); const m1Veo = mkVeo(); const m1Audio = mkAudio();
+  const m1Edit  = { ...mkVideoEdit(), audioNodeId: m1Audio.id };
+  const m2Kling = mkKling(); const m2Veo = mkVeo(); const m2Audio = mkAudio();
+  const m2Edit  = { ...mkVideoEdit(), audioNodeId: m2Audio.id };
+  const m3Kling = mkKling(); const m3Veo = mkVeo(); const m3Audio = mkAudio();
+  const m3Edit  = { ...mkVideoEdit(), audioNodeId: m3Audio.id };
+  const m4Kling = mkKling(); const m4Veo = mkVeo(); const m4Audio = mkAudio();
+  const m4Edit  = { ...mkVideoEdit(), audioNodeId: m4Audio.id };
+
+  // ── Image nodes ────────────────────────────────────────────────────────────
+  const mkImg = (shot, ar) => ({
+    id:`img_${uid()}`, type:T.IMAGE, shotId:shot.id, sceneId:shot.sceneId,
+    generatedUrl:"", resolution:"1K", aspect_ratio:ar, prompt: shot.compiledText || "",
+  });
+  const img1a = mkImg(sh1a,"16:9"); const img1b = mkImg(sh1b,"16:9");
+  const img1c = mkImg(sh1c,"16:9"); const img1d = mkImg(sh1d,"16:9");
+  const img2a = mkImg(sh2a,"16:9"); const img2b = mkImg(sh2b,"16:9");
+  const img2c = mkImg(sh2c,"1:1");  const img2d = mkImg(sh2d,"16:9");
+  const img3a = mkImg(sh3a,"16:9"); const img3b = mkImg(sh3b,"1:1");
+  const img3c = mkImg(sh3c,"16:9"); const img3d = mkImg(sh3d,"16:9");
+  const img4a = mkImg(sh4a,"16:9"); const img4b = mkImg(sh4b,"16:9"); const img4c = mkImg(sh4c,"16:9");
+
+  // ── Assemble ───────────────────────────────────────────────────────────────
+  const nodes = [
+    sc1, sc2, sc3, sc4,
+    sh1a, sh1b, sh1c, sh1d,
+    sh2a, sh2b, sh2c, sh2d,
+    sh3a, sh3b, sh3c, sh3d,
+    sh4a, sh4b, sh4c,
+    img1a, img1b, img1c, img1d,
+    img2a, img2b, img2c, img2d,
+    img3a, img3b, img3c, img3d,
+    img4a, img4b, img4c,
+    m1Kling, m1Veo, m1Audio, m1Edit,
+    m2Kling, m2Veo, m2Audio, m2Edit,
+    m3Kling, m3Veo, m3Audio, m3Edit,
+    m4Kling, m4Veo, m4Audio, m4Edit,
+  ];
+
+  const sceneX    = 80;
+  const shotStart = sceneX + 310 + 70;
+  const shotGapX  = 340;
+  const sceneGapY = 940;
+  const rowY      = (row) => 80 + row * sceneGapY;
+  const imgStart  = shotStart + shotGapX * 4 + 80;
+  const pipeA     = imgStart + shotGapX * 4 + 100;
+  const pipeB     = pipeA + 380;
+  const pipeRowB  = 420;
+  const pipePos   = (row) => ({
+    kling: { x:pipeA, y:rowY(row) + 40 },
+    veo:   { x:pipeA, y:rowY(row) + 40 + pipeRowB },
+    audio: { x:pipeB, y:rowY(row) + 40 },
+    edit:  { x:pipeB, y:rowY(row) + 40 + pipeRowB },
+  });
+  const pp1=pipePos(0), pp2=pipePos(1), pp3=pipePos(2), pp4=pipePos(3);
+
+  const pos = {
+    [sc1id]: { x:sceneX, y:rowY(0) }, [sc2id]: { x:sceneX, y:rowY(1) },
+    [sc3id]: { x:sceneX, y:rowY(2) }, [sc4id]: { x:sceneX, y:rowY(3) },
+    [sh1a.id]:{ x:shotStart,            y:rowY(0) },
+    [sh1b.id]:{ x:shotStart+shotGapX,   y:rowY(0) },
+    [sh1c.id]:{ x:shotStart+shotGapX*2, y:rowY(0) },
+    [sh1d.id]:{ x:shotStart+shotGapX*3, y:rowY(0) },
+    [sh2a.id]:{ x:shotStart,            y:rowY(1) },
+    [sh2b.id]:{ x:shotStart+shotGapX,   y:rowY(1) },
+    [sh2c.id]:{ x:shotStart+shotGapX*2, y:rowY(1) },
+    [sh2d.id]:{ x:shotStart+shotGapX*3, y:rowY(1) },
+    [sh3a.id]:{ x:shotStart,            y:rowY(2) },
+    [sh3b.id]:{ x:shotStart+shotGapX,   y:rowY(2) },
+    [sh3c.id]:{ x:shotStart+shotGapX*2, y:rowY(2) },
+    [sh3d.id]:{ x:shotStart+shotGapX*3, y:rowY(2) },
+    [sh4a.id]:{ x:shotStart,            y:rowY(3) },
+    [sh4b.id]:{ x:shotStart+shotGapX,   y:rowY(3) },
+    [sh4c.id]:{ x:shotStart+shotGapX*2, y:rowY(3) },
+    [img1a.id]:{ x:imgStart,            y:rowY(0) },
+    [img1b.id]:{ x:imgStart+shotGapX,   y:rowY(0) },
+    [img1c.id]:{ x:imgStart+shotGapX*2, y:rowY(0) },
+    [img1d.id]:{ x:imgStart+shotGapX*3, y:rowY(0) },
+    [img2a.id]:{ x:imgStart,            y:rowY(1) },
+    [img2b.id]:{ x:imgStart+shotGapX,   y:rowY(1) },
+    [img2c.id]:{ x:imgStart+shotGapX*2, y:rowY(1) },
+    [img2d.id]:{ x:imgStart+shotGapX*3, y:rowY(1) },
+    [img3a.id]:{ x:imgStart,            y:rowY(2) },
+    [img3b.id]:{ x:imgStart+shotGapX,   y:rowY(2) },
+    [img3c.id]:{ x:imgStart+shotGapX*2, y:rowY(2) },
+    [img3d.id]:{ x:imgStart+shotGapX*3, y:rowY(2) },
+    [img4a.id]:{ x:imgStart,            y:rowY(3) },
+    [img4b.id]:{ x:imgStart+shotGapX,   y:rowY(3) },
+    [img4c.id]:{ x:imgStart+shotGapX*2, y:rowY(3) },
+    [m1Kling.id]:pp1.kling, [m1Veo.id]:pp1.veo, [m1Audio.id]:pp1.audio, [m1Edit.id]:pp1.edit,
+    [m2Kling.id]:pp2.kling, [m2Veo.id]:pp2.veo, [m2Audio.id]:pp2.audio, [m2Edit.id]:pp2.edit,
+    [m3Kling.id]:pp3.kling, [m3Veo.id]:pp3.veo, [m3Audio.id]:pp3.audio, [m3Edit.id]:pp3.edit,
+    [m4Kling.id]:pp4.kling, [m4Veo.id]:pp4.veo, [m4Audio.id]:pp4.audio, [m4Edit.id]:pp4.edit,
+  };
+
+  const bible = {
+    characters: [ eMara, eDrago, eSilas ],
+    objects:    [ eCompass ],
+    locations:  [ eCove, eSea, eWreck ],
+  };
+
+  return { nodes, pos, bible };
+}
+
 // ─── TEMPLATE: MEDIEVAL FANTASY EPIC ─────────────────────────────────────────
 // A Lord of the Rings-style epic fantasy short — 4 scenes, 14 shots.
 // Fellowship, journey through ancient lands, a confrontation, and a sacrifice.
@@ -7871,6 +8121,14 @@ const TEMPLATES = [
     description: "4-scene Lord of the Rings-style epic — ancient forest departure, mountain pass journey, fortress confrontation, and a dawn return. 14 director-annotated shots. 3 characters, 3 locations, 1 cursed ring. Generate bible refs first for visual consistency across all scenes.",
     tags:        ["4 SCENES","14 SHOTS","WORLD BIBLE","EPIC FANTASY"],
     make:        makeMedievalFantasyTemplate,
+  },
+  {
+    id:          "pirate-animation-adults",
+    label:       "Pirates — Dark Animation",
+    emoji:       "🏴‍☠️",
+    description: "4-scene adult pirate animation — a secret cove briefing, a high-seas pursuit, an underwater dive for cursed gold, and a reckoning with betrayal. 15 director-annotated shots. Captain Mara Vane, her loyal first mate Drago, and the treacherous navigator Silas. A story about loyalty, greed, and what you choose to keep.",
+    tags:        ["4 SCENES","15 SHOTS","ADULT ANIMATION","WORLD BIBLE"],
+    make:        makePirateAnimationTemplate,
   },
 ];
 
