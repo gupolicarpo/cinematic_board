@@ -522,17 +522,14 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
 
       {/* ── SCRIPT NODE ── */}
       <Section id="workflow" pt={96} pb={96}>
-        {/* Row 1: headline + description only */}
-        <div className="lp-grid-2" style={{ alignItems:"start", marginBottom:40 }}>
-          <div>
-            <Tag>Script Node · AI Write Mode</Tag>
-            <h2 style={{ fontSize:"clamp(26px,3.5vw,42px)", fontWeight:800, letterSpacing:"-0.025em", lineHeight:1.2, marginBottom:20 }}>
-              From a basic idea.<br />One click to<br />full storyboard.
-            </h2>
-            <p style={{ fontSize:16, color:MUTED, lineHeight:1.8 }}>
-              Drop in a single paragraph. AI Write Mode develops it into a full structured screenplay consistent with a cinematic style. Every scene becomes its own node on the canvas, ready to turn into shots.
-            </p>
-          </div>
+        <div style={{ marginBottom:40 }}>
+          <Tag>Script Node · AI Write Mode</Tag>
+          <h2 style={{ fontSize:"clamp(26px,3.5vw,42px)", fontWeight:800, letterSpacing:"-0.025em", lineHeight:1.2, marginBottom:20 }}>
+            From a basic idea.<br />One click to<br />full storyboard.
+          </h2>
+          <p style={{ fontSize:16, color:MUTED, lineHeight:1.8, maxWidth:680 }}>
+            Drop in a single paragraph. AI Write Mode develops it into a full structured screenplay consistent with a cinematic style. Every scene becomes its own node on the canvas, ready to turn into shots.
+          </p>
         </div>
 
         {/* 16:9 video card */}
