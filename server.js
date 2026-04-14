@@ -24,6 +24,27 @@ const supabaseAdmin = (SUPABASE_URL && SUPABASE_SERVICE_KEY)
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
   : null;
 
+// ── DEV / OWNER BYPASS ────────────────────────────────────────────────────────
+// Accounts in this list are never credit-checked. Add via env var (comma-separated)
+// or hardcoded here for owner testing. Credits always reported as 999999.
+const BYPASS_EMAILS = new Set([
+  "gupolicarpo@gmail.com",
+  ...(process.env.DEV_BYPASS_EMAILS ? process.env.DEV_BYPASS_EMAILS.split(",").map(e=>e.trim().toLowerCase()) : []),
+]);
+
+// Cache userId → email lookups to avoid hitting Supabase auth on every generation
+const _emailCache = new Map();
+async function getUserEmail(userId) {
+  if (!supabaseAdmin || !userId) return null;
+  if (_emailCache.has(userId)) return _emailCache.get(userId);
+  try {
+    const { data } = await supabaseAdmin.auth.admin.getUserById(userId);
+    const email = data?.user?.email?.toLowerCase() || null;
+    if (email) _emailCache.set(userId, email);
+    return email;
+  } catch { return null; }
+}
+
 // Helper: create a per-request client authenticated as the calling user
 function supabaseFor(token) {
   const key = SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY;
@@ -68,7 +89,7 @@ const TIER_FEATURES = {
   free:   ["80 credits/mo", "Kling Standard", "Watermark", "2 projects"],
   indie:  ["900 credits/mo", "All Kling + Lipsync", "Veo Fast", "10 projects", "No watermark"],
   pro:    ["2500 credits/mo", "All Kling + All Veo", "30 projects", "All AI features"],
-  studio: ["6000 credits/mo", "Everything", "3 seats", "Unlimited projects", "Priority gen"],
+  studio: ["6000 credits/mo", "Everything", "Unlimited projects", "All AI features"],
 };
 const TOPUP_DESCRIPTIONS = {
   "500":  "~25 Kling videos",
@@ -128,6 +149,9 @@ async function getUserSub(userId) {
 // Deduct credits; returns { ok, balance } or { ok: false, balance }
 async function deductCredits(userId, amount, operation, metadata = {}) {
   if (!supabaseAdmin || !userId) return { ok: true, balance: 999 }; // dev fallback
+  // Owner / dev bypass — unlimited credits, no deduction
+  const email = await getUserEmail(userId);
+  if (email && BYPASS_EMAILS.has(email)) return { ok: true, balance: 999999 };
   const sub = await getUserSub(userId);
   if (!sub) return { ok: false, balance: 0 };
   if (sub.credits_balance < amount) return { ok: false, balance: sub.credits_balance };
@@ -373,17 +397,22 @@ function protectBigInts(text) {
 // POST /api/kling/video  — create video generation task
 app.post("/api/kling/video", async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
-  // Credit check — cost depends on mode/quality/duration
+  // Credit check — cost depends on mode/quality/duration/resolution
   const userId = await getUserId(req);
   if (userId && supabaseAdmin) {
     const dur  = parseInt(req.body?.duration || req.body?.parameters?.durationSeconds || 5, 10);
     const mode = (req.body?.mode || req.body?.parameters?.mode || "std").toLowerCase();
+    const res_  = (req.body?.resolution || "720p").toLowerCase();
     const isPro = mode === "pro";
     const is10  = dur >= 10;
     const op = isPro ? (is10 ? "kling_10s_pro" : "kling_5s_pro") : (is10 ? "kling_10s_std" : "kling_5s_std");
-    const result = await deductCredits(userId, OP_CREDITS[op], op);
+    // Resolution multiplier: 1080p = 2×, anything else = 1×
+    const resMult = res_ === "1080p" ? 2 : 1;
+    const baseCost = OP_CREDITS[op];
+    const totalCost = Math.ceil(baseCost * resMult);
+    const result = await deductCredits(userId, totalCost, op);
     if (!result.ok) return res.status(402).json({
-      error: "insufficient_credits", credits_balance: result.balance, credits_needed: OP_CREDITS[op],
+      error: "insufficient_credits", credits_balance: result.balance, credits_needed: totalCost,
     });
   }
   try {
@@ -620,19 +649,24 @@ app.post("/api/gemini/image", async (req, res) => {
 // ── Veo 3.1 Video Generation ─────────────────────────────────────────────────
 // POST /api/veo/video — start generation (returns operation name for polling)
 app.post("/api/veo/video", async (req, res) => {
-  // Credit check — cost depends on model quality and duration
+  // Credit check — cost depends on model quality, duration, and resolution
   const userId = await getUserId(req);
   if (userId && supabaseAdmin) {
     const dur     = parseInt(req.body?.parameters?.durationSeconds || 5, 10);
     const model   = (req.body?._veoModel || "").toLowerCase();
+    const res_    = (req.body?.parameters?.resolution || "720p").toLowerCase();
     const isFast  = model.includes("fast");
     // Map duration → operation key (fast vs standard, rounded to nearest bracket)
     let op;
     if (isFast)     op = dur >= 10 ? "veo_fast_10s" : dur >= 8 ? "veo_fast_8s" : "veo_fast_5s";
     else            op = dur >= 10 ? "veo_std_10s"  : dur >= 8 ? "veo_std_8s"  : "veo_std_5s";
-    const result = await deductCredits(userId, OP_CREDITS[op] || OP_CREDITS.veo_std_5s, op);
+    // Resolution multiplier: 1080p = 2×, 4K = 4×, 720p = 1×
+    const resMult = res_ === "4k" ? 4 : res_ === "1080p" ? 2 : 1;
+    const baseCost = OP_CREDITS[op] || OP_CREDITS.veo_std_5s;
+    const totalCost = Math.ceil(baseCost * resMult);
+    const result = await deductCredits(userId, totalCost, op);
     if (!result.ok) return res.status(402).json({
-      error: "insufficient_credits", credits_balance: result.balance, credits_needed: OP_CREDITS[op],
+      error: "insufficient_credits", credits_balance: result.balance, credits_needed: totalCost,
     });
   }
   try {
@@ -1258,6 +1292,11 @@ app.post("/api/elevenlabs/music", (req, res) => {
 app.get("/api/user/credits", async (req, res) => {
   const userId = await getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  // Owner bypass — report unlimited studio credits so UI shows no warnings
+  const email = await getUserEmail(userId);
+  if (email && BYPASS_EMAILS.has(email)) {
+    return res.json({ tier: "studio", credits_balance: 999999, credits_monthly: 999999, op_costs: OP_CREDITS });
+  }
   const sub = await getUserSub(userId);
   if (!sub) return res.json({ tier: "free", credits_balance: 0, credits_monthly: 80 });
   res.json({
@@ -1538,7 +1577,7 @@ const PAGE_META = {
         { "@type":"Offer", "name":"Free",   "price":"0",  "priceCurrency":"USD", "description":"80 credits/mo, Kling Standard, watermark, 2 projects" },
         { "@type":"Offer", "name":"Indie",  "price":"19", "priceCurrency":"USD", "description":"900 credits/mo, all Kling + Lipsync, Veo Fast, 10 projects, no watermark" },
         { "@type":"Offer", "name":"Pro",    "price":"49", "priceCurrency":"USD", "description":"2500 credits/mo, all Kling + all Veo, 30 projects, all AI features" },
-        { "@type":"Offer", "name":"Studio", "price":"99", "priceCurrency":"USD", "description":"6000 credits/mo, everything, 3 seats, unlimited projects, priority generation" },
+        { "@type":"Offer", "name":"Studio", "price":"99", "priceCurrency":"USD", "description":"6000 credits/mo, everything, unlimited projects, all AI features" },
       ],
     }),
   },

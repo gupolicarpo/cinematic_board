@@ -434,8 +434,8 @@ function formatSceneMd(sceneNode, shots) {
 function mkScene() { return { id:`sc_${uid()}`, type:T.SCENE, sceneText:"", cinematicStyle:"thriller", visualStyle:"none", shotCount:3, bible:[], dialogueLines:[] }; }
 function mkShot(sceneId,index=1) { return { id:`sh_${uid()}`, type:T.SHOT, sceneId, index, durationSec:3, sourceAnchor:"", where:"", entityTags:[], how:"", when:"", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"natural-soft", visualGoal:"", visualStyle:"inherit", compiledText:"", bible:[], dialogue:"" }; }
 function mkImage(sceneId=null, shotId=null) { return { id:`im_${uid()}`, type:T.IMAGE, sceneId, shotId, prompt:"", generatedUrl:null, entityTag:"", aspect_ratio:"1:1", resolution:"1K", refImageUrl:null }; }
-function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", sound:"off", prevKlingId:null, voice:"none", lipsync:false }; }
-function mkVeo()   { return { id:`veo_${uid()}`, type:T.VEO, shotId:null, videoUrl:null, aspect_ratio:"16:9", duration:8, startFrameNodeId:null, endFrameNodeId:null, refNodeIds:[], useRefs:true, refType:"asset", manualPrompt:"" }; }
+function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", resolution:"720p", sound:"off", prevKlingId:null, voice:"none", lipsync:false }; }
+function mkVeo()   { return { id:`veo_${uid()}`, type:T.VEO, shotId:null, videoUrl:null, aspect_ratio:"16:9", duration:8, resolution:"720p", startFrameNodeId:null, endFrameNodeId:null, refNodeIds:[], useRefs:true, refType:"asset", manualPrompt:"" }; }
 function mkLlm()   { return { id:`llm_${uid()}`, type:T.LLM, targetNodeIds:[], targetNodeId:null, llmMode:"edit", command:"", model:"claude-sonnet-4-5", lastResult:null }; }
 function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p" }; }
 function mkScript()   { return { id:`scr_${uid()}`, type:T.SCRIPT, title:"Untitled Script", script:"", idea:"", format:"screenplay", scriptMode:"write" }; }
@@ -1057,7 +1057,7 @@ function dataUrlToBase64(dataUrl) {
 // Create a video generation task — single-shot or multi-shot
 // options: { multiShot, sceneShots, aspect_ratio, mode, sound }
 async function aiKlingCreate(shot, sceneBible = [], options = {}) {
-  const { multiShot = false, sceneShots = [], aspect_ratio = "16:9", mode = "pro", sound = "off", prevVideoUrl = null, imageRefUrls = [], voice = "none" } = options;
+  const { multiShot = false, sceneShots = [], aspect_ratio = "16:9", mode = "pro", resolution = "720p", sound = "off", prevVideoUrl = null, imageRefUrls = [], voice = "none" } = options;
 
   // When a previous video is used as reference, Kling limits total images+elements to 4
   const maxImages = prevVideoUrl ? 4 : 7;
@@ -1134,6 +1134,7 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
       duration:     String(total),
       aspect_ratio,
       mode,
+      resolution,
       sound: prevVideoUrl ? "off" : sound,  // API requires sound:off when video_list is set
     };
   } else {
@@ -1149,6 +1150,7 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
       duration:     String(buildKlingShotPlan([shot], false)[0]?.durationSec || 5),
       aspect_ratio,
       mode,
+      resolution,
       sound: prevVideoUrl ? "off" : sound,  // API requires sound:off when video_list is set
     };
   }
@@ -1168,7 +1170,15 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
     body: JSON.stringify(body),
   });
   const raw = await r.text();
-  if (!r.ok) throw new Error(`Kling ${r.status}: ${raw.slice(0, 300)}`);
+  if (!r.ok) {
+    if (r.status === 402) {
+      const body = (() => { try { return JSON.parse(raw); } catch { return {}; } })();
+      const err = new Error("insufficient_credits");
+      err.creditsError = { needed: body.credits_needed || 0, balance: body.credits_balance || 0 };
+      throw err;
+    }
+    throw new Error(`Kling ${r.status}: ${raw.slice(0, 300)}`);
+  }
   const d = JSON.parse(raw);
   if (d.code && d.code !== 0) throw new Error(`Kling error ${d.code}: ${d.message}`);
   return d.data?.task_id;
@@ -1216,7 +1226,7 @@ function dataUrlToVeo(dataUrl) {
 // startFrame/endFrame are ignored. Gemini API frame-guided generation uses veo-3.1-generate-preview
 // with both image and lastFrame on the same instance payload.
 async function aiVeoCreate(shot, options = {}) {
-  const { aspect_ratio = "16:9", duration = 8, startFrame = null, endFrame = null, referenceImages = [] } = options;
+  const { aspect_ratio = "16:9", duration = 8, resolution = "720p", startFrame = null, endFrame = null, referenceImages = [] } = options;
 
   // MUTUALLY EXCLUSIVE: referenceImages and frame fields cannot be combined.
   // When both are wired (refs + start frame), REFERENCE mode wins.
@@ -1238,6 +1248,7 @@ async function aiVeoCreate(shot, options = {}) {
   const parameters = {
     aspectRatio:     aspect_ratio,
     durationSeconds: Number(duration),
+    resolution,
   };
 
   if (hasRefs) {
@@ -1267,7 +1278,15 @@ async function aiVeoCreate(shot, options = {}) {
     body: JSON.stringify(body),
   });
   const raw = await r.text();
-  if (!r.ok) throw new Error(`Veo ${r.status}: ${raw.slice(0, 300)}`);
+  if (!r.ok) {
+    if (r.status === 402) {
+      const body = (() => { try { return JSON.parse(raw); } catch { return {}; } })();
+      const err = new Error("insufficient_credits");
+      err.creditsError = { needed: body.credits_needed || 0, balance: body.credits_balance || 0 };
+      throw err;
+    }
+    throw new Error(`Veo ${r.status}: ${raw.slice(0, 300)}`);
+  }
   const d = JSON.parse(raw);
   if (d.error) throw new Error(`Veo error: ${d.error.message}`);
   return d.name; // operation name, e.g. "models/veo-3.1.../operations/XXXXX"
@@ -2259,7 +2278,7 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
 }
 
 // ─── VEO NODE ─────────────────────────────────────────────────────────────────
-function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodePos, globalBible, onInspect }) {
+function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodePos, globalBible, onInspect, credits, onOutOfCredits }) {
   const th = useTheme();
   const inp = mkInp(th); const sel = mkSel(th); const lbl = mkLbl(th);
   const ac = th.dark ? "#a855f7" : th.t2;
@@ -2348,6 +2367,7 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
       const opName = await aiVeoCreate(shotLike, {
         aspect_ratio: node.aspect_ratio || "16:9",
         duration:     node.duration     || 8,
+        resolution:   node.resolution   || "720p",
         startFrame,
         endFrame,
         referenceImages,
@@ -2358,7 +2378,9 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
       upd({ videoUrl: url });
       setVeoStatus("done"); setVeoPollMsg("");
     } catch (e) {
-      setVeoStatus("failed"); setVeoError(e.message); setVeoPollMsg("");
+      setVeoStatus("failed"); setVeoPollMsg("");
+      if (e.creditsError) { onOutOfCredits?.(e.creditsError); return; }
+      setVeoError(e.message);
     }
   };
 
@@ -2485,6 +2507,30 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
               <select onMouseDown={e=>e.stopPropagation()} value={node.duration||8} onChange={e=>upd({duration:Number(e.target.value)})} style={fSel}>
                 <option value={4}>4s</option><option value={6}>6s</option><option value={8}>8s</option>
               </select>
+            </div>
+            <div style={{ flex:1 }}>
+              <span style={{ fontSize:6, color:"#3a4a5a", letterSpacing:"0.1em", display:"block", marginBottom:2 }}>RES</span>
+              {(() => {
+                const tier = credits?.tier;
+                const isPaid = tier && tier !== "free";
+                const isStudio = tier === "studio";
+                return (
+                  <select
+                    onMouseDown={e=>e.stopPropagation()}
+                    value={isPaid ? (node.resolution||"720p") : "720p"}
+                    onChange={e=>{ if(isPaid) upd({resolution:e.target.value}); }}
+                    disabled={!isPaid}
+                    style={{ ...fSel, opacity: isPaid ? 1 : 0.45, cursor: isPaid ? "pointer" : "not-allowed" }}
+                    title={!isPaid ? "1080p/4K requires a paid plan" : !isStudio ? "4K requires Studio plan" : undefined}
+                  >
+                    <option value="720p">720p</option>
+                    {isPaid  && <option value="1080p">1080p ×2cr</option>}
+                    {!isPaid && <option value="1080p" disabled>1080p 🔒</option>}
+                    {isStudio  && <option value="4k">4K ×4cr</option>}
+                    {!isStudio && <option value="4k" disabled>4K 🔒</option>}
+                  </select>
+                );
+              })()}
             </div>
           </div>
 
@@ -2628,7 +2674,7 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
 }
 
 // ─── KLING NODE ───────────────────────────────────────────────────────────────
-function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodePos, globalBible, onInspect }) {
+function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodePos, globalBible, onInspect, credits, onOutOfCredits }) {
   const th = useTheme();
   const inp = mkInp(th); const sel = mkSel(th); const lbl = mkLbl(th);
   const ac = th.dark ? "#f97316" : th.t2;
@@ -2736,6 +2782,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
         sceneShots:   styledShotNodes,
         aspect_ratio: node.aspect_ratio || "16:9",
         mode:         node.mode         || "pro",
+        resolution:   node.resolution   || "720p",
         sound:        node.sound        || "off",
         prevVideoUrl,
         imageRefUrls,
@@ -3106,7 +3153,9 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
       upd({ videoUrl: url });
       setKlingStatus("done"); setKlingPollMsg("");
     } catch(e) {
-      setKlingStatus("failed"); setKlingError(e.message); setKlingPollMsg("");
+      setKlingStatus("failed"); setKlingPollMsg("");
+      if (e.creditsError) { onOutOfCredits?.(e.creditsError); return; }
+      setKlingError(e.message);
     }
   };
 
@@ -3251,6 +3300,27 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
               <select onMouseDown={e=>e.stopPropagation()} value={node.sound||"off"} onChange={e=>upd({sound:e.target.value})} style={fSel}>
                 <option value="off">OFF</option><option value="on">ON</option>
               </select>
+            </div>
+            <div style={{ flex:1 }}>
+              <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.1em", display:"block", marginBottom:2 }}>RES</span>
+              {(() => {
+                const tier = credits?.tier;
+                const isPaid = tier && tier !== "free";
+                return (
+                  <select
+                    onMouseDown={e=>e.stopPropagation()}
+                    value={isPaid ? (node.resolution||"720p") : "720p"}
+                    onChange={e=>{ if(isPaid) upd({resolution:e.target.value}); }}
+                    disabled={!isPaid}
+                    style={{ ...fSel, opacity: isPaid ? 1 : 0.45, cursor: isPaid ? "pointer" : "not-allowed" }}
+                    title={!isPaid ? "1080p requires a paid plan" : undefined}
+                  >
+                    <option value="720p">720p</option>
+                    {isPaid && <option value="1080p">1080p ×2cr</option>}
+                    {!isPaid && <option value="1080p" disabled>1080p 🔒</option>}
+                  </select>
+                );
+              })()}
             </div>
           </div>
 
@@ -8699,8 +8769,8 @@ export default function App() {
         {n.type===T.SCENE&&<SceneCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onGenShots={onGenShots} onGenVersionB={onGenVersionB} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={nodePosValue} model={shotModel} sceneStats={getSceneShotStats(nodes,n.id)} onExport={()=>exportScene(n)} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.SHOT&&<ShotCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} sceneBible={sceneNode?.bible||[]} linkedScene={sceneNode} onLink={sceneId=>linkShot(n.id,sceneId)} onStartWire={startWire} nodePos={nodePosValue} sceneStats={getSceneShotStats(nodes,n.sceneId)} globalBible={globalBibleFlat} onRetrySingleShot={onRetrySingleShot} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.IMAGE&&<ImageCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} linkedShot={linkedShot} linkedScene={linkedScene} onUnlinkShot={()=>updNode(n.id,{shotId:null,prompt:""})} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onSaveToBible={saveToBible} onInspect={()=>openInspector(n.id)} />}
-        {n.type===T.KLING&&<KlingCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} />}
-        {n.type===T.VEO&&<VeoCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.KLING&&<KlingCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} credits={credits} onOutOfCredits={setOutOfCredits} />}
+        {n.type===T.VEO&&<VeoCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} credits={credits} onOutOfCredits={setOutOfCredits} />}
         {n.type===T.LLM&&<LlmCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onUpdateNode={updNode} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.VIDEOEDIT&&<VideoEditCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} audioNode={nodes.find(x=>x.id===n.audioNodeId)||null} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.AUDIO&&<AudioTrackCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={nodePosValue} allNodes={nodes} onInspect={()=>openInspector(n.id)} />}
@@ -9100,7 +9170,7 @@ export default function App() {
     { tier:"free",   label:"Free",   priceDisplay:"$0",  credits:80,   features:["80 credits/mo","Kling Standard","Watermark","2 projects"], interval:"month" },
     { tier:"indie",  label:"Indie",  priceDisplay:"$19", credits:900,  features:["900 credits/mo","All Kling + Lipsync","Veo Fast","10 projects","No watermark"], interval:"month" },
     { tier:"pro",    label:"Pro",    priceDisplay:"$49", credits:2500, features:["2500 credits/mo","All Kling + All Veo","30 projects","All AI features"], interval:"month" },
-    { tier:"studio", label:"Studio", priceDisplay:"$99", credits:6000, features:["6000 credits/mo","Everything","3 seats","Unlimited projects","Priority gen"], interval:"month" },
+    { tier:"studio", label:"Studio", priceDisplay:"$99", credits:6000, features:["6000 credits/mo","Everything","Unlimited projects","All AI features"], interval:"month" },
   ];
   const pricingTopups = pricingData?.topups?.length ? pricingData.topups : [
     { pack:"500",  label:"500 credits",  priceDisplay:"$9.99",  description:"~25 Kling videos" },
