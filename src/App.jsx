@@ -1631,6 +1631,30 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
                   ⬇ MD
                 </button>
               )}
+              {audioNode?.beats?.length > 0 && (
+                <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();snapToBeat();}}
+                  style={{ border:`1px solid ${beatAc}`, borderRadius:7, background:`${beatAc}22`,
+                    color:beatAc, fontSize:10, fontWeight:700, padding:"9px 12px", cursor:"pointer",
+                    letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif" }}>
+                  SNAP TO BEAT
+                </button>
+              )}
+              {audioNode?.beats?.length > 0 && (
+                <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();snapToBeat();}}
+                  style={{ border:`1px solid ${beatAc}`, borderRadius:7, background:`${beatAc}22`,
+                    color:beatAc, fontSize:10, fontWeight:700, padding:"9px 12px", cursor:"pointer",
+                    letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif" }}>
+                  SNAP TO BEAT
+                </button>
+              )}
+              {audioNode?.beats?.length > 0 && (
+                <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();snapToBeat();}}
+                  style={{ border:`1px solid ${beatAc}`, borderRadius:7, background:`${beatAc}22`,
+                    color:beatAc, fontSize:10, fontWeight:700, padding:"9px 12px", cursor:"pointer",
+                    letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif" }}>
+                  SNAP TO BEAT
+                </button>
+              )}
             </div>
             <div style={{ display:"flex",gap:4 }}>
               {["character","object","location"].map(k=>(
@@ -5636,30 +5660,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
           <Ico icon={Scissors} size={13} color={ac}/>
           <span style={{ fontSize:11, letterSpacing:"0.2em", color:ac, fontWeight:700 }}>VIDEO EDIT</span>
           <span style={{ fontSize:10, color:th.t3 }}>{clips.length} CLIPS · {totalDur.toFixed(1)}s</span>
-          {audioNode?.beats?.length > 0 && (
-            <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();snapToBeat();}}
-              style={{ border:`1px solid ${beatAc}`, borderRadius:5, background:`${beatAc}22`,
-                color:beatAc, fontSize:9, fontWeight:700, padding:"4px 10px", cursor:"pointer",
-                letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif" }}>
-              ♩ SNAP TO BEAT
-            </button>
-          )}
           <div style={{ flex:1 }}/>
-          <button onClick={e=>{e.stopPropagation();splitAtPlayhead();}}
-            disabled={!clips.length||totalDur===0}
-            style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t2,
-              borderRadius:4, padding:"5px 12px", fontSize:9, fontWeight:700,
-              fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em",
-              cursor:clips.length?"pointer":"not-allowed", opacity:clips.length?1:0.4 }}>
-            ✂ SPLIT
-          </button>
-          {exportButtons(false)}
-          <button onClick={e=>{e.stopPropagation();fileInputRef.current?.click();}}
-            style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t2,
-              borderRadius:5, padding:"5px 12px", fontSize:9, fontWeight:700,
-              fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.1em", cursor:"pointer" }}>
-            ↑ UPLOAD
-          </button>
           <button onClick={e=>{e.stopPropagation();onOpenFullscreen?.();}}
             style={{ background:"transparent", border:`1px solid ${th.b1}`, color:th.t2,
               borderRadius:5, padding:"5px 14px", fontSize:10, fontWeight:700,
@@ -5668,12 +5669,11 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
           </button>
         </div>
 
-        {/* Body: video (left) + timeline (right) */}
-        <div style={{ flex:1, display:"flex", overflow:"hidden", gap:0 }}>
+        {/* Body: video player on top, timeline below */}
+        <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", gap:0, background:th.bg }}>
 
-          {/* Left — video + play controls */}
-          <div style={{ flex:"0 0 62%", display:"flex", flexDirection:"column", borderRight:`1px solid ${th.b0}`,
-            padding:20, gap:12, background:th.bg }}>
+          {/* Top — video preview + transport controls */}
+          <div style={{ padding:"20px 20px 14px", display:"flex", flexDirection:"column", gap:12 }}>
             <video ref={cardVRef}
               style={{ width:"100%", borderRadius:10, aspectRatio:"16/9", background:"#000", display:"block", outline:"none" }}
               onEnded={handleStop}/>
@@ -5682,7 +5682,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
                 onEnded={()=>{ if(playState==="playing") handleStop(); }}/>
             )}
             {/* Play controls — large */}
-            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
               {playState === "playing" ? (
                 <button onClick={e=>{e.stopPropagation();handlePause();}}
                   style={{ border:"none", color:"#fff", borderRadius:7, fontWeight:700, letterSpacing:"0.12em",
@@ -5711,6 +5711,21 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
               <span style={{ fontSize:13, color:th.t2, fontVariantNumeric:"tabular-nums" }}>
                 {playheadTime.toFixed(1)}s / {totalDur.toFixed(1)}s
               </span>
+              <button onClick={e=>{e.stopPropagation();splitAtPlayhead();}}
+                disabled={!clips.length||totalDur===0}
+                style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t2,
+                  borderRadius:7, padding:"9px 14px", fontSize:11, fontWeight:700,
+                  fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em",
+                  cursor:clips.length?"pointer":"not-allowed", opacity:clips.length?1:0.4 }}>
+                SPLIT
+              </button>
+              {exportButtons(false)}
+              <button onClick={e=>{e.stopPropagation();fileInputRef.current?.click();}}
+                style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t2,
+                  borderRadius:7, padding:"9px 14px", fontSize:11, fontWeight:700,
+                  fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em", cursor:"pointer" }}>
+                UPLOAD
+              </button>
               {audioNode?.audioUrl && (
                 <span style={{ fontSize:11, color:"#10b981", display:"flex", alignItems:"center", gap:4 }}>
                   ♪ {audioNode.fileName ? audioNode.fileName.replace(/\.[^.]+$/,"").slice(0,20) : "TRACK"}
@@ -5719,10 +5734,12 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
             </div>
           </div>
 
-          {/* Right — timeline */}
-          <div style={{ flex:1, display:"flex", flexDirection:"column", padding:20, overflow:"auto", background:th.card }}>
+          {/* Bottom — timeline */}
+          <div style={{ flex:1, minHeight:0, display:"flex", flexDirection:"column", padding:"0 20px 20px", overflow:"hidden", background:th.card, borderTop:`1px solid ${th.b0}` }}>
             <input ref={fileInputRef} type="file" accept="video/*" style={{ display:"none" }} onChange={handleUpload}/>
-            {clips.length > 0 ? renderTimeline(pps) : emptySlate}
+            <div style={{ flex:1, overflow:"auto", paddingTop:16 }}>
+              {clips.length > 0 ? renderTimeline(pps) : emptySlate}
+            </div>
           </div>
         </div>
       </div>
