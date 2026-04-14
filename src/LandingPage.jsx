@@ -522,8 +522,8 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
 
       {/* ── SCRIPT NODE ── */}
       <Section id="workflow" pt={96} pb={96}>
-        {/* Row 1: headline + video */}
-        <div className="lp-grid-2" style={{ alignItems:"start", marginBottom:48 }}>
+        {/* Row 1: headline + description only */}
+        <div className="lp-grid-2" style={{ alignItems:"start", marginBottom:40 }}>
           <div>
             <Tag>Script Node · AI Write Mode</Tag>
             <h2 style={{ fontSize:"clamp(26px,3.5vw,42px)", fontWeight:800, letterSpacing:"-0.025em", lineHeight:1.2, marginBottom:20 }}>
@@ -533,18 +533,22 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
               Drop in a single paragraph. AI Write Mode develops it into a full structured screenplay consistent with a cinematic style. Every scene becomes its own node on the canvas, ready to turn into shots.
             </p>
           </div>
-          <div style={{ borderRadius:16, overflow:"hidden",
-            border:"1px solid rgba(0,0,0,0.08)",
-            boxShadow:"0 24px 64px rgba(0,0,0,0.12)" }}>
-            <video
-              src="/generate_shots_video.mp4"
-              autoPlay loop muted playsInline
-              style={{ width:"100%", display:"block" }}
-            />
-          </div>
         </div>
 
-        {/* AI Write Mode — full-width 16:9 feature card */}
+        {/* 16:9 video card */}
+        <div style={{ position:"relative", width:"100%", paddingTop:"56.25%",
+          borderRadius:16, overflow:"hidden",
+          border:"1px solid rgba(0,0,0,0.08)",
+          boxShadow:"0 24px 64px rgba(0,0,0,0.12)",
+          marginBottom:24 }}>
+          <video
+            src="/generate_shots_video.mp4"
+            autoPlay loop muted playsInline
+            style={{ position:"absolute", inset:0, width:"100%", height:"100%", display:"block", objectFit:"cover" }}
+          />
+        </div>
+
+        {/* AI Write Mode — dark feature card below the video */}
         <div style={{ position:"relative", width:"100%", paddingTop:"56.25%",
           borderRadius:16, overflow:"hidden",
           border:"1px solid rgba(255,255,255,0.08)",
