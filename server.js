@@ -1609,6 +1609,13 @@ const PAGE_META = {
     ogDescription: "Use Cartasis to connect dialogue, shot timing, and Kling lipsync inside one production graph.",
     canonical: `${SITE_ORIGIN}/kling-lipsync`,
   },
+  "/workspace": {
+    title: "Cartasis Workspace — AI Video Production Canvas",
+    description: "Your Cartasis production canvas. Write scripts, plan scenes and shots, generate AI images, produce videos with Kling & Veo, add lipsync, compose music, and edit — all in one workflow.",
+    ogTitle: "Cartasis Workspace",
+    ogDescription: "Your AI director's canvas. Script to finished video in one place.",
+    canonical: `${SITE_ORIGIN}/workspace`,
+  },
 };
 
 function injectPageMeta(html, path) {

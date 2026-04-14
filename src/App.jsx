@@ -9365,12 +9365,16 @@ export default function App() {
       <Ico icon={Loader2} size={28} color="#374151" style={{ animation:"spin 1s linear infinite" }}/>
     </div>
   );
-  if (window.location.pathname === "/features") return <FeaturesPage onAuth={() => window.location.href = "/"} />;
-  if (window.location.pathname === "/pricing") return <LandingPage onAuth={u => setUser(u)} initialSection="pricing" />;
-  if (window.location.pathname === "/kling-video-generation") return <KlingPage pageKey="kling-video-generation" onAuth={() => window.location.href = "/"} />;
-  if (window.location.pathname === "/kling-3-0") return <KlingPage pageKey="kling-3-0" onAuth={() => window.location.href = "/"} />;
-  if (window.location.pathname === "/kling-lipsync") return <KlingPage pageKey="kling-lipsync" onAuth={() => window.location.href = "/"} />;
-  if (!user) return <LandingPage onAuth={u => setUser(u)} />;
+  if (window.location.pathname === "/features") return <FeaturesPage onAuth={() => window.location.href = "/workspace"} />;
+  if (window.location.pathname === "/pricing") return <LandingPage onAuth={u => { setUser(u); window.location.href = "/workspace"; }} initialSection="pricing" />;
+  if (window.location.pathname === "/kling-video-generation") return <KlingPage pageKey="kling-video-generation" onAuth={() => window.location.href = "/workspace"} />;
+  if (window.location.pathname === "/kling-3-0") return <KlingPage pageKey="kling-3-0" onAuth={() => window.location.href = "/workspace"} />;
+  if (window.location.pathname === "/kling-lipsync") return <KlingPage pageKey="kling-lipsync" onAuth={() => window.location.href = "/workspace"} />;
+  if (!user) return <LandingPage onAuth={u => { setUser(u); window.location.href = "/workspace"; }} />;
+  // Redirect bare / and /# to /workspace
+  if (window.location.pathname === "/" || window.location.pathname === "") {
+    window.history.replaceState({}, "", "/workspace");
+  }
 
   // ── Billing helpers (needs user + credits in scope) ──────────────────────
   const startCheckout = async (tier) => {
