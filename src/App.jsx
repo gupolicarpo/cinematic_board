@@ -733,29 +733,17 @@ Rules:
 }`;
 
   const usr = `Scene: "${scene.sceneText}"\nStyle: ${scene.cinematicStyle}\n\nShots:\n${shotsDesc}`;
-  const m = SHOT_MODELS.find(x=>x.id===model) || SHOT_MODELS[0];
+  // Director pass uses Haiku — annotation/flagging task, no frontier model needed
   let txt = "";
   try {
-    if (m.provider === "anthropic") {
-      const r = await fetch("/api/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ model:m.id, max_tokens:2000, system:sys, messages:[{role:"user",content:usr}] })
-      });
-      const raw = await r.text();
-      if (!r.ok) throw new Error(`Anthropic ${r.status}: ${raw.slice(0,200)}`);
-      const d = JSON.parse(raw);
-      txt = d.content?.map(b=>b.text||"").join("")||"";
-    } else {
-      const r = await fetch("/api/oai/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ model:m.id, max_tokens:2000, messages:[{role:"system",content:sys},{role:"user",content:usr}] })
-      });
-      const raw = await r.text();
-      if (!r.ok) throw new Error(`OpenAI ${r.status}: ${raw.slice(0,200)}`);
-      const d = JSON.parse(raw);
-      const outputBlock = d.output?.find(o=>o.type==="message");
-      txt = outputBlock?.content?.find(ct=>ct.type==="output_text")?.text || d.choices?.[0]?.message?.content || "";
-    }
+    const r = await fetch("/api/messages", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ model:"claude-haiku-4-5-20251001", max_tokens:2000, system:sys, messages:[{role:"user",content:usr}] })
+    });
+    const raw = await r.text();
+    if (!r.ok) throw new Error(`Anthropic ${r.status}: ${raw.slice(0,200)}`);
+    const d = JSON.parse(raw);
+    txt = d.content?.map(b=>b.text||"").join("")||"";
     const clean = txt.replace(/```json|```/g,"").trim();
     const start = clean.indexOf("{"); const end = clean.lastIndexOf("}");
     if (start === -1 || end === -1) return null;

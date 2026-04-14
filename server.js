@@ -1111,16 +1111,15 @@ app.post("/api/script/generate", async (req, res) => {
   const prompt = `${formatGuide}\n\nIDEA: ${idea}\n\nWrite the full script now. Be vivid, cinematic, and concise.`;
 
   try {
-    const key = process.env.OPENAI_API_KEY;
-    if (!key) return res.status(500).json({ error: "OPENAI_API_KEY not set" });
-    const r = await post("api.openai.com", "/v1/responses",
-      { "Authorization": `Bearer ${key}` },
-      { model: "gpt-5.4", max_output_tokens: 4096,
-        input: [{ role: "user", content: prompt }] }
+    const key = process.env.ANTHROPIC_API_KEY;
+    if (!key) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set" });
+    const r = await post("api.anthropic.com", "/v1/messages",
+      { "x-api-key": key, "anthropic-version": "2023-06-01" },
+      { model: "claude-sonnet-4-5", max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }] }
     );
     const body = JSON.parse(r.data);
-    const outputBlock = body.output?.find(o => o.type === "message");
-    const text = outputBlock?.content?.find(c => c.type === "output_text")?.text || "";
+    const text = body.content?.[0]?.text || "";
     res.json({ script: text });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
