@@ -1149,7 +1149,7 @@ ${script}`;
     if (!key) return res.status(500).json({ error: "OPENAI_API_KEY not set" });
     const r = await post("api.openai.com", "/v1/responses",
       { "Authorization": `Bearer ${key}` },
-      { model: "gpt-5.4-mini", max_output_tokens: 2048,
+      { model: "gpt-5.4-nano", max_output_tokens: 2048,
         input: [{ role: "user", content: prompt }] }
     );
     const body = JSON.parse(r.data);
