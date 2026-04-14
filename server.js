@@ -881,12 +881,47 @@ function downloadToTemp(url) {
 }
 
 app.post("/api/videoedit/export", async (req, res) => {
-  const { clips, format } = req.body;
+  const { clips, format, audioTrack, mix } = req.body;
   if (!clips || !clips.length) return res.status(400).send("No clips");
   const scale = format === "1080p" ? "1920:1080" : "1280:720";
   const tmpFiles = [];
   const outFile  = path.join(os.tmpdir(), `export_${Date.now()}.mp4`);
   try {
+    const runCmd = (cmd) => new Promise((resolve, reject) =>
+      exec(cmd, { maxBuffer: 64*1024*1024 }, (err, _out, stderr) =>
+        err ? reject(new Error(stderr || err.message)) : resolve()
+      )
+    );
+    const hasAudioStream = async (filePath) => {
+      try {
+        await runCmd(`ffprobe -v error -select_streams a:0 -show_entries stream=index -of csv=p=0 "${filePath}"`);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const decodeDataUrlToTemp = async (dataUrl, fileName = "audio-track") => {
+      const match = /^data:([^;]+);base64,(.+)$/i.exec(dataUrl || "");
+      if (!match) throw new Error("Invalid audio track data URL");
+      const mime = match[1].toLowerCase();
+      const base64 = match[2];
+      const extMap = {
+        "audio/mpeg": ".mp3",
+        "audio/mp3": ".mp3",
+        "audio/wav": ".wav",
+        "audio/x-wav": ".wav",
+        "audio/mp4": ".m4a",
+        "audio/x-m4a": ".m4a",
+        "audio/aac": ".aac",
+        "audio/ogg": ".ogg",
+        "audio/webm": ".webm",
+      };
+      const ext = extMap[mime] || path.extname(fileName || "") || ".bin";
+      const tempPath = path.join(os.tmpdir(), `videoedit_audio_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
+      fs.writeFileSync(tempPath, Buffer.from(base64, "base64"));
+      tmpFiles.push(tempPath);
+      return tempPath;
+    };
     // Resolve each clip URL to a local file path
     const resolved = [];
     for (const clip of clips) {
@@ -902,16 +937,33 @@ app.post("/api/videoedit/export", async (req, res) => {
         filePath = await downloadToTemp(clip.url);
         tmpFiles.push(filePath);
       }
-      resolved.push({ path: filePath, trimStart: clip.trimStart || 0, trimEnd: clip.trimEnd || 0, duration: clip.duration || 8 });
+      resolved.push({
+        path: filePath,
+        trimStart: clip.trimStart || 0,
+        trimEnd: clip.trimEnd || 0,
+        duration: clip.duration || 8,
+        hasAudio: false,
+      });
     }
-    // Build ffmpeg filter_complex for trim + scale + concat
+    for (const clip of resolved) {
+      clip.hasAudio = await hasAudioStream(clip.path);
+    }
+
+    let audioTrackPath = null;
+    if (audioTrack?.dataUrl) {
+      audioTrackPath = await decodeDataUrlToTemp(audioTrack.dataUrl, audioTrack.fileName);
+    } else if (audioTrack?.url) {
+      audioTrackPath = await downloadToTemp(audioTrack.url);
+      tmpFiles.push(audioTrackPath);
+    }
+
+    // Build ffmpeg filter_complex for trim + scale + concat + optional audio mix
     const inputs = resolved.map(c => `-i "${c.path}"`).join(" ");
-    const runCmd = (cmd) => new Promise((resolve, reject) =>
-      exec(cmd, { maxBuffer: 64*1024*1024 }, (err, _out, stderr) =>
-        err ? reject(new Error(stderr || err.message)) : resolve()
-      )
-    );
-    // Build filter for video+audio concat
+    const extraInputs = audioTrackPath ? ` -i "${audioTrackPath}"` : "";
+    const videoVolume = Math.max(0, Math.min(2, Number(mix?.videoVolume ?? 1)));
+    const soundtrackVolume = Math.max(0, Math.min(2, Number(mix?.soundtrackVolume ?? 1)));
+    const totalDuration = resolved.reduce((sum, c) => sum + Math.max(0.5, c.duration - c.trimStart - c.trimEnd), 0);
+
     const vFilters = resolved.map((c, i) => {
       const ss  = c.trimStart;
       const dur = Math.max(0.5, c.duration - c.trimStart - c.trimEnd);
@@ -920,25 +972,32 @@ app.post("/api/videoedit/export", async (req, res) => {
     const aFilters = resolved.map((c, i) => {
       const ss  = c.trimStart;
       const dur = Math.max(0.5, c.duration - c.trimStart - c.trimEnd);
-      return `[${i}:a]atrim=start=${ss}:duration=${dur},asetpts=PTS-STARTPTS[a${i}]`;
+      if (c.hasAudio) {
+        return `[${i}:a]atrim=start=${ss}:duration=${dur},asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo,volume=${videoVolume}[a${i}]`;
+      }
+      return `anullsrc=channel_layout=stereo:sample_rate=48000,atrim=duration=${dur},asetpts=PTS-STARTPTS,volume=${videoVolume}[a${i}]`;
     }).join(";");
     const concatV     = resolved.map((_,i)=>`[v${i}]`).join("");
     const concatA     = resolved.map((_,i)=>`[a${i}]`).join("");
-    const filterWithA = `${vFilters};${aFilters};${concatV}${concatA}concat=n=${resolved.length}:v=1:a=1[vout][aout]`;
-    const filterNoA   = `${vFilters};${concatV}concat=n=${resolved.length}:v=1:a=0[vout]`;
-    const cmdWithA    = `ffmpeg -y ${inputs} -filter_complex "${filterWithA}" -map "[vout]" -map "[aout]" -c:v libx264 -crf 18 -preset fast -c:a aac "${outFile}"`;
-    const cmdNoA      = `ffmpeg -y ${inputs} -filter_complex "${filterNoA}"  -map "[vout]" -c:v libx264 -crf 18 -preset fast -an "${outFile}"`;
-    // Try with audio; if clips lack audio streams, fall back to video-only
-    try {
-      await runCmd(cmdWithA);
-    } catch(audioErr) {
-      if (audioErr.message.includes("Stream specifier") || audioErr.message.includes("matches no streams") ||
-          audioErr.message.includes("Invalid stream") || audioErr.message.includes("audio")) {
-        await runCmd(cmdNoA);
-      } else {
-        throw audioErr;
-      }
+    const trackTrim = audioTrack?.trim || {};
+    const trackStart = Math.max(0, Number(trackTrim.start || 0));
+    const trackEnd = Math.max(0, Number(trackTrim.end || 0));
+    const trackOffset = Math.max(0, Number(trackTrim.offset || 0));
+    const trackDelayMs = Math.round(trackOffset * 1000);
+    const trackVisibleDuration = audioTrack?.duration
+      ? Math.max(0.1, Number(audioTrack.duration) - trackStart - trackEnd)
+      : Math.max(0.1, totalDuration);
+
+    let filterComplex = `${vFilters};${aFilters};${concatV}concat=n=${resolved.length}:v=1:a=0[vout];${concatA}concat=n=${resolved.length}:v=0:a=1[aVid]`;
+    if (audioTrackPath) {
+      const trackInputIndex = resolved.length;
+      filterComplex += `;[${trackInputIndex}:a]atrim=start=${trackStart}:duration=${trackVisibleDuration},asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo,volume=${soundtrackVolume},adelay=${trackDelayMs}|${trackDelayMs},atrim=duration=${Math.max(0.1, totalDuration)}[aTrack];[aVid][aTrack]amix=inputs=2:duration=first:dropout_transition=0[aout]`;
+    } else {
+      filterComplex += `;[aVid]anull[aout]`;
     }
+
+    const cmd = `ffmpeg -y ${inputs}${extraInputs} -filter_complex "${filterComplex}" -map "[vout]" -map "[aout]" -c:v libx264 -crf 18 -preset fast -c:a aac "${outFile}"`;
+    await runCmd(cmd);
     res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Content-Disposition", `attachment; filename="export_${format}.mp4"`);
     const stream = fs.createReadStream(outFile);

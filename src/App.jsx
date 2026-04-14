@@ -437,7 +437,7 @@ function mkImage(sceneId=null, shotId=null) { return { id:`im_${uid()}`, type:T.
 function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", resolution:"720p", sound:"off", prevKlingId:null, voice:"none", lipsync:false, klingVersion:"v3", klingVideoId:null, klingVideoDuration:null }; }
 function mkVeo()   { return { id:`veo_${uid()}`, type:T.VEO, shotId:null, videoUrl:null, aspect_ratio:"16:9", duration:8, resolution:"720p", startFrameNodeId:null, endFrameNodeId:null, refNodeIds:[], useRefs:true, refType:"asset", manualPrompt:"" }; }
 function mkLlm()   { return { id:`llm_${uid()}`, type:T.LLM, targetNodeIds:[], targetNodeId:null, llmMode:"edit", command:"", model:"claude-sonnet-4-5", lastResult:null }; }
-function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p", lastSplitAction:null }; }
+function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p", lastSplitAction:null, audioMix:{ videoVolume:1, soundtrackVolume:1 } }; }
 function mkScript()   { return { id:`scr_${uid()}`, type:T.SCRIPT, title:"Untitled Script", script:"", idea:"", format:"screenplay", scriptMode:"write" }; }
 function mkAudio()    { return { id:`aud_${uid()}`, type:T.AUDIO, audioUrl:null, fileName:null, bpm:null, beats:[], duration:0, snapEnabled:true, videoNodeId:null }; }
 function mkClip()     { return { id:`clp_${uid()}`, type:T.CLIP,  videoUrl:null, fileName:null, duration:0 }; }
@@ -5026,6 +5026,24 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
   };
 
   const activeV = () => cardVRef.current;
+  const getAudioMix = () => ({
+    videoVolume: Math.max(0, Math.min(2, node.audioMix?.videoVolume ?? 1)),
+    soundtrackVolume: Math.max(0, Math.min(2, node.audioMix?.soundtrackVolume ?? 1)),
+  });
+  const applyLiveVolumes = () => {
+    const mix = getAudioMix();
+    const v = cardVRef.current;
+    const a = audioTrackRef.current;
+    if (v) {
+      v.muted = false;
+      v.volume = Math.max(0, Math.min(1, mix.videoVolume / 2));
+    }
+    if (a) a.volume = Math.max(0, Math.min(1, mix.soundtrackVolume / 2));
+  };
+
+  useEffect(() => {
+    applyLiveVolumes();
+  }, [node.audioMix?.videoVolume, node.audioMix?.soundtrackVolume, audioNode?.audioUrl]);
 
   // Clean up any live timeupdate listener
   const clearTU = () => {
@@ -5044,6 +5062,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
   const trackPlay  = (timelineT = 0) => {
     const a = audioTrackRef.current;
     if (!a) return;
+    applyLiveVolumes();
     const trim = getAudioTrim();
     if (timelineT < (trim.offset||0)) {
       // Playhead is before audio starts — schedule play when we reach offset
@@ -5088,6 +5107,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
 
   // Resume from pause
   const handleResume = () => {
+    applyLiveVolumes();
     cardVRef.current?.play().catch(() => {});
     trackSeek(playheadTime);
     trackPlay(playheadTime);
@@ -5106,8 +5126,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
     const offset  = clipOffRef.current;
     v.src         = clip.videoUrl;
     v.currentTime = startAt;
-    // Mute video clips when a soundtrack is linked — music is the primary audio
-    v.muted       = !!audioNode?.audioUrl;
+    applyLiveVolumes();
     v.play().catch(() => {});
     const onTU = () => {
       setPlayheadTime(offset + (v.currentTime - startAt));
@@ -5162,7 +5181,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
     const v = activeV();
     if (!v || !clip.videoUrl) return;
 
-    v.muted = !!audioNode?.audioUrl;
+    applyLiveVolumes();
     const doSeek = () => { v.currentTime = seekT; };
     if (v.src !== clip.videoUrl) {
       v.src = clip.videoUrl;
@@ -5252,10 +5271,39 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
   };
 
   // Export
+  const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
   const doExport = async (fmt) => {
     if (!clips.length) return;
     setExporting(true);
     try {
+      let audioTrack = null;
+      if (audioNode?.audioUrl) {
+        if (/^blob:/i.test(audioNode.audioUrl)) {
+          const audioBlob = await fetch(audioNode.audioUrl).then(r => {
+            if (!r.ok) throw new Error("Failed to read linked audio node");
+            return r.blob();
+          });
+          audioTrack = {
+            dataUrl: await blobToDataUrl(audioBlob),
+            fileName: audioNode.fileName || "audio-track",
+            trim: getAudioTrim(),
+            duration: audioNode.duration || 0,
+          };
+        } else {
+          audioTrack = {
+            url: audioNode.audioUrl,
+            fileName: audioNode.fileName || "audio-track",
+            trim: getAudioTrim(),
+            duration: audioNode.duration || 0,
+          };
+        }
+      }
       const clipData = clips.map(c => ({
         url:       c.videoUrl,
         trimStart: node.trims?.[c.id]?.start || 0,
@@ -5263,9 +5311,10 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
         duration:  getBaseDur(c),
         nodeId:    c.id,
       }));
+      const mix = getAudioMix();
       const r = await fetch("/api/videoedit/export", {
         method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ clips: clipData, format: fmt }),
+        body: JSON.stringify({ clips: clipData, format: fmt, audioTrack, mix }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({ error: r.statusText }));
@@ -5278,6 +5327,42 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     } catch(e) { alert(`Export failed: ${e.message}`); }
     finally   { setExporting(false); }
+  };
+
+  const renderVolumeControls = (compact = false) => {
+    const mix = getAudioMix();
+    const sliderW = compact ? 74 : 112;
+    const labelSize = compact ? 6 : 10;
+    const valueSize = compact ? 6 : 10;
+    const rowGap = compact ? 8 : 12;
+    const control = (label, value, key) => (
+      <div style={{ display:"flex", alignItems:"center", gap:compact ? 5 : 7 }}>
+        <span style={{ fontSize:labelSize, color:th.t3, fontWeight:700, letterSpacing:"0.08em", minWidth:compact ? 44 : 64 }}>
+          {label}
+        </span>
+        <input
+          type="range"
+          min="0"
+          max="2"
+          step="0.01"
+          value={value}
+          onChange={e => {
+            const next = parseFloat(e.target.value);
+            upd({ audioMix: { ...mix, [key]: next } });
+          }}
+          style={{ width:sliderW, accentColor:"#0a0a0a", cursor:"pointer" }}
+        />
+        <span style={{ fontSize:valueSize, color:th.t2, fontVariantNumeric:"tabular-nums", minWidth:compact ? 26 : 34 }}>
+          {value.toFixed(2)}
+        </span>
+      </div>
+    );
+    return (
+      <div style={{ display:"flex", alignItems:"center", gap:rowGap, flexWrap:"wrap" }}>
+        {control("VIDEO VOL", mix.videoVolume, "videoVolume")}
+        {audioNode?.audioUrl && control("AUDIO VOL", mix.soundtrackVolume, "soundtrackVolume")}
+      </div>
+    );
   };
 
   const removeClip = (id) => upd({
@@ -5745,6 +5830,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
                 </span>
               )}
               </div>
+              {renderVolumeControls(false)}
             </div>
           </div>
 
@@ -5883,6 +5969,8 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
               UNDO SPLIT
             </button>
           </div>
+
+          {renderVolumeControls(true)}
 
           {clips.length > 0 ? renderTimeline(pps) : emptySlate}
 
