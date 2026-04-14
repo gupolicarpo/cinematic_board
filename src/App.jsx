@@ -5649,16 +5649,17 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
         <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", gap:0, background:th.bg }}>
 
           {/* Top — video preview + transport controls */}
-          <div style={{ padding:"20px 20px 14px", display:"flex", flexDirection:"column", gap:12 }}>
-            <video ref={cardVRef}
-              style={{ width:"100%", borderRadius:10, aspectRatio:"16/9", background:"#000", display:"block", outline:"none" }}
-              onEnded={handleStop}/>
+          <div style={{ padding:"20px 20px 14px", display:"flex", flexDirection:"column", gap:12, flexShrink:0 }}>
+            <div style={{ width:"100%", maxWidth:1040, margin:"0 auto", display:"flex", flexDirection:"column", gap:12 }}>
+              <video ref={cardVRef}
+                style={{ width:"100%", maxHeight:"46vh", borderRadius:10, aspectRatio:"16/9", objectFit:"contain", background:"#000", display:"block", outline:"none" }}
+                onEnded={handleStop}/>
             {audioNode?.audioUrl && (
               <audio ref={audioTrackRef} src={audioNode.audioUrl} style={{ display:"none" }}
                 onEnded={()=>{ if(playState==="playing") handleStop(); }}/>
             )}
             {/* Play controls — large */}
-            <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
               {playState === "playing" ? (
                 <button onClick={e=>{e.stopPropagation();handlePause();}}
                   style={{ border:"none", color:"#fff", borderRadius:7, fontWeight:700, letterSpacing:"0.12em",
@@ -5707,13 +5708,14 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
                   ♪ {audioNode.fileName ? audioNode.fileName.replace(/\.[^.]+$/,"").slice(0,20) : "TRACK"}
                 </span>
               )}
+              </div>
             </div>
           </div>
 
           {/* Bottom — timeline */}
-          <div style={{ flex:1, minHeight:0, display:"flex", flexDirection:"column", padding:"0 20px 20px", overflow:"hidden", background:th.card, borderTop:`1px solid ${th.b0}` }}>
+          <div style={{ flex:1, minHeight:220, display:"flex", flexDirection:"column", padding:"0 20px 20px", overflow:"hidden", background:th.card, borderTop:`1px solid ${th.b0}` }}>
             <input ref={fileInputRef} type="file" accept="video/*" style={{ display:"none" }} onChange={handleUpload}/>
-            <div style={{ flex:1, overflow:"auto", paddingTop:16 }}>
+            <div style={{ flex:1, width:"100%", maxWidth:1040, margin:"0 auto", overflow:"auto", paddingTop:16 }}>
               {clips.length > 0 ? renderTimeline(pps) : emptySlate}
             </div>
           </div>
