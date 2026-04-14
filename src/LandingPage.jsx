@@ -423,22 +423,48 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
           </div>
         </div>
 
-        {/* ── Hero product screenshot ── */}
-        <div className="fu fu3" style={{ maxWidth:1200, margin:"0 auto", padding:"0 24px", position:"relative" }}>
-          {/* Glow behind the screenshot */}
-          <div style={{ position:"absolute", top:"10%", left:"50%", transform:"translateX(-50%)",
-            width:"70%", height:"60%", background:"radial-gradient(ellipse,rgba(220,38,38,0.18) 0%,transparent 70%)",
-            pointerEvents:"none", zIndex:0 }}/>
-          <div className="lp-img-kenburns" style={{ position:"relative", zIndex:1, borderRadius:16,
-            border:"1px solid rgba(255,255,255,0.10)",
-            boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05)" }}>
-            <img
-              src="/node_scene_shots_system.png"
-              alt="Cinematic Graph canvas — scene and shot nodes"
-              style={{ borderRadius:15 }}
-            />
-          </div>
-        </div>
+        {/* ── Hero cycling video player ── */}
+        {(() => {
+          const HERO_CLIPS = [
+            { src:"/trap_video_clip.mp4",     label:"Trap · Music Video" },
+            { src:"/action_movie_clip.mp4",   label:"Action · Feature Film" },
+            { src:"/fantasy_style_video.mp4", label:"Fantasy · Epic" },
+          ];
+          const [heroVidIdx, setHeroVidIdx] = useState(0);
+          return (
+            <div className="fu fu3" style={{ maxWidth:1100, margin:"0 auto", padding:"0 24px", position:"relative" }}>
+              {/* glow */}
+              <div style={{ position:"absolute", top:"10%", left:"50%", transform:"translateX(-50%)",
+                width:"70%", height:"60%", background:"radial-gradient(ellipse,rgba(220,38,38,0.18) 0%,transparent 70%)",
+                pointerEvents:"none", zIndex:0 }}/>
+              <div style={{ position:"relative", zIndex:1 }}>
+                {/* dot nav */}
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12, justifyContent:"center" }}>
+                  {HERO_CLIPS.map((c,i) => (
+                    <button key={i} onClick={() => setHeroVidIdx(i)}
+                      style={{ background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:7, padding:0 }}>
+                      <div style={{ width: i===heroVidIdx ? 22 : 8, height:8, borderRadius:4,
+                        background: i===heroVidIdx ? ACCENT : "rgba(255,255,255,0.2)",
+                        transition:"all 0.3s ease" }} />
+                      {i===heroVidIdx && <span style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.5)", letterSpacing:"0.04em" }}>{c.label}</span>}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ position:"relative", width:"100%", paddingTop:"56.25%",
+                  borderRadius:16, overflow:"hidden",
+                  border:"1px solid rgba(255,255,255,0.10)",
+                  boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05)" }}>
+                  <video key={HERO_CLIPS[heroVidIdx].src}
+                    src={HERO_CLIPS[heroVidIdx].src}
+                    autoPlay muted playsInline
+                    onEnded={() => setHeroVidIdx(i => (i + 1) % HERO_CLIPS.length)}
+                    style={{ position:"absolute", inset:0, width:"100%", height:"100%", display:"block", objectFit:"cover" }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </section>
 
       {/* ── NODE SYSTEM ── */}
@@ -511,7 +537,7 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
             border:"1px solid rgba(0,0,0,0.08)",
             boxShadow:"0 24px 64px rgba(0,0,0,0.12)" }}>
             <video
-              src="/generate_script_video.mp4"
+              src="/generate_shots_video.mp4"
               autoPlay loop muted playsInline
               style={{ width:"100%", display:"block" }}
             />
