@@ -1631,30 +1631,6 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
                   ⬇ MD
                 </button>
               )}
-              {audioNode?.beats?.length > 0 && (
-                <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();snapToBeat();}}
-                  style={{ border:`1px solid ${beatAc}`, borderRadius:7, background:`${beatAc}22`,
-                    color:beatAc, fontSize:10, fontWeight:700, padding:"9px 12px", cursor:"pointer",
-                    letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif" }}>
-                  SNAP TO BEAT
-                </button>
-              )}
-              {audioNode?.beats?.length > 0 && (
-                <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();snapToBeat();}}
-                  style={{ border:`1px solid ${beatAc}`, borderRadius:7, background:`${beatAc}22`,
-                    color:beatAc, fontSize:10, fontWeight:700, padding:"9px 12px", cursor:"pointer",
-                    letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif" }}>
-                  SNAP TO BEAT
-                </button>
-              )}
-              {audioNode?.beats?.length > 0 && (
-                <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();snapToBeat();}}
-                  style={{ border:`1px solid ${beatAc}`, borderRadius:7, background:`${beatAc}22`,
-                    color:beatAc, fontSize:10, fontWeight:700, padding:"9px 12px", cursor:"pointer",
-                    letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif" }}>
-                  SNAP TO BEAT
-                </button>
-              )}
             </div>
             <div style={{ display:"flex",gap:4 }}>
               {["character","object","location"].map(k=>(
