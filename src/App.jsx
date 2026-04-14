@@ -8507,6 +8507,209 @@ async function uploadBibleImage(userId, projectId, entryId, dataUrl, variantKey 
   }
 }
 
+// ─── ONBOARDING TOUR ─────────────────────────────────────────────────────────
+const TOUR_STEPS = [
+  {
+    accent: "#f97316",
+    emoji: "🎬",
+    badge: "WELCOME",
+    title: "Welcome to Cartasis",
+    body: "Cartasis is a node-based AI filmmaking canvas. You build your film visually — scenes, shots, images, and videos are all connected nodes on the canvas. Wire them together to build a complete production pipeline.",
+    bullets: ["Drag nodes to arrange your workflow","Wire nodes together by dragging from output ports","Start from a template or build from scratch"],
+  },
+  {
+    accent: "#64748b",
+    emoji: "🎭",
+    badge: "SCENE NODE",
+    title: "Scene",
+    body: "The foundation of your story. Each Scene holds the setting, cinematic style, scene text, and a World Bible of characters and locations. The AI reads the scene text to generate your shot breakdown.",
+    bullets: ["Set cinematic style (noir, epic-fantasy, sci-fi…)","Write the scene text — action, dialogue, atmosphere","Attach characters and locations from your World Bible"],
+  },
+  {
+    accent: "#38bdf8",
+    emoji: "🎯",
+    badge: "SHOT NODE",
+    title: "Shot",
+    body: "A single camera setup inside a scene. Define every technical parameter — size, angle, movement, lens, lighting, and the visual goal. The AI uses all of this to compile a precise generation prompt.",
+    bullets: ["Generated automatically by the AI from scene text","Edit any field to redirect the visual result","Wire to an Image node to generate a still for that shot"],
+  },
+  {
+    accent: "#a3e635",
+    emoji: "🖼️",
+    badge: "IMAGE NODE",
+    title: "Image",
+    body: "Generates an AI image from a shot prompt using Gemini. Wire it to a Shot to inherit all context automatically. Save the result to your World Bible as a character or location reference for visual consistency.",
+    bullets: ["Auto-inherits prompt from wired Shot","Save to Bible → every future node uses it as reference","Use as start or end frame for Veo video generation"],
+  },
+  {
+    accent: "#f97316",
+    emoji: "🎞️",
+    badge: "KLING NODE",
+    title: "Kling Video",
+    body: "Generates AI video using Kling AI. Wire Shot nodes for prompts and Image nodes as visual references. Supports multi-shot sequences, lipsync with TTS, and video extension (V1.6 model).",
+    bullets: ["Wire multiple shots for a multi-shot sequence","Add image references for character consistency","V1.6 model unlocks EXTEND — add 5s at a time up to 3 min"],
+  },
+  {
+    accent: "#a855f7",
+    emoji: "✨",
+    badge: "VEO NODE",
+    title: "Veo Video",
+    body: "Generates AI video using Google Veo 3.1. Wire a Shot for the prompt and Image nodes as start frame, end frame, or style references. Two modes: fast generation or high-quality standard.",
+    bullets: ["Start + end frame = interpolation between two images","Reference images guide the visual style","Fast mode for iteration, Standard mode for finals"],
+  },
+  {
+    accent: "#f87171",
+    emoji: "🤖",
+    badge: "AI NODE",
+    title: "AI Assistant",
+    body: "An AI connected directly to your canvas. In EDIT mode, apply natural language commands to any node. In COHERENCE mode, analyse multiple scenes together and patch continuity issues automatically.",
+    bullets: ["EDIT mode: wire any node + type a command","COHERENCE mode: wire scenes to check story logic","Powered by Claude Sonnet — changes are applied live"],
+  },
+  {
+    accent: "#e2e8f0",
+    emoji: "✍️",
+    badge: "SCRIPT NODE",
+    title: "Script",
+    body: "Write a full screenplay from an idea, or upload an existing script. The AI generates it in Hollywood format. One click splits it into Scene nodes on the canvas — your whole project is ready to shoot.",
+    bullets: ["Generate: type an idea → full screenplay in seconds","Upload: import a .txt or .pdf script","Split: turns every scene into a wired Scene node"],
+  },
+  {
+    accent: "#10b981",
+    emoji: "🎵",
+    badge: "AUDIO NODE",
+    title: "Audio",
+    body: "Generate original music from a text prompt, sync a track to a video, or upload your own audio. Wire to a VideoEdit node to use beat detection for snap cuts that hit exactly on the rhythm.",
+    bullets: ["Prompt → music via ElevenLabs","Video → music: generates a score that matches the visuals","Beat snap: auto-trims clips to detected BPM beats"],
+  },
+  {
+    accent: "#e2e8f0",
+    emoji: "✂️",
+    badge: "VIDEO EDIT NODE",
+    title: "Video Edit",
+    body: "Assemble your Kling and Veo clips into a sequence. Trim in/out points, reorder clips by dragging, scrub the timeline, and export. Click ⤢ to open the fullscreen editor for more precise control.",
+    bullets: ["Wire Kling or Veo nodes directly into the timeline","Drag clip handles to trim start and end points","Export at 720p or 1080p"],
+  },
+  {
+    accent: "#fbbf24",
+    emoji: "📖",
+    badge: "WORLD BIBLE",
+    title: "World Bible",
+    body: "The global reference layer for your entire project. Add characters, locations, and objects with descriptions and reference images. Every node inherits them — generating the same face or location consistently across all scenes.",
+    bullets: ["Open with the 📖 button in the top toolbar","Generate a reference image once, use it everywhere","Entries flow automatically into every Scene and Shot"],
+  },
+  {
+    accent: "#f97316",
+    emoji: "🚀",
+    badge: "LET'S GO",
+    title: "You're ready to film",
+    body: "Start from a template to see a complete pre-built project, or create your first Scene node. The help icon (?) in the top bar replays this tour any time.",
+    bullets: ["Templates → open the drawer on the left","Add nodes → right-click the canvas or use the + menu","Save your project from the top bar"],
+  },
+];
+
+function TourOverlay({ onClose }) {
+  const th = useTheme();
+  const [step, setStep] = useState(0);
+  const s = TOUR_STEPS[step];
+  const isLast = step === TOUR_STEPS.length - 1;
+
+  const finish = () => {
+    try { localStorage.setItem("cartasis_tour_seen", "1"); } catch {}
+    onClose();
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:10000, background:"rgba(0,0,0,0.88)",
+      display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}
+      onKeyDown={e => { if(e.key==="Escape") finish(); if(e.key==="ArrowRight"&&!isLast) setStep(s=>s+1); if(e.key==="ArrowLeft"&&step>0) setStep(s=>s-1); }}
+      tabIndex={-1}>
+
+      <div style={{ background:th.card, border:`1px solid ${s.accent}44`, borderRadius:20,
+        maxWidth:520, width:"100%", overflow:"hidden",
+        boxShadow:`0 0 60px ${s.accent}22, 0 20px 60px rgba(0,0,0,0.5)` }}>
+
+        {/* Colour bar */}
+        <div style={{ height:4, background:`linear-gradient(90deg, ${s.accent}, ${s.accent}88)` }}/>
+
+        {/* Body */}
+        <div style={{ padding:"28px 32px 24px" }}>
+          {/* Badge + step counter */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+            <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.16em", color:s.accent,
+              background:`${s.accent}18`, border:`1px solid ${s.accent}44`,
+              borderRadius:4, padding:"3px 9px" }}>{s.badge}</span>
+            <span style={{ fontSize:10, color:th.t3 }}>{step+1} / {TOUR_STEPS.length}</span>
+          </div>
+
+          {/* Emoji + title */}
+          <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:16 }}>
+            <div style={{ fontSize:44, lineHeight:1, flexShrink:0 }}>{s.emoji}</div>
+            <div style={{ fontSize:22, fontWeight:800, color:th.t0, lineHeight:1.2 }}>{s.title}</div>
+          </div>
+
+          {/* Description */}
+          <p style={{ fontSize:13, color:th.t1, lineHeight:1.65, margin:"0 0 18px" }}>{s.body}</p>
+
+          {/* Bullets */}
+          <div style={{ display:"flex", flexDirection:"column", gap:7, marginBottom:24 }}>
+            {s.bullets.map((b,i) => (
+              <div key={i} style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
+                <div style={{ width:6, height:6, borderRadius:"50%", background:s.accent, flexShrink:0, marginTop:5 }}/>
+                <span style={{ fontSize:12, color:th.t2, lineHeight:1.5 }}>{b}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Step dots */}
+          <div style={{ display:"flex", justifyContent:"center", gap:6, marginBottom:24 }}>
+            {TOUR_STEPS.map((_,i) => (
+              <button key={i} onClick={()=>setStep(i)}
+                style={{ width: i===step ? 20 : 6, height:6, borderRadius:3, border:"none",
+                  background: i===step ? s.accent : th.b1, cursor:"pointer",
+                  padding:0, transition:"all 0.2s" }}/>
+            ))}
+          </div>
+
+          {/* Navigation */}
+          <div style={{ display:"flex", gap:10 }}>
+            {step > 0 && (
+              <button onClick={()=>setStep(s=>s-1)}
+                style={{ flex:1, padding:"10px 0", borderRadius:9, border:`1px solid ${th.b1}`,
+                  background:"transparent", color:th.t2, fontSize:12, fontWeight:600,
+                  fontFamily:"'Inter',system-ui,sans-serif", cursor:"pointer" }}>
+                ← Back
+              </button>
+            )}
+            {!isLast ? (
+              <>
+                <button onClick={finish}
+                  style={{ padding:"10px 18px", borderRadius:9, border:`1px solid ${th.b0}`,
+                    background:"transparent", color:th.t3, fontSize:12,
+                    fontFamily:"'Inter',system-ui,sans-serif", cursor:"pointer" }}>
+                  Skip tour
+                </button>
+                <button onClick={()=>setStep(s=>s+1)}
+                  style={{ flex:1, padding:"10px 0", borderRadius:9, border:"none",
+                    background:s.accent, color:"#000", fontSize:12, fontWeight:700,
+                    fontFamily:"'Inter',system-ui,sans-serif", cursor:"pointer", letterSpacing:"0.06em" }}>
+                  Next →
+                </button>
+              </>
+            ) : (
+              <button onClick={finish}
+                style={{ flex:1, padding:"11px 0", borderRadius:9, border:"none",
+                  background:s.accent, color:"#000", fontSize:13, fontWeight:800,
+                  fontFamily:"'Inter',system-ui,sans-serif", cursor:"pointer", letterSpacing:"0.06em" }}>
+                Start Filming 🎬
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -8524,15 +8727,24 @@ export default function App() {
   const [showTopup,       setShowTopup]        = useState(false);
   const [pricingData,     setPricingData]      = useState(null);
   const [fullscreenVEId,  setFullscreenVEId]   = useState(null); // VideoEdit fullscreen overlay
+  const [showTour,        setShowTour]         = useState(false);
 
   // Check for existing session on mount
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setAuthChecked(true);
+      // Show tour on first-ever visit (already logged in)
+      if (session?.user && !localStorage.getItem("cartasis_tour_seen")) {
+        setShowTour(true);
+      }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      // Show tour on first login
+      if (session?.user && !localStorage.getItem("cartasis_tour_seen")) {
+        setShowTour(true);
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -9850,6 +10062,9 @@ export default function App() {
       </div>
     )}
 
+    {/* ── ONBOARDING TOUR ─────────────────────────────────────────────────── */}
+    {showTour && <TourOverlay onClose={() => setShowTour(false)} />}
+
     {/* ── VIDEO EDIT FULLSCREEN ────────────────────────────────────────────── */}
     {fullscreenVEId && (() => {
       const veNode = nodes.find(n => n.id === fullscreenVEId);
@@ -10091,6 +10306,11 @@ export default function App() {
               <span style={{ fontSize:11, fontWeight:700, color:"#fff" }}>{(user.email||"?")[0].toUpperCase()}</span>
             </div>
             <span style={{ fontSize:10, color:th.t3, maxWidth:120, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{user.email}</span>
+            <button onClick={()=>setShowTour(true)}
+              title="Help — replay the tour"
+              style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t3, borderRadius:"50%", width:28, height:28, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, fontFamily:"'Inter',system-ui,sans-serif" }}>
+              ?
+            </button>
             <button onClick={()=>supabase.auth.signOut()}
               title="Log out"
               style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t3, borderRadius:5, padding:"5px 9px", cursor:"pointer", display:"flex", alignItems:"center", gap:5, fontSize:11, fontFamily:"'Inter',system-ui,sans-serif" }}>
