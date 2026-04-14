@@ -544,18 +544,28 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
           </div>
         </div>
 
-        {/* Row 2: AI Write Mode card (left) + 4 steps (right) — aligned */}
-        <div className="lp-grid-2" style={{ alignItems:"start" }}>
-          {/* AI Write Mode highlight */}
-          <div style={{ background:DARK, borderRadius:14, padding:20 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
-              <div style={{ width:7, height:7, borderRadius:"50%", background:"#22c55e" }} />
-              <span style={{ fontSize:10, fontWeight:800, letterSpacing:"0.14em", color:"rgba(255,255,255,0.5)" }}>AI WRITE MODE</span>
+        {/* AI Write Mode — full-width 16:9 feature card */}
+        <div style={{ position:"relative", width:"100%", paddingTop:"56.25%",
+          borderRadius:16, overflow:"hidden",
+          border:"1px solid rgba(255,255,255,0.08)",
+          boxShadow:"0 24px 64px rgba(0,0,0,0.18)",
+          marginBottom:40 }}>
+          <div style={{ position:"absolute", inset:0, background:DARK,
+            display:"flex", flexDirection:"column", justifyContent:"space-between", padding:"clamp(20px,3vw,48px)" }}>
+
+            {/* top: label + description */}
+            <div>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+                <div style={{ width:7, height:7, borderRadius:"50%", background:"#22c55e", flexShrink:0 }} />
+                <span style={{ fontSize:11, fontWeight:800, letterSpacing:"0.14em", color:"rgba(255,255,255,0.45)", textTransform:"uppercase" }}>AI Write Mode</span>
+              </div>
+              <p style={{ fontSize:"clamp(13px,1.4vw,17px)", color:"rgba(255,255,255,0.55)", lineHeight:1.75, maxWidth:640, margin:0 }}>
+                Choose a cinematic style — the AI rewrites your idea through that lens, building proper scene structure, atmosphere, and visual direction automatically.
+              </p>
             </div>
-            <p style={{ fontSize:13, color:"rgba(255,255,255,0.4)", lineHeight:1.7, marginBottom:16 }}>
-              Choose a cinematic style — the AI rewrites your idea through that lens, building proper scene structure, atmosphere, and visual direction automatically.
-            </p>
-            <div style={{ display:"flex", flexWrap:"wrap", gap:7 }}>
+
+            {/* middle: style pills */}
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
               {[
                 { label:"Drama",        emoji:"🎭", color:"#c084fc" },
                 { label:"Thriller",     emoji:"🔪", color:"#f87171" },
@@ -566,34 +576,33 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
                 { label:"Documentary",  emoji:"🎥", color:"#fbbf24" },
                 { label:"Comedy",       emoji:"😂", color:"#f472b6" },
               ].map(s => (
-                <span key={s.label} style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:11, fontWeight:700,
-                  color:s.color, background:`${s.color}12`, border:`1px solid ${s.color}30`,
-                  borderRadius:100, padding:"4px 11px" }}>
+                <span key={s.label} style={{ display:"inline-flex", alignItems:"center", gap:6,
+                  fontSize:"clamp(10px,1vw,13px)", fontWeight:700,
+                  color:s.color, background:`${s.color}14`, border:`1px solid ${s.color}35`,
+                  borderRadius:100, padding:"5px 14px" }}>
                   {s.emoji} {s.label}
                 </span>
               ))}
             </div>
-          </div>
 
-          {/* 4 steps — aligned with card */}
-          <div className="lp-grid-2-sm">
-            {[
-              ["01","Drop in your idea","A sentence, a paragraph, a mood board description — anything."],
-              ["02","Pick a cinematic style","AI develops the full script through that visual and tonal lens."],
-              ["03","Split into scenes","One click — every scene heading becomes a Scene node on the canvas."],
-              ["04","Annotate & generate","Each Scene node is ready for shot breakdown and AI image generation."],
-            ].map(([n,t,d]) => (
-              <div key={n} style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
-                <div style={{ width:26, height:26, borderRadius:7, background:DARK, border:`1px solid ${BORDER}`,
-                  display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:9, fontWeight:800, color:"#94a3b8", flexShrink:0 }}>{n}</div>
-                <div>
-                  <div style={{ fontSize:12, fontWeight:700, color:DARK, marginBottom:3 }}>{t}</div>
-                  <div style={{ fontSize:11, color:MUTED, lineHeight:1.5 }}>{d}</div>
+            {/* bottom: 4 steps */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"clamp(12px,2vw,24px)" }}>
+              {[
+                ["01","Drop in your idea","A sentence, a paragraph, a mood board description — anything."],
+                ["02","Pick a cinematic style","AI develops the full script through that visual and tonal lens."],
+                ["03","Split into scenes","One click — every scene heading becomes a Scene node on the canvas."],
+                ["04","Annotate & generate","Each Scene node is ready for shot breakdown and AI image generation."],
+              ].map(([n,t,d]) => (
+                <div key={n} style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                  <div style={{ fontSize:"clamp(18px,2vw,28px)", fontWeight:900, color:"rgba(255,255,255,0.12)", lineHeight:1 }}>{n}</div>
+                  <div style={{ fontSize:"clamp(10px,1vw,13px)", fontWeight:700, color:"rgba(255,255,255,0.8)", lineHeight:1.3 }}>{t}</div>
+                  <div style={{ fontSize:"clamp(9px,0.85vw,11px)", color:"rgba(255,255,255,0.35)", lineHeight:1.5 }}>{d}</div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+
           </div>
+        </div>
         </div>
       </Section>
 
