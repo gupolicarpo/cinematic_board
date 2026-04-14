@@ -5059,19 +5059,42 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
     const pos  = timelineT - (trim.offset||0) + (trim.start||0);
     return Math.max(0, pos);
   };
-  const trackPlay  = (timelineT = 0) => {
+  const getAudioWindow = () => {
+    const trim = getAudioTrim();
+    const duration = audioNode?.duration || 0;
+    const visibleDur = duration > 0 ? Math.max(0, duration - (trim.start||0) - (trim.end||0)) : 0;
+    const start = trim.offset || 0;
+    const end = start + visibleDur;
+    const endTimeInFile = duration > 0 ? Math.max(trim.start || 0, duration - (trim.end || 0)) : (trim.start || 0);
+    return { trim, duration, visibleDur, start, end, endTimeInFile };
+  };
+  const syncTrackToTimeline = (timelineT, shouldPlay) => {
     const a = audioTrackRef.current;
     if (!a) return;
     applyLiveVolumes();
-    const trim = getAudioTrim();
-    if (timelineT < (trim.offset||0)) {
-      // Playhead is before audio starts — schedule play when we reach offset
-      // For simplicity just don't play yet; the timeupdate on video will call trackPlay again on seek
+    const { trim, visibleDur, start, end, endTimeInFile } = getAudioWindow();
+    if (timelineT < start) {
       a.pause();
+      a.currentTime = trim.start || 0;
       return;
     }
-    a.currentTime = audioFileT(timelineT);
-    a.play().catch(() => {});
+    if (visibleDur > 0 && timelineT >= end - 0.01) {
+      a.pause();
+      a.currentTime = endTimeInFile;
+      return;
+    }
+    const nextTime = audioFileT(timelineT);
+    if (!Number.isFinite(a.currentTime) || Math.abs(a.currentTime - nextTime) > 0.2) {
+      a.currentTime = nextTime;
+    }
+    if (shouldPlay) {
+      if (a.paused) a.play().catch(() => {});
+    } else {
+      a.pause();
+    }
+  };
+  const trackPlay  = (timelineT = 0) => {
+    syncTrackToTimeline(timelineT, true);
   };
   const trackPause = () => audioTrackRef.current?.pause();
   const trackStop  = () => {
@@ -5081,11 +5104,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
     a.currentTime = getAudioTrim().start || 0;
   };
   const trackSeek  = (timelineT) => {
-    const a = audioTrackRef.current;
-    if (!a) return;
-    const trim = getAudioTrim();
-    if (timelineT < (trim.offset||0)) { a.pause(); a.currentTime = trim.start||0; return; }
-    a.currentTime = audioFileT(timelineT);
+    syncTrackToTimeline(timelineT, false);
   };
 
   // Full stop — resets position
@@ -5129,7 +5148,9 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
     applyLiveVolumes();
     v.play().catch(() => {});
     const onTU = () => {
-      setPlayheadTime(offset + (v.currentTime - startAt));
+      const timelineT = offset + (v.currentTime - startAt);
+      setPlayheadTime(timelineT);
+      syncTrackToTimeline(timelineT, true);
       if (v.currentTime >= endAt - 0.15) {
         v.removeEventListener("timeupdate", onTU);
         tuRef.current = null;
@@ -5195,7 +5216,9 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
       trackPlay(clampedT);
       const offset = elapsed;
       const onTU = () => {
-        setPlayheadTime(offset + (v.currentTime - (trim.start || 0)));
+        const timelineT = offset + (v.currentTime - (trim.start || 0));
+        setPlayheadTime(timelineT);
+        syncTrackToTimeline(timelineT, true);
         if (v.currentTime >= endAt - 0.15) {
           v.removeEventListener("timeupdate", onTU);
           tuRef.current = null;
@@ -5764,12 +5787,11 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
           {/* Top — video preview + transport controls */}
           <div style={{ padding:"20px 20px 14px", display:"flex", flexDirection:"column", gap:12, flexShrink:0 }}>
             <div style={{ width:"100%", maxWidth:1040, margin:"0 auto", display:"flex", flexDirection:"column", gap:12 }}>
-              <video ref={cardVRef}
-                style={{ width:"100%", maxHeight:"46vh", borderRadius:10, aspectRatio:"16/9", objectFit:"contain", background:"#000", display:"block", outline:"none" }}
-                onEnded={handleStop}/>
+            <video ref={cardVRef}
+              style={{ width:"100%", maxHeight:"46vh", borderRadius:10, aspectRatio:"16/9", objectFit:"contain", background:"#000", display:"block", outline:"none" }}
+              onEnded={handleStop}/>
             {audioNode?.audioUrl && (
-              <audio ref={audioTrackRef} src={audioNode.audioUrl} style={{ display:"none" }}
-                onEnded={()=>{ if(playState==="playing") handleStop(); }}/>
+              <audio ref={audioTrackRef} src={audioNode.audioUrl} style={{ display:"none" }}/>
             )}
             {/* Play controls — large */}
               <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
@@ -5899,8 +5921,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
             onEnded={handleStop}/>
           {/* Soundtrack — hidden audio element synced to the video timeline */}
           {audioNode?.audioUrl && (
-            <audio ref={audioTrackRef} src={audioNode.audioUrl} style={{ display:"none" }}
-              onEnded={()=>{ if(playState==="playing") handleStop(); }}/>
+            <audio ref={audioTrackRef} src={audioNode.audioUrl} style={{ display:"none" }}/>
           )}
 
           {/* Play controls */}
