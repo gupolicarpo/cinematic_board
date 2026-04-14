@@ -546,13 +546,11 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
         </div>
 
         {/* AI Write Mode — dark feature card below the video */}
-        <div style={{ position:"relative", width:"100%", paddingTop:"56.25%",
-          borderRadius:16, overflow:"hidden",
+        <div style={{ background:DARK, borderRadius:16, overflow:"hidden",
           border:"1px solid rgba(255,255,255,0.08)",
           boxShadow:"0 24px 64px rgba(0,0,0,0.18)",
-          marginBottom:40 }}>
-          <div style={{ position:"absolute", inset:0, background:DARK,
-            display:"flex", flexDirection:"column", justifyContent:"space-between", padding:"clamp(20px,3vw,48px)" }}>
+          marginBottom:40,
+          display:"flex", flexDirection:"column", gap:24, padding:"clamp(24px,3vw,40px)" }}>
 
             {/* top: label + description */}
             <div>
@@ -601,8 +599,6 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
                 </div>
               ))}
             </div>
-
-          </div>
         </div>
       </Section>
 
