@@ -437,7 +437,7 @@ function mkImage(sceneId=null, shotId=null) { return { id:`im_${uid()}`, type:T.
 function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", resolution:"720p", sound:"off", prevKlingId:null, voice:"none", lipsync:false, klingVersion:"v3", klingVideoId:null, klingVideoDuration:null }; }
 function mkVeo()   { return { id:`veo_${uid()}`, type:T.VEO, shotId:null, videoUrl:null, aspect_ratio:"16:9", duration:8, resolution:"720p", startFrameNodeId:null, endFrameNodeId:null, refNodeIds:[], useRefs:true, refType:"asset", manualPrompt:"" }; }
 function mkLlm()   { return { id:`llm_${uid()}`, type:T.LLM, targetNodeIds:[], targetNodeId:null, llmMode:"edit", command:"", model:"claude-sonnet-4-5", lastResult:null }; }
-function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p" }; }
+function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p", lastSplitAction:null }; }
 function mkScript()   { return { id:`scr_${uid()}`, type:T.SCRIPT, title:"Untitled Script", script:"", idea:"", format:"screenplay", scriptMode:"write" }; }
 function mkAudio()    { return { id:`aud_${uid()}`, type:T.AUDIO, audioUrl:null, fileName:null, bpm:null, beats:[], duration:0, snapEnabled:true, videoNodeId:null }; }
 function mkClip()     { return { id:`clp_${uid()}`, type:T.CLIP,  videoUrl:null, fileName:null, duration:0 }; }
@@ -5284,7 +5284,20 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
     videoNodeIds: (node.videoNodeIds||[]).filter(x => x !== id),
     localClips:   (node.localClips||[]).filter(c => c.id !== id),
     clipOrder:    (node.clipOrder||[]).filter(x => x !== id),
+    lastSplitAction: null,
   });
+
+  const canUndoSplit = !!node.lastSplitAction;
+  const undoLastSplit = () => {
+    const action = node.lastSplitAction;
+    if (!action) return;
+    upd({
+      localClips: action.localClips || [],
+      clipOrder: action.clipOrder || [],
+      trims: action.trims || {},
+      lastSplitAction: null,
+    });
+  };
 
   // Split the clip under the playhead into two clips at the playhead position.
   // Both halves stay in the timeline — first half ends at playhead, second starts there.
@@ -5321,10 +5334,25 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
         const order = clips.map(c => c.id);
         order.splice(i + 1, 0, newId);
 
+        const prevTrims = Object.fromEntries(
+          Object.entries(node.trims || {}).map(([k, v]) => [k, { ...(v || {}) }])
+        );
+        const prevLocalClips = [...(node.localClips || [])];
+        const prevClipOrder = (node.clipOrder && node.clipOrder.length > 0)
+          ? [...node.clipOrder]
+          : clips.map(c => c.id);
+
         upd({
-          localClips: [...(node.localClips || []), newClip],
+          localClips: [...prevLocalClips, newClip],
           clipOrder:  order,
           trims:      { ...(node.trims || {}), [clip.id]: firstTrim, [newId]: secondTrim },
+          lastSplitAction: {
+            sourceClipId: clip.id,
+            newClipId: newId,
+            localClips: prevLocalClips,
+            clipOrder: prevClipOrder,
+            trims: prevTrims,
+          },
         });
         break;
       }
@@ -5696,6 +5724,14 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
                   cursor:clips.length?"pointer":"not-allowed", opacity:clips.length?1:0.4 }}>
                 SPLIT
               </button>
+              <button onClick={e=>{e.stopPropagation();undoLastSplit();}}
+                disabled={!canUndoSplit}
+                style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t2,
+                  borderRadius:7, padding:"9px 14px", fontSize:11, fontWeight:700,
+                  fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em",
+                  cursor:canUndoSplit?"pointer":"not-allowed", opacity:canUndoSplit?1:0.4 }}>
+                UNDO SPLIT
+              </button>
               {exportButtons(false)}
               <button onClick={e=>{e.stopPropagation();fileInputRef.current?.click();}}
                 style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t2,
@@ -5836,6 +5872,15 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
                 fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em",
                 cursor:clips.length?"pointer":"not-allowed", opacity:clips.length?1:0.4 }}>
               ✂ SPLIT
+            </button>
+            <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();undoLastSplit();}}
+              disabled={!canUndoSplit}
+              title="Undo the last split"
+              style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t2,
+                borderRadius:4, padding:"3px 7px", fontSize:7, fontWeight:700,
+                fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em",
+                cursor:canUndoSplit?"pointer":"not-allowed", opacity:canUndoSplit?1:0.4 }}>
+              UNDO SPLIT
             </button>
           </div>
 
