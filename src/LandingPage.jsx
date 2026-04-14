@@ -603,7 +603,6 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
 
           </div>
         </div>
-        </div>
       </Section>
 
       {/* ── STORYBOARD SECTION ── */}
