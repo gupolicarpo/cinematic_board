@@ -4830,7 +4830,7 @@ function AudioTrackCard({ node, upd, onDel, sel: selected, onStartWire, nodePos,
   );
 }
 
-function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, onInspect }) {
+function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, onInspect, onOpenFullscreen, isFullscreen }) {
   const th = useTheme();
   const ac = th.dark ? "#e2e8f0" : "#0f172a";
   const beatAc = "#10b981"; // same as AudioTrackCard accent
@@ -5520,17 +5520,121 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
     </>
   );
 
-  const cardW = expanded ? 460 : 300;
-  const pps   = expanded ? 32  : 20;
+  const cardW = isFullscreen ? "100%" : 300;
+  const pps   = isFullscreen ? 64 : 20;
 
+  // ── FULLSCREEN layout ────────────────────────────────────────────────────────
+  if (isFullscreen) {
+    return (
+      <div style={{ width:"100%", height:"100%", display:"flex", flexDirection:"column",
+        fontFamily:"'Inter',system-ui,sans-serif", color:th.t0 }}>
+        {/* Header */}
+        <div style={{ height:50, flexShrink:0, borderBottom:`1px solid ${th.b0}`, background:th.card2,
+          display:"flex", alignItems:"center", padding:"0 20px", gap:12 }}>
+          <Ico icon={Scissors} size={13} color={ac}/>
+          <span style={{ fontSize:11, letterSpacing:"0.2em", color:ac, fontWeight:700 }}>VIDEO EDIT</span>
+          <span style={{ fontSize:10, color:th.t3 }}>{clips.length} CLIPS · {totalDur.toFixed(1)}s</span>
+          {audioNode?.beats?.length > 0 && (
+            <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();snapToBeat();}}
+              style={{ border:`1px solid ${beatAc}`, borderRadius:5, background:`${beatAc}22`,
+                color:beatAc, fontSize:9, fontWeight:700, padding:"4px 10px", cursor:"pointer",
+                letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif" }}>
+              ♩ SNAP TO BEAT
+            </button>
+          )}
+          <div style={{ flex:1 }}/>
+          <button onClick={e=>{e.stopPropagation();splitAtPlayhead();}}
+            disabled={!clips.length||totalDur===0}
+            style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t2,
+              borderRadius:4, padding:"5px 12px", fontSize:9, fontWeight:700,
+              fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em",
+              cursor:clips.length?"pointer":"not-allowed", opacity:clips.length?1:0.4 }}>
+            ✂ SPLIT
+          </button>
+          {exportButtons(false)}
+          <button onClick={e=>{e.stopPropagation();fileInputRef.current?.click();}}
+            style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t2,
+              borderRadius:5, padding:"5px 12px", fontSize:9, fontWeight:700,
+              fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.1em", cursor:"pointer" }}>
+            ↑ UPLOAD
+          </button>
+          <button onClick={e=>{e.stopPropagation();onOpenFullscreen?.();}}
+            style={{ background:"transparent", border:`1px solid ${th.b1}`, color:th.t2,
+              borderRadius:5, padding:"5px 14px", fontSize:10, fontWeight:700,
+              fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em", cursor:"pointer" }}>
+            ✕ EXIT
+          </button>
+        </div>
+
+        {/* Body: video (left) + timeline (right) */}
+        <div style={{ flex:1, display:"flex", overflow:"hidden", gap:0 }}>
+
+          {/* Left — video + play controls */}
+          <div style={{ flex:"0 0 62%", display:"flex", flexDirection:"column", borderRight:`1px solid ${th.b0}`,
+            padding:20, gap:12, background:th.bg }}>
+            <video ref={cardVRef}
+              style={{ width:"100%", borderRadius:10, aspectRatio:"16/9", background:"#000", display:"block", outline:"none" }}
+              onEnded={handleStop}/>
+            {audioNode?.audioUrl && (
+              <audio ref={audioTrackRef} src={audioNode.audioUrl} style={{ display:"none" }}
+                onEnded={()=>{ if(playState==="playing") handleStop(); }}/>
+            )}
+            {/* Play controls — large */}
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              {playState === "playing" ? (
+                <button onClick={e=>{e.stopPropagation();handlePause();}}
+                  style={{ border:"none", color:"#fff", borderRadius:7, fontWeight:700, letterSpacing:"0.12em",
+                    fontFamily:"'Inter',system-ui,sans-serif", padding:"9px 22px", fontSize:12,
+                    background:"#374151", cursor:"pointer" }}>⏸ PAUSE</button>
+              ) : playState === "paused" ? (
+                <>
+                  <button onClick={e=>{e.stopPropagation();handleResume();}}
+                    style={{ border:"none", color:"#fff", borderRadius:7, fontWeight:700, letterSpacing:"0.12em",
+                      fontFamily:"'Inter',system-ui,sans-serif", padding:"9px 22px", fontSize:12,
+                      background:"#0a0a0a", cursor:"pointer" }}>▶ RESUME</button>
+                  <button onClick={e=>{e.stopPropagation();handleStop();}}
+                    style={{ border:`1px solid #374151`, color:th.t2, borderRadius:7, fontWeight:700,
+                      fontFamily:"'Inter',system-ui,sans-serif", padding:"9px 18px", fontSize:12,
+                      background:"transparent", cursor:"pointer" }}>⏹</button>
+                </>
+              ) : (
+                <button onClick={e=>{e.stopPropagation();handlePlay();}}
+                  disabled={!clips.length}
+                  style={{ border:"none", color:"#fff", borderRadius:7, fontWeight:700, letterSpacing:"0.12em",
+                    fontFamily:"'Inter',system-ui,sans-serif", padding:"9px 22px", fontSize:12,
+                    background:"#0a0a0a", cursor:clips.length?"pointer":"not-allowed", opacity:clips.length?1:0.4 }}>
+                  ▶ PLAY
+                </button>
+              )}
+              <span style={{ fontSize:13, color:th.t2, fontVariantNumeric:"tabular-nums" }}>
+                {playheadTime.toFixed(1)}s / {totalDur.toFixed(1)}s
+              </span>
+              {audioNode?.audioUrl && (
+                <span style={{ fontSize:11, color:"#10b981", display:"flex", alignItems:"center", gap:4 }}>
+                  ♪ {audioNode.fileName ? audioNode.fileName.replace(/\.[^.]+$/,"").slice(0,20) : "TRACK"}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Right — timeline */}
+          <div style={{ flex:1, display:"flex", flexDirection:"column", padding:20, overflow:"auto", background:th.card }}>
+            <input ref={fileInputRef} type="file" accept="video/*" style={{ display:"none" }} onChange={handleUpload}/>
+            {clips.length > 0 ? renderTimeline(pps) : emptySlate}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── COMPACT card (on canvas) ──────────────────────────────────────────────────
   return (
     <div data-nodeid={node.id} data-nodetype={T.VIDEOEDIT} style={{ position:"relative", width:cardW }}>
       <div style={{ position:"absolute", left:-4, top:48, width:8, height:8, background:th.card,
         border:`1.5px solid ${clips.length>0?ac:th.b0}`, borderRadius:"50%", zIndex:10, pointerEvents:"none" }}/>
 
       <div style={{ width:cardW, background:th.card, border:`1px solid ${selected?ac:th.b0}`, borderRadius:16,
-        overflow:"hidden", fontFamily:"'Inter',system-ui,sans-serif", boxShadow:`0 4px 24px ${th.sh}`,
-        transition:"width 0.18s ease" }}>
+        overflow:"hidden", fontFamily:"'Inter',system-ui,sans-serif", boxShadow:`0 4px 24px ${th.sh}` }}>
 
         {/* ── HEADER ── */}
         <div style={{ padding:"10px 12px 6px", borderBottom:`1px solid ${th.b0}`,
@@ -5549,13 +5653,16 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode, o
               ♩ SNAP TO BEAT
             </button>
           )}
-          {/* Expand / collapse toggle */}
+          {/* Fullscreen / collapse toggle */}
           <button onMouseDown={e => e.stopPropagation()}
-            onClick={e => { e.stopPropagation(); setExpanded(x => !x); }}
-            style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer",
-              fontSize:13, padding:"0 3px", lineHeight:1, marginLeft:"auto" }}
-            title={expanded ? "Collapse" : "Expand"}>
-            {expanded ? "⊡" : "⤢"}
+            onClick={e => { e.stopPropagation(); onOpenFullscreen?.(); }}
+            style={{ background: isFullscreen ? "transparent" : "transparent", border: isFullscreen ? `1px solid ${th.b1}` : "none",
+              color: isFullscreen ? th.t2 : th.t3, cursor:"pointer",
+              fontSize: isFullscreen ? 12 : 13, padding: isFullscreen ? "3px 10px" : "0 3px",
+              borderRadius: isFullscreen ? 5 : 0, lineHeight:1, marginLeft:"auto",
+              fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em" }}
+            title={isFullscreen ? "Exit fullscreen (Esc)" : "Open fullscreen editor"}>
+            {isFullscreen ? "✕ CLOSE" : "⤢"}
           </button>
           {onInspect && <InspectAction onClick={onInspect} th={th} />}
           <button onMouseDown={e => e.stopPropagation()}
@@ -8165,6 +8272,7 @@ export default function App() {
   const [outOfCredits,    setOutOfCredits]     = useState(null); // { needed, balance, op } or null
   const [showTopup,       setShowTopup]        = useState(false);
   const [pricingData,     setPricingData]      = useState(null);
+  const [fullscreenVEId,  setFullscreenVEId]   = useState(null); // VideoEdit fullscreen overlay
 
   // Check for existing session on mount
   useEffect(() => {
@@ -9018,7 +9126,7 @@ export default function App() {
         {n.type===T.KLING&&<KlingCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} credits={credits} onOutOfCredits={setOutOfCredits} />}
         {n.type===T.VEO&&<VeoCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} credits={credits} onOutOfCredits={setOutOfCredits} />}
         {n.type===T.LLM&&<LlmCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onUpdateNode={updNode} onInspect={()=>openInspector(n.id)} />}
-        {n.type===T.VIDEOEDIT&&<VideoEditCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} audioNode={nodes.find(x=>x.id===n.audioNodeId)||null} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.VIDEOEDIT&&<VideoEditCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} audioNode={nodes.find(x=>x.id===n.audioNodeId)||null} onInspect={()=>openInspector(n.id)} onOpenFullscreen={()=>setFullscreenVEId(n.id)} />}
         {n.type===T.AUDIO&&<AudioTrackCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={nodePosValue} allNodes={nodes} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.SCRIPT&&<ScriptCard node={n} sel={isSel} upd={pr=>updNode(n.id,pr)} onDel={()=>delNode(n.id)} onSplitScenes={scenes=>onSplitScenes(n.id,scenes)} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.CLIP&&<ClipCard node={n} sel={isSel} upd={pr=>updNode(n.id,pr)} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={nodePosValue} onInspect={()=>openInspector(n.id)} />}
@@ -9490,6 +9598,29 @@ export default function App() {
         </div>
       </div>
     )}
+
+    {/* ── VIDEO EDIT FULLSCREEN ────────────────────────────────────────────── */}
+    {fullscreenVEId && (() => {
+      const veNode = nodes.find(n => n.id === fullscreenVEId);
+      const veAudio = nodes.find(x => x.id === veNode?.audioNodeId) || null;
+      if (!veNode) { setFullscreenVEId(null); return null; }
+      return (
+        <div style={{ position:"fixed", inset:0, zIndex:9996, background:"rgba(0,0,0,0.97)", display:"flex", flexDirection:"column" }}
+          onKeyDown={e => { if (e.key === "Escape") setFullscreenVEId(null); }} tabIndex={-1}>
+          <VideoEditCard
+            node={veNode}
+            sel={true}
+            upd={p => updNode(fullscreenVEId, p)}
+            onDel={() => { delNode(fullscreenVEId); setFullscreenVEId(null); }}
+            allNodes={nodes}
+            audioNode={veAudio}
+            onInspect={() => openInspector(fullscreenVEId)}
+            onOpenFullscreen={() => setFullscreenVEId(null)}
+            isFullscreen={true}
+          />
+        </div>
+      );
+    })()}
 
     {/* ── PRICING PAGE OVERLAY ─────────────────────────────────────────────── */}
     {showPricing && (
