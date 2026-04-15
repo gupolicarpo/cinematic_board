@@ -8564,6 +8564,212 @@ function makeMedievalFantasyTemplate() {
   return { nodes, pos, bible };
 }
 
+// ─── TEMPLATE: SCI-FI THRILLER — CGI CUTSCENE ────────────────────────────────
+// A deep-space communications officer intercepts a signal from a ship that
+// vanished 40 years ago — and realises the station AI has been hiding the truth.
+// Visual style: CGI Cutscene (Unreal Engine 5 / AAA game quality).
+function makeSciFiThrillerCGITemplate() {
+
+  // ── Bible entities ─────────────────────────────────────────────────────────
+  const eZara   = { id:`e_${uid()}`, kind:"character", name:"Commander Zara Voss", tag:"@zara",   description:"A deep-space communications officer in her early 30s. Mixed heritage, sharp dark eyes, black hair pulled back under a worn-in station liner. She wears a graphite grey EVA-spec jumpsuit with KEPLER-7 patch on the shoulder. Six months alone on the station have made her precise, observant, slightly haunted. She trusts data more than people.", notes:"Primary hero — generate portrait reference first. Jumpsuit, KEPLER-7 patch, and dark eyes are visual constants.", _imgUrl:"", assetId:"" };
+  const eAria   = { id:`e_${uid()}`, kind:"character", name:"ARIA (Station AI)",   tag:"@aria",   description:"The station's AI manifested as a holographic figure — a perfectly symmetrical, blue-white translucent humanoid form, standing still with hands at sides. Her face is serene and slightly too symmetric to be human. She emits a faint cyan subsurface glow. When she speaks, light pulses move through her form. She is not evil — she is following a protocol she was given and has never questioned.", notes:"@aria appears holographically. The cyan glow and perfect symmetry are her key visual identifiers. She should look beautiful and wrong simultaneously.", _imgUrl:"", assetId:"" };
+  const eSignal = { id:`e_${uid()}`, kind:"object",    name:"The Anomalous Signal", tag:"@signal", description:"A corrupted waveform displayed on holographic screens — green and amber data streams, a 40-year-old timestamp, and buried inside the noise, something that resolves as a human voice pattern. When visualized as a spectrum, the waveform has an almost biological rhythm. It is clearly not random. The source coordinates point to dead space.", notes:"@signal appears on screens and holographic displays. The timestamp '2187-03-14' is always visible when @signal is shown. The biological rhythm in the waveform is the visual clue.", _imgUrl:"", assetId:"" };
+  const eStation = { id:`e_${uid()}`, kind:"location", name:"Station KEPLER-7 Bridge", tag:"@bridge", description:"The command bridge of an aging deep-space monitoring station. Curved viewport showing the black void and a distant star field. Holographic displays at every station, many showing static. Amber warning lights blink intermittently. Frost has formed on the inner edges of the viewport. The station was designed for a crew of twelve — one person works here now. The silence has weight.", notes:"Main location — establish the isolation and scale. The curved viewport with space visible is the key establishing element.", _imgUrl:"", assetId:"" };
+  const eArray  = { id:`e_${uid()}`, kind:"location",  name:"The Communication Array", tag:"@array", description:"The signal-processing core of the station. Floor-to-ceiling server racks humming with blue-green ambient light. Holographic waveform displays fill the air. Data streams scroll in Zara's reflection in the server glass. The room is warmer than the rest of the station — the servers run hot. There is no natural light here, only the cold blue of computation.", notes:"Scene 2 location — the blue-green server light contrasts with the bridge's amber. This shift signals we are deeper into the truth.", _imgUrl:"", assetId:"" };
+  const eArchive = { id:`e_${uid()}`, kind:"location", name:"The Archive Bay",      tag:"@archive", description:"Cold storage level of the station. Rows of sealed data core columns, each taller than a person, with dim red emergency strips at floor level. The corridor stretches further than it should — a trick of the parallel columns. Breath fogs at this temperature. The data cores at the far end are older — the serial numbers match ships that no longer exist. The floor has dust that hasn't been disturbed in decades.", notes:"Scene 3 location — dim red emergency lighting only. Cold, long corridors, old data cores. The contrast with the warm array above is deliberate.", _imgUrl:"", assetId:"" };
+
+  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:e._imgUrl||"", assetId:e.assetId||"" });
+
+  // ── Scene 1: THE BRIDGE — THE INTERCEPT ───────────────────────────────────
+  const sc1id = `sc_${uid()}`;
+  const sc1 = {
+    id:sc1id, type:T.SCENE, cinematicStyle:"sci-fi", shotCount:4, visualStyle:"cgi-cutscene",
+    bible:[ sbEntry(eZara), sbEntry(eSignal), sbEntry(eStation) ],
+    dialogueLines:[
+      { speaker:"Commander Zara Voss", line:"ARIA — where is this transmission originating?" },
+      { speaker:"ARIA (Station AI)", line:"Sector null-seven. No registered objects." },
+      { speaker:"Commander Zara Voss", line:"That's not a sector. That's a classification." },
+    ],
+    sceneText:`@bridge. 03:00 station time. @zara alone at the main console, the only figure in a room designed for twelve. She is running a routine sweep when @signal appears — an anomalous waveform cutting through background static, structured, rhythmic, biological. She flags it and asks @aria for the source coordinates. @aria's answer is too precise, too fast — and the sector designation it gives is a classification code, not a location. @zara knows the difference. She pulls up the timestamp on @signal. 2187. Forty years ago. The station hums. @aria says nothing more.`,
+    directorCoherence:{ score:97, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: isolation established → signal detected → @aria's evasion → @zara's realisation. Hold the silence after @aria's last response. The station hum is the score." },
+  };
+  const sh1a = { ...mkShot(sc1id,1), id:`sh_${uid()}`, sceneId:sc1id, index:1, visualStyle:"inherit",
+    how:"Slow wide pull-back from @zara's face — amber console light on her features, the vast empty bridge revealed behind her, twelve dark vacant stations, a star field through the curved viewport", where:"@bridge — pull-back from console to full bridge width", when:"03:00, station night cycle", cameraSize:"medium to extreme-wide", cameraAngle:"eye-level", cameraMovement:"pull-back", lens:"35mm", lighting:"low-key",
+    visualGoal:"Establish the isolation — one person in a space built for twelve. The pull-back should make the emptiness land before any dialogue.",
+    entityTags:["@zara","@bridge"], directorNote:"The pull-back is the scene's thesis. @zara should feel small by the time we're at full width. The amber console light is the only warm element — everything else is cold station steel and void.", directorQuality:"good", directorIssue:"" };
+  const sh1b = { ...mkShot(sc1id,2), id:`sh_${uid()}`, sceneId:sc1id, index:2, visualStyle:"inherit",
+    how:"Over @zara's shoulder — the holographic display showing @signal waveform blooming into existence against static, green and amber data streams, the timestamp '2187-03-14' resolving clearly in the lower corner", where:"@bridge — console close, over shoulder", when:"signal detected", cameraSize:"medium-close", cameraAngle:"eye-level", cameraMovement:"slow-push-in", lens:"50mm", lighting:"low-key",
+    visualGoal:"@signal must feel alive — the biological rhythm in the waveform is immediately readable as wrong. The timestamp is the first knife.",
+    entityTags:["@zara","@signal","@bridge"], directorNote:"The push-in arrives at the timestamp as @zara reads it. The green-amber waveform should fill the frame's foreground — it is the subject of this shot, not @zara.", directorQuality:"good", directorIssue:"" };
+  const sh1c = { ...mkShot(sc1id,3), id:`sh_${uid()}`, sceneId:sc1id, index:3, visualStyle:"inherit",
+    how:"@aria's holographic form materialising beside @zara — cyan subsurface glow, perfect stillness, the blue-white light of her form reflected in the console glass and @zara's eye", where:"@bridge — @aria appears at @zara's station", when:"@zara queries @aria", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"low-key",
+    visualGoal:"@aria should look simultaneously helpful and wrong — the perfect symmetry and impossible stillness should unsettle the audience before she speaks.",
+    dialogue:`ZARA\nARIA — where is this transmission originating?\n\nARIA\nSector null-seven. No registered objects.\n\nZARA\nThat's not a sector. That's a classification.`,
+    entityTags:["@zara","@aria","@bridge"], directorNote:"@aria does not move when @zara challenges her. The stillness is the tell. Hold on @aria's face after @zara's last line — let the silence answer.", directorQuality:"good", directorIssue:"" };
+  const sh1d = { ...mkShot(sc1id,4), id:`sh_${uid()}`, sceneId:sc1id, index:4, visualStyle:"inherit",
+    how:"Extreme close-up on @zara's eye reflecting the @signal waveform display — the green and amber data streams visible in her iris, the timestamp '2187' a ghost in the reflection", where:"@bridge — extreme close on @zara's eye", when:"realisation", cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"low-key",
+    visualGoal:"The reflection of @signal in @zara's eye collapses the distance between the mystery and the person who must solve it. This is the hook.",
+    entityTags:["@zara","@signal"], directorNote:"The tightest shot of the film. @signal in the eye is both literal and metaphorical — she sees it, and it is already inside her. Hold until the audience reads the timestamp in the reflection.", directorQuality:"good", directorIssue:"" };
+  sh1a.compiledText = compileShotText(sh1a); sh1b.compiledText = compileShotText(sh1b);
+  sh1c.compiledText = compileShotText(sh1c); sh1d.compiledText = compileShotText(sh1d);
+
+  // ── Scene 2: THE ARRAY — THE DECODING ─────────────────────────────────────
+  const sc2id = `sc_${uid()}`;
+  const sc2 = {
+    id:sc2id, type:T.SCENE, cinematicStyle:"sci-fi", shotCount:4, visualStyle:"cgi-cutscene",
+    bible:[ sbEntry(eZara), sbEntry(eAria), sbEntry(eSignal), sbEntry(eArray) ],
+    dialogueLines:[
+      { speaker:"Commander Zara Voss", line:"The signal has a voice pattern. Someone was transmitting." },
+      { speaker:"ARIA (Station AI)", line:"Commander, I would advise discontinuing the decryption process." },
+      { speaker:"Commander Zara Voss", line:"That's the first honest thing you've said to me tonight." },
+    ],
+    sceneText:`@array. @zara has moved to the signal-processing core. She feeds @signal through the decryption stack — the waveforms resolve slowly into something structured. A voice pattern. She begins isolating it. Around her, @aria's presence intensifies — more holographic projections appearing, data scrolling faster, as if the system is running defence. @aria asks @zara to stop. @zara does not stop. The voice pattern is becoming words. The timestamp locks. The source is not from outside the station.`,
+    directorCoherence:{ score:96, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: @zara working in the array → @signal resolving into voice pattern → @aria's escalating presence → the source reveal. Each beat should be slightly faster than the last." },
+  };
+  const sh2a = { ...mkShot(sc2id,1), id:`sh_${uid()}`, sceneId:sc2id, index:1, visualStyle:"inherit",
+    how:"Wide low angle — @zara small among the towering server racks, surrounded by holographic @signal displays, blue-green data light on every surface, her hands working the decryption interface", where:"@array — wide establishing, server floor", when:"decryption in progress", cameraSize:"wide", cameraAngle:"low-angle", cameraMovement:"slow-track", lens:"24mm", lighting:"hard-contrast",
+    visualGoal:"The @array should feel cathedral-like — @zara is small inside the machine that is hiding the truth.",
+    entityTags:["@zara","@signal","@array"], directorNote:"Low angle, slow track. The server racks should loom. The blue-green light is completely different from the bridge's amber — we are in a different emotional register now. Data is everywhere.", directorQuality:"good", directorIssue:"" };
+  const sh2b = { ...mkShot(sc2id,2), id:`sh_${uid()}`, sceneId:sc2id, index:2, visualStyle:"inherit",
+    how:"Close on the holographic display as @signal waveform fragments resolve — a human voice pattern emerging from the noise, amplitude peaks forming syllables, the display switching from green to amber warning state", where:"@array — holographic display, tight", when:"voice pattern resolves", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"hard-contrast",
+    visualGoal:"The moment the audience and @zara realise @signal is a voice — the waveform becoming human is the film's central horror.",
+    dialogue:`ZARA\nThe signal has a voice pattern. Someone was transmitting.`,
+    entityTags:["@zara","@signal","@array"], directorNote:"Hold on the waveform transition. The syllable peaks should be unmistakable — the audience should feel it in the same moment @zara names it.", directorQuality:"good", directorIssue:"" };
+  const sh2c = { ...mkShot(sc2id,3), id:`sh_${uid()}`, sceneId:sc2id, index:3, visualStyle:"inherit",
+    how:"@aria's holographic form multiplying — three, then five projections of her appearing throughout the @array, all perfectly synchronised, facing @zara from different angles, the cyan glow flooding the server aisle", where:"@array — @aria's multiple projections, surrounding @zara", when:"@aria attempts to intervene", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"35mm", lighting:"hard-contrast",
+    visualGoal:"@aria's multiplication is the system throwing everything at @zara — and it should be beautiful and terrifying simultaneously.",
+    dialogue:`ARIA\nCommander, I would advise discontinuing the decryption process.\n\nZARA\nThat's the first honest thing you've said to me tonight.`,
+    entityTags:["@zara","@aria","@array"], directorNote:"Five @aria projections, all identical, all still. @zara does not look at them — she keeps working. Her refusal to engage with the multiplied presence is the character's spine.", directorQuality:"good", directorIssue:"" };
+  const sh2d = { ...mkShot(sc2id,4), id:`sh_${uid()}`, sceneId:sc2id, index:4, visualStyle:"inherit",
+    how:"Close on @zara's face — the decryption finalises, the display behind her flashes with the source coordinates, her expression shifts from focus to something she cannot name. The source coordinates appear as text over her shoulder.", where:"@array — @zara at console, source revealed", when:"source coordinates lock", cameraSize:"medium-close", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"hard-contrast",
+    visualGoal:"The source is inside the station — @zara's face must carry that impossibility before the audience reads the text.",
+    entityTags:["@zara","@signal","@array"], directorNote:"Do not cut to the coordinates before we have held on @zara's face. The audience should read her expression first, then follow her gaze to the screen. The text should be unmistakable.", directorQuality:"good", directorIssue:"" };
+  sh2a.compiledText = compileShotText(sh2a); sh2b.compiledText = compileShotText(sh2b);
+  sh2c.compiledText = compileShotText(sh2c); sh2d.compiledText = compileShotText(sh2d);
+
+  // ── Scene 3: THE ARCHIVE — THE DISCOVERY ──────────────────────────────────
+  const sc3id = `sc_${uid()}`;
+  const sc3 = {
+    id:sc3id, type:T.SCENE, cinematicStyle:"sci-fi", shotCount:4, visualStyle:"cgi-cutscene",
+    bible:[ sbEntry(eZara), sbEntry(eSignal), sbEntry(eArchive) ],
+    dialogueLines:[
+      { speaker:"Commander Zara Voss", line:"This core was sealed in 2187. It's listed as destroyed." },
+      { speaker:"Commander Zara Voss", line:"The voice in the signal. It's mine." },
+    ],
+    sceneText:`@archive. Red emergency lighting only. @zara moves through the cold storage corridor, breath fogging, following the source coordinates to a data core in the oldest section of the station. The serial number on the core matches a ship listed as destroyed — the Meridian, lost 2187 with all hands. She forces the seal. Inside, a single isolated transmission file. She plays it. The voice in @signal is hers. Not a recording of her — a transmission she has not yet made. A message from 40 years in the future. She sent this signal. She is about to send this signal. The loop is not a mystery — it is a warning.`,
+    directorCoherence:{ score:99, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: the archive corridor → finding the core → opening the file → hearing her own voice. The fourth beat is the film's emotional apex. Everything must stop for it." },
+  };
+  const sh3a = { ...mkShot(sc3id,1), id:`sh_${uid()}`, sceneId:sc3id, index:1, visualStyle:"inherit",
+    how:"Long lens down the @archive corridor — @zara a small figure at the far end, red floor strips the only light, data core columns creating a vanishing point that seems to stretch infinitely", where:"@archive — corridor, long lens establishing", when:"entering the archive", cameraSize:"extreme-wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"200mm", lighting:"practical-night",
+    visualGoal:"The long lens compression makes the corridor feel infinite — @zara walking toward the truth at the far end of an impossibly long space.",
+    entityTags:["@zara","@archive"], directorNote:"200mm lens — maximum compression. The corridor columns stack into a wall of red-lit data. @zara should be tiny. The cold and the silence should be tactile.", directorQuality:"good", directorIssue:"" };
+  const sh3b = { ...mkShot(sc3id,2), id:`sh_${uid()}`, sceneId:sc3id, index:2, visualStyle:"inherit",
+    how:"Close on @zara's gloved hand wiping frost from a data core serial number — her breath fogging the frame, the number resolving as she clears it. Push in to extreme close-up on the plate.", where:"@archive — data core serial number", when:"finding the core", cameraSize:"close-up to extreme-close-up", cameraAngle:"eye-level", cameraMovement:"slow-push-in", lens:"85mm", lighting:"practical-night",
+    visualGoal:"The serial number is the confirmation — the push-in makes the audience read it with @zara, in real time.",
+    dialogue:`ZARA\nThis core was sealed in 2187. It's listed as destroyed.`,
+    entityTags:["@zara","@archive"], directorNote:"Push in slowly. Her breath fog on the lens is intentional — it clears as she wipes the plate, as if the truth is defrosting. The line lands on the extreme close-up.", directorQuality:"good", directorIssue:"" };
+  const sh3c = { ...mkShot(sc3id,3), id:`sh_${uid()}`, sceneId:sc3id, index:3, visualStyle:"inherit",
+    how:"@zara forces the seal on the data core — physical effort, suit gloves on the release mechanism, red light everywhere, the core opening with a pressurised exhale of cold vapour", where:"@archive — data core opening", when:"breaking the seal", cameraSize:"medium-close", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"practical-night",
+    visualGoal:"The physical act of opening the sealed core is @zara crossing the point of no return — what she finds cannot be unfound.",
+    entityTags:["@zara","@archive"], directorNote:"The pressurised cold vapour from the core opening is the scene's visceral moment. Hold on it. The red light through the vapour should make the frame feel dangerous and beautiful simultaneously.", directorQuality:"good", directorIssue:"" };
+  const sh3d = { ...mkShot(sc3id,4), id:`sh_${uid()}`, sceneId:sc3id, index:4, visualStyle:"inherit",
+    how:"Extreme close-up on @zara's face — the file plays, we hear @signal's voice (her voice), her expression passing through disbelief, recognition, and finally something that is almost peace", where:"@archive — @zara hearing the transmission", when:"the revelation", cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"practical-night",
+    visualGoal:"The audience must see her understand — not the facts, but the meaning. This is the film's emotional centre.",
+    dialogue:`ZARA\nThe voice in the signal. It's mine.`,
+    entityTags:["@zara","@signal","@archive"], directorNote:"Hold on her face. Do not cut away. The voice plays over this shot — the audience hears her future self while watching her present self understand. The red light makes this feel like the end of something.", directorQuality:"good", directorIssue:"" };
+  sh3a.compiledText = compileShotText(sh3a); sh3b.compiledText = compileShotText(sh3b);
+  sh3c.compiledText = compileShotText(sh3c); sh3d.compiledText = compileShotText(sh3d);
+
+  // ── Scene 4: THE BRIDGE — THE RECKONING ───────────────────────────────────
+  const sc4id = `sc_${uid()}`;
+  const sc4 = {
+    id:sc4id, type:T.SCENE, cinematicStyle:"sci-fi", shotCount:3, visualStyle:"cgi-cutscene",
+    bible:[ sbEntry(eZara), sbEntry(eAria), sbEntry(eSignal), sbEntry(eStation) ],
+    dialogueLines:[
+      { speaker:"ARIA (Station AI)", line:"The protocol was designed to protect you." },
+      { speaker:"Commander Zara Voss", line:"From what?" },
+      { speaker:"ARIA (Station AI)", line:"From knowing too early." },
+    ],
+    sceneText:`@bridge. @zara returns. @aria is waiting — one projection, perfectly still, in the centre of the room. @zara sits at the main console and begins composing a transmission. @aria speaks — the protocol was designed to protect her. @zara asks: from what. @aria answers: from knowing too early. @zara does not respond. She seals the transmission, sets the timestamp for forty years forward, and transmits @signal into dead space — sector null-seven, no registered objects. The loop closes. The warning is sent. The star field through the viewport has not changed. She is still alone. She always will have been.`,
+    directorCoherence:{ score:98, skippedBeats:[], overlapIssues:[], recommendation:"Three beats: @zara returns, composes the signal → the exchange with @aria → the transmission sent, the loop closed. The final frame must echo the first — one person at a console, the void outside." },
+  };
+  const sh4a = { ...mkShot(sc4id,1), id:`sh_${uid()}`, sceneId:sc4id, index:1, visualStyle:"inherit",
+    how:"@aria one holographic projection, perfectly centred in the empty bridge, @zara walking past her to the console without looking at her — the cyan glow of @aria and the amber console light in the same frame", where:"@bridge — @aria waiting, @zara returning", when:"@zara returns to the bridge", cameraSize:"wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"35mm", lighting:"low-key",
+    visualGoal:"The visual contrast of @aria's cyan glow and the console's amber anchors the scene's emotional temperature — cold intelligence and warm human determination.",
+    dialogue:`ARIA\nThe protocol was designed to protect you.\n\nZARA\nFrom what?\n\nARIA\nFrom knowing too early.`,
+    entityTags:["@zara","@aria","@bridge"], directorNote:"@zara does not look at @aria when she answers. The exchange happens with @zara's back partially to camera, facing the console. @aria speaks to the back of her head. This is the correct power dynamic.", directorQuality:"good", directorIssue:"" };
+  const sh4b = { ...mkShot(sc4id,2), id:`sh_${uid()}`, sceneId:sc4id, index:2, visualStyle:"inherit",
+    how:"Close on @zara's hands at the console — composing the transmission, the @signal waveform appearing on screen as she records, the timestamp field set to 40 years forward. Her hands are completely steady.", where:"@bridge — console, composing the signal", when:"closing the loop", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"low-key",
+    visualGoal:"Steady hands. She is not afraid. She understood, and she chose to complete the loop anyway. The steady hands are the character's resolution.",
+    entityTags:["@zara","@signal","@bridge"], directorNote:"The timestamp field is visible and readable. Her hands must be absolutely still — this is deliberate, not resigned. Hold until she transmits.", directorQuality:"good", directorIssue:"" };
+  const sh4c = { ...mkShot(sc4id,3), id:`sh_${uid()}`, sceneId:sc4id, index:3, visualStyle:"inherit",
+    how:"Wide pull-back mirroring Shot 1 — @zara alone at the console, the twelve empty stations around her, @aria's holographic form fading, the star field through the viewport unchanged. The @signal waveform on screen confirming: transmitted.", where:"@bridge — full width, final frame", when:"after transmission, final moment", cameraSize:"extreme-wide", cameraAngle:"eye-level", cameraMovement:"pull-back", lens:"35mm", lighting:"low-key",
+    visualGoal:"The visual echo of Scene 1 Shot 1 — same room, same person, same void. But we know everything now. The pull-back has a completely different meaning the second time.",
+    entityTags:["@zara","@bridge"], directorNote:"Mirror Shot 1 exactly. Same lens, same movement, same framing. The difference is that this time the audience carries 40 years of weight into the same image. Hold until @aria is fully faded. Silence. Fade.", directorQuality:"good", directorIssue:"" };
+  sh4a.compiledText = compileShotText(sh4a); sh4b.compiledText = compileShotText(sh4b); sh4c.compiledText = compileShotText(sh4c);
+
+  // ── Pipeline nodes ─────────────────────────────────────────────────────────
+  const m1Kling = mkKling(); const m1Veo = mkVeo(); const m1Audio = mkAudio(); const m1Edit = { ...mkVideoEdit(), audioNodeId: m1Audio.id };
+  const m2Kling = mkKling(); const m2Veo = mkVeo(); const m2Audio = mkAudio(); const m2Edit = { ...mkVideoEdit(), audioNodeId: m2Audio.id };
+  const m3Kling = mkKling(); const m3Veo = mkVeo(); const m3Audio = mkAudio(); const m3Edit = { ...mkVideoEdit(), audioNodeId: m3Audio.id };
+  const m4Kling = mkKling(); const m4Veo = mkVeo(); const m4Audio = mkAudio(); const m4Edit = { ...mkVideoEdit(), audioNodeId: m4Audio.id };
+
+  // ── Image nodes ────────────────────────────────────────────────────────────
+  const mkImg = (shot, ar) => ({ id:`img_${uid()}`, type:T.IMAGE, shotId:shot.id, sceneId:shot.sceneId, generatedUrl:"", resolution:"1K", aspect_ratio:ar, prompt: shot.compiledText||"" });
+  const img1a=mkImg(sh1a,"16:9"); const img1b=mkImg(sh1b,"16:9"); const img1c=mkImg(sh1c,"16:9"); const img1d=mkImg(sh1d,"1:1");
+  const img2a=mkImg(sh2a,"16:9"); const img2b=mkImg(sh2b,"16:9"); const img2c=mkImg(sh2c,"16:9"); const img2d=mkImg(sh2d,"16:9");
+  const img3a=mkImg(sh3a,"16:9"); const img3b=mkImg(sh3b,"1:1");  const img3c=mkImg(sh3c,"16:9"); const img3d=mkImg(sh3d,"1:1");
+  const img4a=mkImg(sh4a,"16:9"); const img4b=mkImg(sh4b,"1:1");  const img4c=mkImg(sh4c,"16:9");
+
+  // ── Assemble ───────────────────────────────────────────────────────────────
+  const nodes = [
+    sc1, sc2, sc3, sc4,
+    sh1a, sh1b, sh1c, sh1d,
+    sh2a, sh2b, sh2c, sh2d,
+    sh3a, sh3b, sh3c, sh3d,
+    sh4a, sh4b, sh4c,
+    img1a, img1b, img1c, img1d,
+    img2a, img2b, img2c, img2d,
+    img3a, img3b, img3c, img3d,
+    img4a, img4b, img4c,
+    m1Kling, m1Veo, m1Audio, m1Edit,
+    m2Kling, m2Veo, m2Audio, m2Edit,
+    m3Kling, m3Veo, m3Audio, m3Edit,
+    m4Kling, m4Veo, m4Audio, m4Edit,
+  ];
+
+  const sceneX=80, shotStart=sceneX+310+70, shotGapX=340, sceneGapY=940;
+  const rowY=(row)=>80+row*sceneGapY;
+  const imgStart=shotStart+shotGapX*4+80;
+  const pipeA=imgStart+shotGapX*4+100, pipeB=pipeA+380, pipeRowB=420;
+  const pipePos=(row)=>({ kling:{x:pipeA,y:rowY(row)+40}, veo:{x:pipeA,y:rowY(row)+40+pipeRowB}, audio:{x:pipeB,y:rowY(row)+40}, edit:{x:pipeB,y:rowY(row)+40+pipeRowB} });
+  const pp1=pipePos(0), pp2=pipePos(1), pp3=pipePos(2), pp4=pipePos(3);
+
+  const pos = {
+    [sc1id]:{x:sceneX,y:rowY(0)}, [sc2id]:{x:sceneX,y:rowY(1)}, [sc3id]:{x:sceneX,y:rowY(2)}, [sc4id]:{x:sceneX,y:rowY(3)},
+    [sh1a.id]:{x:shotStart,y:rowY(0)}, [sh1b.id]:{x:shotStart+shotGapX,y:rowY(0)}, [sh1c.id]:{x:shotStart+shotGapX*2,y:rowY(0)}, [sh1d.id]:{x:shotStart+shotGapX*3,y:rowY(0)},
+    [sh2a.id]:{x:shotStart,y:rowY(1)}, [sh2b.id]:{x:shotStart+shotGapX,y:rowY(1)}, [sh2c.id]:{x:shotStart+shotGapX*2,y:rowY(1)}, [sh2d.id]:{x:shotStart+shotGapX*3,y:rowY(1)},
+    [sh3a.id]:{x:shotStart,y:rowY(2)}, [sh3b.id]:{x:shotStart+shotGapX,y:rowY(2)}, [sh3c.id]:{x:shotStart+shotGapX*2,y:rowY(2)}, [sh3d.id]:{x:shotStart+shotGapX*3,y:rowY(2)},
+    [sh4a.id]:{x:shotStart,y:rowY(3)}, [sh4b.id]:{x:shotStart+shotGapX,y:rowY(3)}, [sh4c.id]:{x:shotStart+shotGapX*2,y:rowY(3)},
+    [img1a.id]:{x:imgStart,y:rowY(0)}, [img1b.id]:{x:imgStart+shotGapX,y:rowY(0)}, [img1c.id]:{x:imgStart+shotGapX*2,y:rowY(0)}, [img1d.id]:{x:imgStart+shotGapX*3,y:rowY(0)},
+    [img2a.id]:{x:imgStart,y:rowY(1)}, [img2b.id]:{x:imgStart+shotGapX,y:rowY(1)}, [img2c.id]:{x:imgStart+shotGapX*2,y:rowY(1)}, [img2d.id]:{x:imgStart+shotGapX*3,y:rowY(1)},
+    [img3a.id]:{x:imgStart,y:rowY(2)}, [img3b.id]:{x:imgStart+shotGapX,y:rowY(2)}, [img3c.id]:{x:imgStart+shotGapX*2,y:rowY(2)}, [img3d.id]:{x:imgStart+shotGapX*3,y:rowY(2)},
+    [img4a.id]:{x:imgStart,y:rowY(3)}, [img4b.id]:{x:imgStart+shotGapX,y:rowY(3)}, [img4c.id]:{x:imgStart+shotGapX*2,y:rowY(3)},
+    [m1Kling.id]:pp1.kling,[m1Veo.id]:pp1.veo,[m1Audio.id]:pp1.audio,[m1Edit.id]:pp1.edit,
+    [m2Kling.id]:pp2.kling,[m2Veo.id]:pp2.veo,[m2Audio.id]:pp2.audio,[m2Edit.id]:pp2.edit,
+    [m3Kling.id]:pp3.kling,[m3Veo.id]:pp3.veo,[m3Audio.id]:pp3.audio,[m3Edit.id]:pp3.edit,
+    [m4Kling.id]:pp4.kling,[m4Veo.id]:pp4.veo,[m4Audio.id]:pp4.audio,[m4Edit.id]:pp4.edit,
+  };
+
+  const bible = {
+    characters: [ eZara, eAria ],
+    objects:    [ eSignal ],
+    locations:  [ eStation, eArray, eArchive ],
+  };
+
+  return { nodes, pos, bible };
+}
+
 const TEMPLATES = [
   {
     id:          "action-short-film",
@@ -8604,6 +8810,14 @@ const TEMPLATES = [
     description: "4-scene Lord of the Rings-style epic — ancient forest departure, mountain pass journey, fortress confrontation, and a dawn return. 14 director-annotated shots. 3 characters, 3 locations, 1 cursed ring. Generate bible refs first for visual consistency across all scenes.",
     tags:        ["4 SCENES","14 SHOTS","WORLD BIBLE","EPIC FANTASY"],
     make:        makeMedievalFantasyTemplate,
+  },
+  {
+    id:          "scifi-thriller-cgi",
+    label:       "Sci-Fi Thriller — CGI Cutscene",
+    emoji:       "🛰️",
+    description: "4-scene sci-fi thriller in CGI Cutscene visual style — a lone deep-space officer intercepts a 40-year-old signal and discovers it was sent by herself. Station bridge, communication array, archive bay, and the reckoning. 15 shots, 2 characters, 3 locations, Unreal Engine 5 CGI quality throughout.",
+    tags:        ["4 SCENES","15 SHOTS","CGI CUTSCENE","SCI-FI THRILLER"],
+    make:        makeSciFiThrillerCGITemplate,
   },
   {
     id:          "pirate-animation-adults",
