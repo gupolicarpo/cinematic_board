@@ -434,7 +434,7 @@ function formatSceneMd(sceneNode, shots) {
 function mkScene() { return { id:`sc_${uid()}`, type:T.SCENE, sceneText:"", cinematicStyle:"thriller", visualStyle:"none", shotCount:3, bible:[], dialogueLines:[] }; }
 function mkShot(sceneId,index=1) { return { id:`sh_${uid()}`, type:T.SHOT, sceneId, index, durationSec:3, sourceAnchor:"", where:"", entityTags:[], how:"", when:"", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"natural-soft", visualGoal:"", visualStyle:"inherit", compiledText:"", bible:[], dialogue:"" }; }
 function mkImage(sceneId=null, shotId=null) { return { id:`im_${uid()}`, type:T.IMAGE, sceneId, shotId, prompt:"", generatedUrl:null, entityTag:"", aspect_ratio:"1:1", resolution:"1K", refImageUrl:null }; }
-function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", resolution:"720p", sound:"off", prevKlingId:null, voice:"none", lipsync:false, klingVersion:"v3", klingVideoId:null, klingVideoDuration:null }; }
+function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", resolution:"720p", sound:"off", prevKlingId:null, voice:"none", lipsync:false, klingVersion:"v3", klingVideoId:null, klingVideoDuration:null, klingMode:"shots", multiImagePrompt:"" }; }
 function mkVeo()   { return { id:`veo_${uid()}`, type:T.VEO, shotId:null, videoUrl:null, aspect_ratio:"16:9", duration:8, resolution:"720p", startFrameNodeId:null, endFrameNodeId:null, refNodeIds:[], useRefs:true, refType:"asset", manualPrompt:"" }; }
 function mkLlm()   { return { id:`llm_${uid()}`, type:T.LLM, targetNodeIds:[], targetNodeId:null, llmMode:"edit", command:"", model:"claude-sonnet-4-5", lastResult:null }; }
 function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p", lastSplitAction:null, audioMix:{ videoVolume:1, soundtrackVolume:1 } }; }
@@ -3192,6 +3192,27 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:9, padding:"0 2px", lineHeight:1 }} title="Delete node">✕</button>
         </div>
 
+        {/* Mode tabs */}
+        {(() => {
+          const kMode = node.klingMode || "shots";
+          const tabStyle = (active) => ({
+            flex:1, padding:"5px 0", fontSize:7, fontWeight:700, letterSpacing:"0.1em",
+            fontFamily:"'Inter',system-ui,sans-serif", cursor:"pointer", border:"none",
+            background: active ? `${ac}22` : "transparent",
+            color: active ? ac : th.t3,
+            borderBottom: active ? `2px solid ${ac}` : `2px solid transparent`,
+          });
+          return (
+            <div style={{ display:"flex", borderBottom:`1px solid ${th.b0}` }}>
+              {[["shots","SHOTS"],["multi-image","MULTI-IMAGE"]].map(([val,label]) => (
+                <button key={val} onMouseDown={e=>e.stopPropagation()}
+                  onClick={()=>upd({ klingMode: val })}
+                  style={tabStyle(kMode===val)}>{label}</button>
+              ))}
+            </div>
+          );
+        })()}
+
         <div style={{ padding:"8px 10px", display:"flex", flexDirection:"column", gap:6 }}>
 
           {/* Continuity reference — previous Kling node */}
@@ -3208,6 +3229,9 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                 style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:9, padding:"0 2px", lineHeight:1 }} title="Unlink">✕</button>
             </div>
           )}
+
+          {/* ── SHOTS mode ─────────────────────────────────────────────────── */}
+          {(node.klingMode||"shots") === "shots" && <>
 
           {/* Shot slots */}
           <div>
@@ -3275,6 +3299,61 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
               </div>
             )}
           </div>
+
+          </> /* end SHOTS mode */}
+
+          {/* ── MULTI-IMAGE mode ───────────────────────────────────────────── */}
+          {(node.klingMode||"shots") === "multi-image" && (() => {
+            const multiImgNodes = imageRefNodes.slice(0, 4);
+            const canGenMulti = multiImgNodes.some(n => n.generatedUrl) && (node.multiImagePrompt||"").trim();
+            return (
+              <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                <div style={{ fontSize:6, color:th.t3, letterSpacing:"0.12em" }}>
+                  Wire up to 4 IMAGE nodes — Kling animates across them
+                </div>
+                {/* Image slots */}
+                <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                  {[0,1,2,3].map(i => {
+                    const img = multiImgNodes[i];
+                    return (
+                      <div key={i} style={{ display:"flex", gap:6, alignItems:"center",
+                        background: img ? th.bg : th.card2,
+                        border:`1px solid ${img ? `${ac}44` : th.b0}`,
+                        borderRadius:4, padding:"5px 7px" }}>
+                        <div style={{ fontSize:7, fontWeight:700, color:img ? ac : th.t4, minWidth:14 }}>{i+1}</div>
+                        {img ? (
+                          <>
+                            {img.generatedUrl
+                              ? <img src={img.generatedUrl} alt="" style={{ width:40, height:30, objectFit:"cover", borderRadius:2, flexShrink:0 }}/>
+                              : <div style={{ width:40, height:30, background:th.card3, border:`1px dashed ${ac}33`, borderRadius:2, display:"flex", alignItems:"center", justifyContent:"center", fontSize:6, color:"#f87171", flexShrink:0 }}>!</div>
+                            }
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontSize:6, color: img.generatedUrl ? "#a3e635" : "#f87171" }}>
+                                {img.generatedUrl ? "✓ image ready" : "⚠ generate image first"}
+                              </div>
+                            </div>
+                            <button onMouseDown={e=>e.stopPropagation()}
+                              onClick={()=>upd({ imageRefIds:(node.imageRefIds||[]).filter(id=>id!==img.id) })}
+                              style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:9, padding:"0 2px" }}>✕</button>
+                          </>
+                        ) : (
+                          <span style={{ fontSize:6, color:th.t4, letterSpacing:"0.08em" }}>wire an Image node here</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Prompt */}
+                <div>
+                  <span style={{ fontSize:6, color:th.t3, letterSpacing:"0.1em", display:"block", marginBottom:3 }}>PROMPT</span>
+                  <textarea onMouseDown={e=>e.stopPropagation()}
+                    value={node.multiImagePrompt||""} onChange={e=>upd({ multiImagePrompt:e.target.value })}
+                    placeholder="Describe how to animate across these images…"
+                    rows={3} style={{ ...mkInp(th), width:"100%", resize:"vertical", fontSize:7 }}/>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Config row */}
           <div style={{ display:"flex", gap:4 }}>
@@ -3519,23 +3598,80 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
           )}
 
           {/* Generate button */}
-          <button onMouseDown={e=>e.stopPropagation()} onClick={generateVideo}
-            disabled={klingStatus==="creating"||klingStatus==="polling"||shotNodes.length===0}
-            style={{
-              background: klingStatus==="done" ? `${ac}18` : klingStatus==="failed" ? "#f8717118" : `${ac}15`,
-              border: `1px solid ${klingStatus==="failed" ? "#f8717144" : `${ac}33`}`,
-              color: klingStatus==="done" ? ac : klingStatus==="failed" ? "#f87171" : ac,
-              borderRadius:4, padding:"7px 10px", fontSize:8, fontFamily:"'Inter',system-ui,sans-serif",
-              letterSpacing:"0.12em", cursor: shotNodes.length===0 ? "default" : "pointer",
-              width:"100%", fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", gap:6,
-              opacity: (klingStatus==="creating"||klingStatus==="polling"||shotNodes.length===0) ? 0.5 : 1,
-            }}>
-            {klingStatus==="idle"    && <><span style={{ fontSize:11 }}>▶</span> GENERATE {shotNodes.length>1?"MULTI-SHOT":"SHOT"} VIDEO</>}
-            {klingStatus==="creating"&& <><span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>⟳</span> SUBMITTING…</>}
-            {klingStatus==="polling" && <><span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>⟳</span> {klingPollMsg||"PROCESSING…"}</>}
-            {klingStatus==="done"    && <><span>✓</span> VIDEO READY {node.videoUrl?"":"— REGENERATE"}</>}
-            {klingStatus==="failed"  && <><span>↺</span> RETRY</>}
-          </button>
+          {(() => {
+            const isMulti = (node.klingMode||"shots") === "multi-image";
+            const multiImgNodes = imageRefNodes.slice(0,4);
+            const canMulti = isMulti && multiImgNodes.some(n=>n.generatedUrl) && (node.multiImagePrompt||"").trim();
+            const canShots = !isMulti && shotNodes.length > 0;
+            const busy = klingStatus==="creating"||klingStatus==="polling";
+            const canGo = isMulti ? canMulti : canShots;
+
+            const generateMultiImage = async () => {
+              if (busy) return;
+              setKlingStatus("creating"); setKlingError(""); setKlingPollMsg("Submitting…");
+              try {
+                const imageList = multiImgNodes
+                  .filter(n=>n.generatedUrl)
+                  .map(n=>({ image: n.generatedUrl.replace(/^data:[^;]+;base64,/,"") }));
+                const r = await fetch("/api/kling/multi-image", {
+                  method:"POST", headers:{"Content-Type":"application/json"},
+                  body: JSON.stringify({
+                    image_list: imageList,
+                    prompt: node.multiImagePrompt,
+                    mode: node.mode||"std",
+                    duration: "5",
+                    aspect_ratio: node.aspect_ratio||"16:9",
+                  }),
+                });
+                if (r.status===402) {
+                  const d = await r.json();
+                  onOutOfCredits?.({ needed:d.credits_needed, balance:d.credits_balance, op:"kling_5s_std" });
+                  setKlingStatus("idle"); return;
+                }
+                if (!r.ok) throw new Error(await r.text());
+                const d = await r.json();
+                if (d.code && d.code!==0) throw new Error(`Kling ${d.code}: ${d.message}`);
+                const taskId = d.data?.task_id;
+                setKlingTaskId(taskId);
+                setKlingStatus("polling"); setKlingPollMsg("Processing…");
+                for (let i=0; i<180; i++) {
+                  await new Promise(res=>setTimeout(res,2000));
+                  const pr = await fetch(`/api/kling/multi-image/${taskId}`);
+                  const pd = await pr.json();
+                  const status = pd.data?.task_status;
+                  setKlingPollMsg(status||"processing");
+                  if (status==="succeed") {
+                    const vid = pd.data?.task_result?.videos?.[0];
+                    if (vid?.url) upd({ videoUrl: vid.url, klingVideoId: vid.id||null });
+                    setKlingStatus("done"); setKlingPollMsg(""); return;
+                  }
+                  if (status==="failed") throw new Error(pd.data?.task_status_msg||"Task failed");
+                }
+                throw new Error("Timed out");
+              } catch(e) { setKlingStatus("failed"); setKlingError(e.message); }
+            };
+
+            return (
+              <button onMouseDown={e=>e.stopPropagation()}
+                onClick={isMulti ? generateMultiImage : generateVideo}
+                disabled={busy||!canGo}
+                style={{
+                  background: klingStatus==="done" ? `${ac}18` : klingStatus==="failed" ? "#f8717118" : `${ac}15`,
+                  border: `1px solid ${klingStatus==="failed" ? "#f8717144" : `${ac}33`}`,
+                  color: klingStatus==="done" ? ac : klingStatus==="failed" ? "#f87171" : ac,
+                  borderRadius:4, padding:"7px 10px", fontSize:8, fontFamily:"'Inter',system-ui,sans-serif",
+                  letterSpacing:"0.12em", cursor: (busy||!canGo) ? "default" : "pointer",
+                  width:"100%", fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+                  opacity: (busy||!canGo) ? 0.5 : 1,
+                }}>
+                {klingStatus==="idle"    && <><span style={{ fontSize:11 }}>▶</span> {isMulti ? "GENERATE MULTI-IMAGE VIDEO" : `GENERATE ${shotNodes.length>1?"MULTI-SHOT":"SHOT"} VIDEO`}</>}
+                {klingStatus==="creating"&& <><span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>⟳</span> SUBMITTING…</>}
+                {klingStatus==="polling" && <><span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>⟳</span> {klingPollMsg||"PROCESSING…"}</>}
+                {klingStatus==="done"    && <><span>✓</span> VIDEO READY {node.videoUrl?"":"— REGENERATE"}</>}
+                {klingStatus==="failed"  && <><span>↺</span> RETRY</>}
+              </button>
+            );
+          })()}
 
           {(klingStatus==="creating"||klingStatus==="polling") && (
             <div style={{ fontSize:6, color:th.t3, letterSpacing:"0.08em", textAlign:"center" }}>
