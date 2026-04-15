@@ -50,6 +50,7 @@ const VISUAL_STYLE_PRESETS = {
   "watercolor": { label:"Watercolor", prompt:"Painterly watercolor illustration, layered washes, soft edges, textured paper feel, elegant color bleed. Preserve identity, silhouette, composition, and environment readability." },
   "16mm-doc": { label:"16mm Documentary", prompt:"16mm documentary film look, organic grain, muted palette, light gate weave, observational realism. Preserve identity, action blocking, and location clarity." },
   "vhs-analog": { label:"VHS Analog", prompt:"Analog VHS transfer look, scan noise, chroma bleed, tape softness, nostalgic low-fidelity image. Preserve identity, blocking, and the original framing." },
+  "cgi-cutscene": { label:"CGI Cutscene", prompt:"Cinematic real-time CGI render in the style of a AAA video game cutscene — Unreal Engine 5 quality, photorealistic physically-based materials, subsurface scattering on skin, ultra-detailed textures, dramatic cinematic lighting with volumetric rays, deep cinematic depth of field, hero-quality character rendering. The image should feel like a paused frame from a God of War or The Last of Us cutscene. Preserve identity, costume, environment geometry, and camera composition." },
 };
 const VISUAL_STYLES = Object.keys(VISUAL_STYLE_PRESETS);
 const CAMERA_SIZES = ["extreme-wide","wide","medium-wide","medium","medium-close","close-up","extreme-close-up"];
