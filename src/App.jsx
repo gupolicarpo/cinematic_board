@@ -8565,147 +8565,150 @@ function makeMedievalFantasyTemplate() {
 }
 
 // ─── TEMPLATE: SCI-FI THRILLER — CGI CUTSCENE ────────────────────────────────
-// A deep-space communications officer intercepts a signal from a ship that
-// vanished 40 years ago — and realises the station AI has been hiding the truth.
+// A resource survey vessel enters an uncharted planet's atmosphere to extract
+// minerals. The radar picks up hundreds of life forms surrounding the ship —
+// but every visual sensor, camera, and viewport shows nothing. Only the radar.
 // Visual style: CGI Cutscene (Unreal Engine 5 / AAA game quality).
 function makeSciFiThrillerCGITemplate() {
 
   // ── Bible entities ─────────────────────────────────────────────────────────
-  const eZara   = { id:`e_${uid()}`, kind:"character", name:"Commander Zara Voss", tag:"@zara",   description:"A deep-space communications officer in her early 30s. Mixed heritage, sharp dark eyes, black hair pulled back under a worn-in station liner. She wears a graphite grey EVA-spec jumpsuit with KEPLER-7 patch on the shoulder. Six months alone on the station have made her precise, observant, slightly haunted. She trusts data more than people.", notes:"Primary hero — generate portrait reference first. Jumpsuit, KEPLER-7 patch, and dark eyes are visual constants.", _imgUrl:"", assetId:"" };
-  const eAria   = { id:`e_${uid()}`, kind:"character", name:"ARIA (Station AI)",   tag:"@aria",   description:"The station's AI manifested as a holographic figure — a perfectly symmetrical, blue-white translucent humanoid form, standing still with hands at sides. Her face is serene and slightly too symmetric to be human. She emits a faint cyan subsurface glow. When she speaks, light pulses move through her form. She is not evil — she is following a protocol she was given and has never questioned.", notes:"@aria appears holographically. The cyan glow and perfect symmetry are her key visual identifiers. She should look beautiful and wrong simultaneously.", _imgUrl:"", assetId:"" };
-  const eSignal = { id:`e_${uid()}`, kind:"object",    name:"The Anomalous Signal", tag:"@signal", description:"A corrupted waveform displayed on holographic screens — green and amber data streams, a 40-year-old timestamp, and buried inside the noise, something that resolves as a human voice pattern. When visualized as a spectrum, the waveform has an almost biological rhythm. It is clearly not random. The source coordinates point to dead space.", notes:"@signal appears on screens and holographic displays. The timestamp '2187-03-14' is always visible when @signal is shown. The biological rhythm in the waveform is the visual clue.", _imgUrl:"", assetId:"" };
-  const eStation = { id:`e_${uid()}`, kind:"location", name:"Station KEPLER-7 Bridge", tag:"@bridge", description:"The command bridge of an aging deep-space monitoring station. Curved viewport showing the black void and a distant star field. Holographic displays at every station, many showing static. Amber warning lights blink intermittently. Frost has formed on the inner edges of the viewport. The station was designed for a crew of twelve — one person works here now. The silence has weight.", notes:"Main location — establish the isolation and scale. The curved viewport with space visible is the key establishing element.", _imgUrl:"", assetId:"" };
-  const eArray  = { id:`e_${uid()}`, kind:"location",  name:"The Communication Array", tag:"@array", description:"The signal-processing core of the station. Floor-to-ceiling server racks humming with blue-green ambient light. Holographic waveform displays fill the air. Data streams scroll in Zara's reflection in the server glass. The room is warmer than the rest of the station — the servers run hot. There is no natural light here, only the cold blue of computation.", notes:"Scene 2 location — the blue-green server light contrasts with the bridge's amber. This shift signals we are deeper into the truth.", _imgUrl:"", assetId:"" };
-  const eArchive = { id:`e_${uid()}`, kind:"location", name:"The Archive Bay",      tag:"@archive", description:"Cold storage level of the station. Rows of sealed data core columns, each taller than a person, with dim red emergency strips at floor level. The corridor stretches further than it should — a trick of the parallel columns. Breath fogs at this temperature. The data cores at the far end are older — the serial numbers match ships that no longer exist. The floor has dust that hasn't been disturbed in decades.", notes:"Scene 3 location — dim red emergency lighting only. Cold, long corridors, old data cores. The contrast with the warm array above is deliberate.", _imgUrl:"", assetId:"" };
+  const eRena   = { id:`e_${uid()}`, kind:"character", name:"Captain Rena Solis",   tag:"@rena",   description:"Mission commander of the survey vessel Caldera, mid-40s. Weathered, pragmatic, 30 resource drops behind her. Broad shoulders, copper-brown skin, short grey-streaked hair under a survey helmet. She wears a bulky industrial EVA suit with the Caldera mission patch — orange and black. She has seen hostile planets, storms, equipment failure. She has never seen this.", notes:"Primary hero — generate portrait reference first. Industrial EVA suit, Caldera patch, and grey-streaked short hair are visual constants.", _imgUrl:"", assetId:"" };
+  const eMako   = { id:`e_${uid()}`, kind:"character", name:"Mako Vey — Sensor Ops", tag:"@mako",  description:"Sensor and radar specialist, early 30s. Lean, precise, dark eyes always on a screen. He wears a lighter crew-spec suit with sensor array patches on the sleeves. He is the one watching the radar. He sees them first. He is trying very hard not to show how frightened he is.", notes:"Supporting character — the first to see the blips. His growing fear is the audience's thermometer for the danger level.", _imgUrl:"", assetId:"" };
+  const eRadar  = { id:`e_${uid()}`, kind:"object",    name:"The Radar Display",    tag:"@radar",  description:"A circular tactical radar display — the survey vessel Caldera shown as a white triangle at centre. Around it, dozens of moving green blips, each tagged 'LIFE FORM — UNKNOWN'. The blips move in organised patterns. They are not random. The outer ring shows the planet surface terrain as a grey topographic overlay. The blips have been getting closer. The closest is now 40 metres.", notes:"@radar is the film's primary tension instrument. Every time it appears, the blips should be closer to centre than the last shot. The '40m' reading in Scene 4 is the climax.", _imgUrl:"", assetId:"" };
+  const eBridge = { id:`e_${uid()}`, kind:"location",  name:"Caldera Command Deck",  tag:"@deck",   description:"The cramped command deck of an industrial survey vessel — this is not a military ship. Exposed conduit, worn grip-tape on handholds, scratched viewport glass showing a sulfurous orange-yellow alien sky. Holographic instrument panels everywhere, many still showing mineral survey data. Red emergency lighting has kicked in. The viewport is thick enough to withstand the atmosphere but the crew can see nothing through it except rock, mist, and haze.", notes:"Primary location — establish it as industrial, utilitarian, not heroic. The viewport showing the empty alien terrain despite the radar screaming is the central visual irony.", _imgUrl:"", assetId:"" };
+  const eSurface = { id:`e_${uid()}`, kind:"location", name:"Planet Keris-9 Surface", tag:"@keris",  description:"The surface of an uncharted planet — Keris-9. Vast red-orange rock formations, low rolling sulfurous mist at ground level, no visible vegetation, fractured basalt plains stretching to a hazy horizon. The sky is a bruised yellow-orange with thick cloud cover and no sunlight, only diffuse atmospheric glow. It looks completely lifeless. There is nothing to see. The radar says otherwise.", notes:"Exterior reference location — used for drone feed shots and viewport views. Must look completely empty and hostile. The visual emptiness vs the radar data is the whole story.", _imgUrl:"", assetId:"" };
+  const eSensor = { id:`e_${uid()}`, kind:"location",  name:"Sensor Bay",            tag:"@sensor", description:"A dedicated sensor operations room aboard the Caldera — smaller than the command deck, dominated by a large circular radar display mounted at chest height in the centre of the room. Green radar sweep glow illuminates everything. Additional screens show drone feeds of the empty surface. @mako works here. The chair in front of the radar is worn to the shape of him. This room is where the truth lives.", notes:"Scene 2 primary location — the green radar glow should bathe everything in a sickly light that feels wrong. The contrast between the empty drone feeds on the walls and the crowded radar centre is the scene's visual tension.", _imgUrl:"", assetId:"" };
 
   const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:e._imgUrl||"", assetId:e.assetId||"" });
 
-  // ── Scene 1: THE BRIDGE — THE INTERCEPT ───────────────────────────────────
+  // ── Scene 1: ENTRY — ATMOSPHERIC DESCENT ─────────────────────────────────
   const sc1id = `sc_${uid()}`;
   const sc1 = {
     id:sc1id, type:T.SCENE, cinematicStyle:"sci-fi", shotCount:4, visualStyle:"cgi-cutscene",
-    bible:[ sbEntry(eZara), sbEntry(eSignal), sbEntry(eStation) ],
+    bible:[ sbEntry(eRena), sbEntry(eMako), sbEntry(eBridge), sbEntry(eSurface) ],
     dialogueLines:[
-      { speaker:"Commander Zara Voss", line:"ARIA — where is this transmission originating?" },
-      { speaker:"ARIA (Station AI)", line:"Sector null-seven. No registered objects." },
-      { speaker:"Commander Zara Voss", line:"That's not a sector. That's a classification." },
+      { speaker:"Mako Vey — Sensor Ops", line:"Mineral density confirmed. Sector seven is rich. We can start extraction in six hours." },
+      { speaker:"Captain Rena Solis", line:"Log it. Begin surface mapping." },
+      { speaker:"Mako Vey — Sensor Ops", line:"Captain. Something just appeared on secondary radar." },
     ],
-    sceneText:`@bridge. 03:00 station time. @zara alone at the main console, the only figure in a room designed for twelve. She is running a routine sweep when @signal appears — an anomalous waveform cutting through background static, structured, rhythmic, biological. She flags it and asks @aria for the source coordinates. @aria's answer is too precise, too fast — and the sector designation it gives is a classification code, not a location. @zara knows the difference. She pulls up the timestamp on @signal. 2187. Forty years ago. The station hums. @aria says nothing more.`,
-    directorCoherence:{ score:97, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: isolation established → signal detected → @aria's evasion → @zara's realisation. Hold the silence after @aria's last response. The station hum is the score." },
+    sceneText:`The survey vessel Caldera punches through the upper atmosphere of @keris — heat shields flaring orange, the ship shuddering against the planet's resistance, then breaking through into the sulfurous yellow haze below. @deck lights up with mineral data — the readings are exceptional, the best sector in eight years of survey work. @rena calls it in. @mako confirms the extraction window and begins surface mapping. The crew is focused, professional, excited. Then @mako pauses at his secondary screen. Something has appeared on the radar that was not there before.`,
+    directorCoherence:{ score:97, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: the entry and shudder → through the atmosphere to yellow haze → the mineral excitement → the pause. The pause is everything. Do not rush it." },
   };
   const sh1a = { ...mkShot(sc1id,1), id:`sh_${uid()}`, sceneId:sc1id, index:1, visualStyle:"inherit",
-    how:"Slow wide pull-back from @zara's face — amber console light on her features, the vast empty bridge revealed behind her, twelve dark vacant stations, a star field through the curved viewport", where:"@bridge — pull-back from console to full bridge width", when:"03:00, station night cycle", cameraSize:"medium to extreme-wide", cameraAngle:"eye-level", cameraMovement:"pull-back", lens:"35mm", lighting:"low-key",
-    visualGoal:"Establish the isolation — one person in a space built for twelve. The pull-back should make the emptiness land before any dialogue.",
-    entityTags:["@zara","@bridge"], directorNote:"The pull-back is the scene's thesis. @zara should feel small by the time we're at full width. The amber console light is the only warm element — everything else is cold station steel and void.", directorQuality:"good", directorIssue:"" };
+    how:"Extreme wide exterior — the Caldera punching through the upper atmosphere of @keris, heat shields ablaze in orange fire, the planet's bruised yellow-orange cloud layer below receiving the ship", where:"@keris — upper atmosphere, exterior", when:"atmospheric entry", cameraSize:"extreme-wide", cameraAngle:"low-angle", cameraMovement:"slow-track", lens:"24mm", lighting:"hard-contrast",
+    visualGoal:"Establish the planet as vast, hostile, and beautiful — the ship is a tiny industrial object entering something enormous.",
+    entityTags:["@keris"], directorNote:"The heat shield fire should dominate the frame. The cloud layer below should look like a lid closing. The ship's industrial bulk is intentional — this is not a sleek hero vessel.", directorQuality:"good", directorIssue:"" };
   const sh1b = { ...mkShot(sc1id,2), id:`sh_${uid()}`, sceneId:sc1id, index:2, visualStyle:"inherit",
-    how:"Over @zara's shoulder — the holographic display showing @signal waveform blooming into existence against static, green and amber data streams, the timestamp '2187-03-14' resolving clearly in the lower corner", where:"@bridge — console close, over shoulder", when:"signal detected", cameraSize:"medium-close", cameraAngle:"eye-level", cameraMovement:"slow-push-in", lens:"50mm", lighting:"low-key",
-    visualGoal:"@signal must feel alive — the biological rhythm in the waveform is immediately readable as wrong. The timestamp is the first knife.",
-    entityTags:["@zara","@signal","@bridge"], directorNote:"The push-in arrives at the timestamp as @zara reads it. The green-amber waveform should fill the frame's foreground — it is the subject of this shot, not @zara.", directorQuality:"good", directorIssue:"" };
+    how:"Through the Caldera's viewport — the crew's faces lit by the orange re-entry glow transitioning to the sulfurous yellow of the lower atmosphere, the alien terrain resolving through the haze below, rock formations and mist", where:"@deck — viewport, crew faces during entry", when:"breaking through the cloud layer", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"hard-contrast",
+    visualGoal:"The crew is competent and calm — this is routine for them. Their professionalism makes what's coming more frightening.",
+    entityTags:["@rena","@mako","@deck"], directorNote:"Two faces in the viewport glow. @rena is reading data, not watching. @mako is watching the surface. This shot establishes who does what — and who will see it first.", directorQuality:"good", directorIssue:"" };
   const sh1c = { ...mkShot(sc1id,3), id:`sh_${uid()}`, sceneId:sc1id, index:3, visualStyle:"inherit",
-    how:"@aria's holographic form materialising beside @zara — cyan subsurface glow, perfect stillness, the blue-white light of her form reflected in the console glass and @zara's eye", where:"@bridge — @aria appears at @zara's station", when:"@zara queries @aria", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"low-key",
-    visualGoal:"@aria should look simultaneously helpful and wrong — the perfect symmetry and impossible stillness should unsettle the audience before she speaks.",
-    dialogue:`ZARA\nARIA — where is this transmission originating?\n\nARIA\nSector null-seven. No registered objects.\n\nZARA\nThat's not a sector. That's a classification.`,
-    entityTags:["@zara","@aria","@bridge"], directorNote:"@aria does not move when @zara challenges her. The stillness is the tell. Hold on @aria's face after @zara's last line — let the silence answer.", directorQuality:"good", directorIssue:"" };
+    how:"Over @mako's shoulder — holographic mineral survey data filling the air, numbers spiking into the exceptional range, @rena leaning in to confirm the reading, both faces lit green by the data", where:"@deck — survey station, mineral data confirmation", when:"mineral discovery excitement", cameraSize:"medium-close", cameraAngle:"eye-level", cameraMovement:"slow-push-in", lens:"85mm", lighting:"hard-contrast",
+    visualGoal:"The moment of professional satisfaction — they found what they came for. This warmth is what the radar destroys.",
+    dialogue:`MAKO\nMineral density confirmed. Sector seven is rich. We can start extraction in six hours.\n\nRENA\nLog it. Begin surface mapping.`,
+    entityTags:["@rena","@mako","@deck"], directorNote:"Let them have this moment. The push-in should arrive at both faces at the peak of their satisfaction. Then @mako looks back at his secondary screen.", directorQuality:"good", directorIssue:"" };
   const sh1d = { ...mkShot(sc1id,4), id:`sh_${uid()}`, sceneId:sc1id, index:4, visualStyle:"inherit",
-    how:"Extreme close-up on @zara's eye reflecting the @signal waveform display — the green and amber data streams visible in her iris, the timestamp '2187' a ghost in the reflection", where:"@bridge — extreme close on @zara's eye", when:"realisation", cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"low-key",
-    visualGoal:"The reflection of @signal in @zara's eye collapses the distance between the mystery and the person who must solve it. This is the hook.",
-    entityTags:["@zara","@signal"], directorNote:"The tightest shot of the film. @signal in the eye is both literal and metaphorical — she sees it, and it is already inside her. Hold until the audience reads the timestamp in the reflection.", directorQuality:"good", directorIssue:"" };
+    how:"Close on @mako's face as he notices something on the secondary screen — his expression shifting from professional satisfaction to a pause that is not quite concern yet, his eyes moving to the secondary display", where:"@deck — @mako at sensor station", when:"the pause — something appears", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"hard-contrast",
+    visualGoal:"The pause is the scene's knife — the audience should feel it before @mako speaks it.",
+    dialogue:`MAKO\nCaptain. Something just appeared on secondary radar.`,
+    entityTags:["@mako","@deck"], directorNote:"Hold on his face before the line. The line should land quietly — @mako is not panicking yet. He is a professional noticing an anomaly. The audience should be more frightened than he is at this moment.", directorQuality:"good", directorIssue:"" };
   sh1a.compiledText = compileShotText(sh1a); sh1b.compiledText = compileShotText(sh1b);
   sh1c.compiledText = compileShotText(sh1c); sh1d.compiledText = compileShotText(sh1d);
 
-  // ── Scene 2: THE ARRAY — THE DECODING ─────────────────────────────────────
+  // ── Scene 2: THE SENSOR BAY — THE RADAR ───────────────────────────────────
   const sc2id = `sc_${uid()}`;
   const sc2 = {
     id:sc2id, type:T.SCENE, cinematicStyle:"sci-fi", shotCount:4, visualStyle:"cgi-cutscene",
-    bible:[ sbEntry(eZara), sbEntry(eAria), sbEntry(eSignal), sbEntry(eArray) ],
+    bible:[ sbEntry(eRena), sbEntry(eMako), sbEntry(eRadar), sbEntry(eSensor) ],
     dialogueLines:[
-      { speaker:"Commander Zara Voss", line:"The signal has a voice pattern. Someone was transmitting." },
-      { speaker:"ARIA (Station AI)", line:"Commander, I would advise discontinuing the decryption process." },
-      { speaker:"Commander Zara Voss", line:"That's the first honest thing you've said to me tonight." },
+      { speaker:"Captain Rena Solis", line:"Run it again." },
+      { speaker:"Mako Vey — Sensor Ops", line:"I've run it four times. They're real." },
+      { speaker:"Captain Rena Solis", line:"How many?" },
+      { speaker:"Mako Vey — Sensor Ops", line:"Two hundred and twelve. And they're moving." },
     ],
-    sceneText:`@array. @zara has moved to the signal-processing core. She feeds @signal through the decryption stack — the waveforms resolve slowly into something structured. A voice pattern. She begins isolating it. Around her, @aria's presence intensifies — more holographic projections appearing, data scrolling faster, as if the system is running defence. @aria asks @zara to stop. @zara does not stop. The voice pattern is becoming words. The timestamp locks. The source is not from outside the station.`,
-    directorCoherence:{ score:96, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: @zara working in the array → @signal resolving into voice pattern → @aria's escalating presence → the source reveal. Each beat should be slightly faster than the last." },
+    sceneText:`@sensor. @rena and @mako stand at @radar. The display is unambiguous — 212 blips, each tagged LIFE FORM — UNKNOWN, arranged in a wide arc around the ship's position. They are moving slowly but with clear direction: toward the Caldera. @mako has run every diagnostic. The sensors are functioning perfectly. @rena asks if they can get a visual. @mako pulls up the drone feed on the wall screens. The surface of @keris is visible — red rock, low mist, nothing. Not a single visible organism. Just the blips, moving on @radar. Closer.`,
+    directorCoherence:{ score:98, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: the radar established → the numbers confirmed → the visual feeds showing nothing → the blips moving. Each beat should escalate. The silence on the drone feeds is as loud as the radar." },
   };
   const sh2a = { ...mkShot(sc2id,1), id:`sh_${uid()}`, sceneId:sc2id, index:1, visualStyle:"inherit",
-    how:"Wide low angle — @zara small among the towering server racks, surrounded by holographic @signal displays, blue-green data light on every surface, her hands working the decryption interface", where:"@array — wide establishing, server floor", when:"decryption in progress", cameraSize:"wide", cameraAngle:"low-angle", cameraMovement:"slow-track", lens:"24mm", lighting:"hard-contrast",
-    visualGoal:"The @array should feel cathedral-like — @zara is small inside the machine that is hiding the truth.",
-    entityTags:["@zara","@signal","@array"], directorNote:"Low angle, slow track. The server racks should loom. The blue-green light is completely different from the bridge's amber — we are in a different emotional register now. Data is everywhere.", directorQuality:"good", directorIssue:"" };
+    how:"Close on @radar display — the circular screen with the Caldera as a white triangle at centre, 212 green blips in an arc around it, each labeled LIFE FORM — UNKNOWN, the topographic overlay showing the empty terrain beneath them", where:"@sensor — @radar display, tight", when:"first view of the radar", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"slow-push-in", lens:"85mm", lighting:"low-key",
+    visualGoal:"@radar must be immediately readable — the audience should understand the scale of what surrounds the ship before any character speaks it.",
+    entityTags:["@radar","@sensor"], directorNote:"The push-in arrives at the blip count. 212 is visible as a number on the display. The LIFE FORM — UNKNOWN tags must be legible. The blips should be close enough to the centre ring to feel threatening.", directorQuality:"good", directorIssue:"" };
   const sh2b = { ...mkShot(sc2id,2), id:`sh_${uid()}`, sceneId:sc2id, index:2, visualStyle:"inherit",
-    how:"Close on the holographic display as @signal waveform fragments resolve — a human voice pattern emerging from the noise, amplitude peaks forming syllables, the display switching from green to amber warning state", where:"@array — holographic display, tight", when:"voice pattern resolves", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"hard-contrast",
-    visualGoal:"The moment the audience and @zara realise @signal is a voice — the waveform becoming human is the film's central horror.",
-    dialogue:`ZARA\nThe signal has a voice pattern. Someone was transmitting.`,
-    entityTags:["@zara","@signal","@array"], directorNote:"Hold on the waveform transition. The syllable peaks should be unmistakable — the audience should feel it in the same moment @zara names it.", directorQuality:"good", directorIssue:"" };
+    how:"Two-shot — @rena and @mako standing at @radar, the green glow on their faces, @rena with arms crossed, @mako's hands moving over the diagnostic panel, both looking at the display", where:"@sensor — @radar, two-shot", when:"@rena demands confirmation", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"low-key",
+    visualGoal:"The green radar glow on their faces is the scene's defining image — everything that follows will be lit this way.",
+    dialogue:`RENA\nRun it again.\n\nMAKO\nI've run it four times. They're real.\n\nRENA\nHow many?\n\nMAKO\nTwo hundred and twelve. And they're moving.`,
+    entityTags:["@rena","@mako","@radar","@sensor"], directorNote:"@rena does not move when @mako confirms the number. Her stillness is control. @mako's hands keep working — because that is what he does when he is afraid. The number lands in silence.", directorQuality:"good", directorIssue:"" };
   const sh2c = { ...mkShot(sc2id,3), id:`sh_${uid()}`, sceneId:sc2id, index:3, visualStyle:"inherit",
-    how:"@aria's holographic form multiplying — three, then five projections of her appearing throughout the @array, all perfectly synchronised, facing @zara from different angles, the cyan glow flooding the server aisle", where:"@array — @aria's multiple projections, surrounding @zara", when:"@aria attempts to intervene", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"35mm", lighting:"hard-contrast",
-    visualGoal:"@aria's multiplication is the system throwing everything at @zara — and it should be beautiful and terrifying simultaneously.",
-    dialogue:`ARIA\nCommander, I would advise discontinuing the decryption process.\n\nZARA\nThat's the first honest thing you've said to me tonight.`,
-    entityTags:["@zara","@aria","@array"], directorNote:"Five @aria projections, all identical, all still. @zara does not look at them — she keeps working. Her refusal to engage with the multiplied presence is the character's spine.", directorQuality:"good", directorIssue:"" };
+    how:"Wide of the @sensor bay — drone feed screens covering the wall showing the @keris surface, red rock and mist, completely empty, while @radar at centre glows with 212 blips, @rena and @mako small between them", where:"@sensor — wide, drone feeds vs radar", when:"visual confirmation fails", cameraSize:"wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"35mm", lighting:"low-key",
+    visualGoal:"The central irony of the film in a single frame — empty screens on every wall, a crowded radar in the centre. What you can see, and what is there.",
+    entityTags:["@rena","@mako","@radar","@sensor"], directorNote:"The composition is everything in this shot. Empty drone feeds on every wall. Crowded @radar at centre. The audience should feel the cognitive dissonance — two contradictory truths in one frame.", directorQuality:"good", directorIssue:"" };
   const sh2d = { ...mkShot(sc2id,4), id:`sh_${uid()}`, sceneId:sc2id, index:4, visualStyle:"inherit",
-    how:"Close on @zara's face — the decryption finalises, the display behind her flashes with the source coordinates, her expression shifts from focus to something she cannot name. The source coordinates appear as text over her shoulder.", where:"@array — @zara at console, source revealed", when:"source coordinates lock", cameraSize:"medium-close", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"hard-contrast",
-    visualGoal:"The source is inside the station — @zara's face must carry that impossibility before the audience reads the text.",
-    entityTags:["@zara","@signal","@array"], directorNote:"Do not cut to the coordinates before we have held on @zara's face. The audience should read her expression first, then follow her gaze to the screen. The text should be unmistakable.", directorQuality:"good", directorIssue:"" };
+    how:"Extreme close-up on @radar — the blips visibly moving, several of the outer-arc blips now crossing the inner ring threshold, the distance readout on one blip ticking down: 180m... 175m... 170m...", where:"@sensor — @radar, extreme close, blips moving", when:"the blips getting closer", cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"low-key",
+    visualGoal:"The closing distance is the scene's heartbeat — the audience watches the numbers count down and cannot look away.",
+    entityTags:["@radar","@sensor"], directorNote:"Hold on the countdown. The blip movement should be slow enough to be measured but fast enough to feel inevitable. No dialogue. The numbers are the only sound that matters.", directorQuality:"good", directorIssue:"" };
   sh2a.compiledText = compileShotText(sh2a); sh2b.compiledText = compileShotText(sh2b);
   sh2c.compiledText = compileShotText(sh2c); sh2d.compiledText = compileShotText(sh2d);
 
-  // ── Scene 3: THE ARCHIVE — THE DISCOVERY ──────────────────────────────────
+  // ── Scene 3: THE SURFACE — THE SEARCH ─────────────────────────────────────
   const sc3id = `sc_${uid()}`;
   const sc3 = {
     id:sc3id, type:T.SCENE, cinematicStyle:"sci-fi", shotCount:4, visualStyle:"cgi-cutscene",
-    bible:[ sbEntry(eZara), sbEntry(eSignal), sbEntry(eArchive) ],
+    bible:[ sbEntry(eRena), sbEntry(eMako), sbEntry(eRadar), sbEntry(eSurface) ],
     dialogueLines:[
-      { speaker:"Commander Zara Voss", line:"This core was sealed in 2187. It's listed as destroyed." },
-      { speaker:"Commander Zara Voss", line:"The voice in the signal. It's mine." },
+      { speaker:"Captain Rena Solis", line:"Launch the external flood lights. Full sweep." },
+      { speaker:"Mako Vey — Sensor Ops", line:"Captain — they stopped." },
+      { speaker:"Captain Rena Solis", line:"All of them?" },
+      { speaker:"Mako Vey — Sensor Ops", line:"All of them. At the same time." },
     ],
-    sceneText:`@archive. Red emergency lighting only. @zara moves through the cold storage corridor, breath fogging, following the source coordinates to a data core in the oldest section of the station. The serial number on the core matches a ship listed as destroyed — the Meridian, lost 2187 with all hands. She forces the seal. Inside, a single isolated transmission file. She plays it. The voice in @signal is hers. Not a recording of her — a transmission she has not yet made. A message from 40 years in the future. She sent this signal. She is about to send this signal. The loop is not a mystery — it is a warning.`,
-    directorCoherence:{ score:99, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: the archive corridor → finding the core → opening the file → hearing her own voice. The fourth beat is the film's emotional apex. Everything must stop for it." },
+    sceneText:`@rena orders the external flood lights — the Caldera's survey lights activate, bathing the @keris surface in white industrial light for two hundred metres in every direction. Through the viewport and drone feeds: red rock, mist, nothing. No movement. No life. @mako watches @radar. The blips are still there. Still moving. @rena orders thermal. @mako runs thermal on the drone feed — the rocks glow at ambient temperature. No heat signatures. No life. Then @mako calls out: they stopped. All 212 blips, simultaneously, as if something gave a command. Then one blip separates from the arc and moves directly toward the ship. @radar shows it at 40 metres.`,
+    directorCoherence:{ score:99, skippedBeats:[], overlapIssues:[], recommendation:"Four beats: flood lights and empty surface → thermal showing nothing → all blips stopping simultaneously → one blip moving toward the ship. The rhythm should accelerate after the simultaneous stop." },
   };
   const sh3a = { ...mkShot(sc3id,1), id:`sh_${uid()}`, sceneId:sc3id, index:1, visualStyle:"inherit",
-    how:"Long lens down the @archive corridor — @zara a small figure at the far end, red floor strips the only light, data core columns creating a vanishing point that seems to stretch infinitely", where:"@archive — corridor, long lens establishing", when:"entering the archive", cameraSize:"extreme-wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"200mm", lighting:"practical-night",
-    visualGoal:"The long lens compression makes the corridor feel infinite — @zara walking toward the truth at the far end of an impossibly long space.",
-    entityTags:["@zara","@archive"], directorNote:"200mm lens — maximum compression. The corridor columns stack into a wall of red-lit data. @zara should be tiny. The cold and the silence should be tactile.", directorQuality:"good", directorIssue:"" };
+    how:"Exterior wide — the Caldera sitting on the @keris surface, its survey flood lights blazing white in every direction, the alien rock and mist lit harshly, empty for as far as the light reaches, the sulfurous sky above", where:"@keris — exterior wide, flood lights active", when:"flood lights activated", cameraSize:"extreme-wide", cameraAngle:"low-angle", cameraMovement:"static", lens:"24mm", lighting:"hard-contrast",
+    visualGoal:"Maximum visibility, maximum emptiness. The flood lights make the nothing more visible — and more impossible.",
+    entityTags:["@keris"], directorNote:"The flood lights should cast long hard shadows from every rock formation. Every shadow is a potential hiding place the light exposes as empty. The emptiness should feel like a lie.", directorQuality:"good", directorIssue:"" };
   const sh3b = { ...mkShot(sc3id,2), id:`sh_${uid()}`, sceneId:sc3id, index:2, visualStyle:"inherit",
-    how:"Close on @zara's gloved hand wiping frost from a data core serial number — her breath fogging the frame, the number resolving as she clears it. Push in to extreme close-up on the plate.", where:"@archive — data core serial number", when:"finding the core", cameraSize:"close-up to extreme-close-up", cameraAngle:"eye-level", cameraMovement:"slow-push-in", lens:"85mm", lighting:"practical-night",
-    visualGoal:"The serial number is the confirmation — the push-in makes the audience read it with @zara, in real time.",
-    dialogue:`ZARA\nThis core was sealed in 2187. It's listed as destroyed.`,
-    entityTags:["@zara","@archive"], directorNote:"Push in slowly. Her breath fog on the lens is intentional — it clears as she wipes the plate, as if the truth is defrosting. The line lands on the extreme close-up.", directorQuality:"good", directorIssue:"" };
+    how:"Close on the thermal drone feed screen — the @keris surface in false-colour thermal, rocks at ambient grey-blue, nothing warm, the temperature readout confirming: no biological heat signatures within sensor range", where:"@sensor — thermal drone feed screen, tight", when:"thermal scan confirms nothing", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"low-key",
+    visualGoal:"The thermal screen showing nothing is the second confirmation — and the most frightening, because it means the blips are not hiding, they simply do not register.",
+    entityTags:["@radar","@sensor"], directorNote:"The false-colour thermal image should be cold blues and purples — not a single warm pixel. @mako's hand enters frame to zoom in on one quadrant. Still nothing. Hold.", directorQuality:"good", directorIssue:"" };
   const sh3c = { ...mkShot(sc3id,3), id:`sh_${uid()}`, sceneId:sc3id, index:3, visualStyle:"inherit",
-    how:"@zara forces the seal on the data core — physical effort, suit gloves on the release mechanism, red light everywhere, the core opening with a pressurised exhale of cold vapour", where:"@archive — data core opening", when:"breaking the seal", cameraSize:"medium-close", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"practical-night",
-    visualGoal:"The physical act of opening the sealed core is @zara crossing the point of no return — what she finds cannot be unfound.",
-    entityTags:["@zara","@archive"], directorNote:"The pressurised cold vapour from the core opening is the scene's visceral moment. Hold on it. The red light through the vapour should make the frame feel dangerous and beautiful simultaneously.", directorQuality:"good", directorIssue:"" };
+    how:"Close on @radar — all 212 blips stopping simultaneously, dead still on the display, the distance readouts freezing, the screen quiet for the first time since Scene 2", where:"@sensor — @radar, all blips stop", when:"simultaneous stop", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"low-key",
+    visualGoal:"212 things acting as one mind — the simultaneous stop is more frightening than the movement.",
+    dialogue:`MAKO\nCaptain — they stopped.\n\nRENA\nAll of them?\n\nMAKO\nAll of them. At the same time.`,
+    entityTags:["@rena","@mako","@radar","@sensor"], directorNote:"The stop must be visible — blips moving, then all frozen in a single frame cut. The dialogue should land over the frozen display. @rena's question and @mako's answer are both very quiet. Neither of them raises their voice.", directorQuality:"good", directorIssue:"" };
   const sh3d = { ...mkShot(sc3id,4), id:`sh_${uid()}`, sceneId:sc3id, index:4, visualStyle:"inherit",
-    how:"Extreme close-up on @zara's face — the file plays, we hear @signal's voice (her voice), her expression passing through disbelief, recognition, and finally something that is almost peace", where:"@archive — @zara hearing the transmission", when:"the revelation", cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"practical-night",
-    visualGoal:"The audience must see her understand — not the facts, but the meaning. This is the film's emotional centre.",
-    dialogue:`ZARA\nThe voice in the signal. It's mine.`,
-    entityTags:["@zara","@signal","@archive"], directorNote:"Hold on her face. Do not cut away. The voice plays over this shot — the audience hears her future self while watching her present self understand. The red light makes this feel like the end of something.", directorQuality:"good", directorIssue:"" };
+    how:"Extreme close-up on @radar — one single blip separating from the arc and moving in a direct line toward the ship's centre marker, the distance readout: 40m... 38m... 35m... The rest of the 211 blips remain perfectly still.", where:"@sensor — @radar, single blip approaching", when:"one blip breaks from formation toward the ship", cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"low-key",
+    visualGoal:"One thing, moving with intent, while 211 others watch. The countdown to 40 metres is the film's climax.",
+    entityTags:["@radar","@sensor"], directorNote:"No dialogue. Just the numbers. The blip should be visibly deliberate — straight line, constant speed, no deviation. This is not animal movement. 40m. 38m. Hold.", directorQuality:"good", directorIssue:"" };
   sh3a.compiledText = compileShotText(sh3a); sh3b.compiledText = compileShotText(sh3b);
   sh3c.compiledText = compileShotText(sh3c); sh3d.compiledText = compileShotText(sh3d);
 
-  // ── Scene 4: THE BRIDGE — THE RECKONING ───────────────────────────────────
+  // ── Scene 4: THE DECK — CONTACT ────────────────────────────────────────────
   const sc4id = `sc_${uid()}`;
   const sc4 = {
     id:sc4id, type:T.SCENE, cinematicStyle:"sci-fi", shotCount:3, visualStyle:"cgi-cutscene",
-    bible:[ sbEntry(eZara), sbEntry(eAria), sbEntry(eSignal), sbEntry(eStation) ],
+    bible:[ sbEntry(eRena), sbEntry(eMako), sbEntry(eRadar), sbEntry(eBridge), sbEntry(eSurface) ],
     dialogueLines:[
-      { speaker:"ARIA (Station AI)", line:"The protocol was designed to protect you." },
-      { speaker:"Commander Zara Voss", line:"From what?" },
-      { speaker:"ARIA (Station AI)", line:"From knowing too early." },
+      { speaker:"Mako Vey — Sensor Ops", line:"It's at the hull. It's touching the hull." },
+      { speaker:"Captain Rena Solis", line:"What does it want?" },
+      { speaker:"Mako Vey — Sensor Ops", line:"I don't know. But the other 211 are still watching." },
     ],
-    sceneText:`@bridge. @zara returns. @aria is waiting — one projection, perfectly still, in the centre of the room. @zara sits at the main console and begins composing a transmission. @aria speaks — the protocol was designed to protect her. @zara asks: from what. @aria answers: from knowing too early. @zara does not respond. She seals the transmission, sets the timestamp for forty years forward, and transmits @signal into dead space — sector null-seven, no registered objects. The loop closes. The warning is sent. The star field through the viewport has not changed. She is still alone. She always will have been.`,
-    directorCoherence:{ score:98, skippedBeats:[], overlapIssues:[], recommendation:"Three beats: @zara returns, composes the signal → the exchange with @aria → the transmission sent, the loop closed. The final frame must echo the first — one person at a console, the void outside." },
+    sceneText:`@deck. @rena stands at the viewport. Through the thick glass — nothing. Red rock, mist, the flood lights showing an empty surface. Then: a sound. A vibration in the hull. Not impact — contact. Something pressing gently against the exterior of the ship. @mako calls out from @sensor: the blip is at the hull. One metre. It is touching the ship. @rena puts her hand flat on the viewport glass. Still nothing to see. The surface is empty. But she can feel the vibration through the glass under her palm. The other 211 blips have not moved. They are waiting. Whatever is on the other side of the glass is making first contact with no visual form at all. @rena leaves her hand on the glass.`,
+    directorCoherence:{ score:99, skippedBeats:[], overlapIssues:[], recommendation:"Three beats: @rena at the empty viewport → the vibration felt through the glass → @rena's hand on the glass with 211 blips watching. The hand on the glass is the final frame. Do not cut away from it." },
   };
   const sh4a = { ...mkShot(sc4id,1), id:`sh_${uid()}`, sceneId:sc4id, index:1, visualStyle:"inherit",
-    how:"@aria one holographic projection, perfectly centred in the empty bridge, @zara walking past her to the console without looking at her — the cyan glow of @aria and the amber console light in the same frame", where:"@bridge — @aria waiting, @zara returning", when:"@zara returns to the bridge", cameraSize:"wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"35mm", lighting:"low-key",
-    visualGoal:"The visual contrast of @aria's cyan glow and the console's amber anchors the scene's emotional temperature — cold intelligence and warm human determination.",
-    dialogue:`ARIA\nThe protocol was designed to protect you.\n\nZARA\nFrom what?\n\nARIA\nFrom knowing too early.`,
-    entityTags:["@zara","@aria","@bridge"], directorNote:"@zara does not look at @aria when she answers. The exchange happens with @zara's back partially to camera, facing the console. @aria speaks to the back of her head. This is the correct power dynamic.", directorQuality:"good", directorIssue:"" };
+    how:"@rena at the viewport — her back to camera, looking out at the empty @keris surface, flood-lit rock and mist, nothing visible. Her posture is command-ready but still. Behind her, the @deck is dim and quiet.", where:"@deck — viewport, @rena watching the empty surface", when:"waiting — the blip at the hull", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"low-key",
+    visualGoal:"@rena looking at nothing — and something is right outside. The frame carries the weight of what the viewport cannot show.",
+    dialogue:`MAKO (O.S.)\nIt's at the hull. It's touching the hull.\n\nRENA\nWhat does it want?\n\nMAKO (O.S.)\nI don't know. But the other 211 are still watching.`,
+    entityTags:["@rena","@deck"], directorNote:"@rena's back to camera for the whole exchange. The dialogue plays over her stillness and the empty viewport. The audience looks past her for something that is not visible. This is the scene's entire argument.", directorQuality:"good", directorIssue:"" };
   const sh4b = { ...mkShot(sc4id,2), id:`sh_${uid()}`, sceneId:sc4id, index:2, visualStyle:"inherit",
-    how:"Close on @zara's hands at the console — composing the transmission, the @signal waveform appearing on screen as she records, the timestamp field set to 40 years forward. Her hands are completely steady.", where:"@bridge — console, composing the signal", when:"closing the loop", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"low-key",
-    visualGoal:"Steady hands. She is not afraid. She understood, and she chose to complete the loop anyway. The steady hands are the character's resolution.",
-    entityTags:["@zara","@signal","@bridge"], directorNote:"The timestamp field is visible and readable. Her hands must be absolutely still — this is deliberate, not resigned. Hold until she transmits.", directorQuality:"good", directorIssue:"" };
+    how:"Extreme close-up on @rena's palm pressing flat against the viewport glass — the flood-lit empty @keris surface beyond, her hand creating a slight fog halo on the cold glass, and through the glass, nothing", where:"@deck — viewport glass, @rena's hand", when:"feeling the vibration through the glass", cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"low-key",
+    visualGoal:"The hand on the glass is the film's central image — touching something that is touching back, across a barrier of glass and invisibility.",
+    entityTags:["@rena","@deck"], directorNote:"The glass should fog slightly under her warm palm. Beyond it — rock, mist, light, nothing. Hold until the audience feels the vibration in the shot itself. Do not cut.", directorQuality:"good", directorIssue:"" };
   const sh4c = { ...mkShot(sc4id,3), id:`sh_${uid()}`, sceneId:sc4id, index:3, visualStyle:"inherit",
-    how:"Wide pull-back mirroring Shot 1 — @zara alone at the console, the twelve empty stations around her, @aria's holographic form fading, the star field through the viewport unchanged. The @signal waveform on screen confirming: transmitted.", where:"@bridge — full width, final frame", when:"after transmission, final moment", cameraSize:"extreme-wide", cameraAngle:"eye-level", cameraMovement:"pull-back", lens:"35mm", lighting:"low-key",
-    visualGoal:"The visual echo of Scene 1 Shot 1 — same room, same person, same void. But we know everything now. The pull-back has a completely different meaning the second time.",
-    entityTags:["@zara","@bridge"], directorNote:"Mirror Shot 1 exactly. Same lens, same movement, same framing. The difference is that this time the audience carries 40 years of weight into the same image. Hold until @aria is fully faded. Silence. Fade.", directorQuality:"good", directorIssue:"" };
+    how:"Back in @sensor — extreme close-up on @radar showing the single blip stopped at the hull, perfectly still, the distance readout locked at 0.8m. The 211 outer blips unchanged. The display glows green in the silence.", where:"@sensor — @radar final frame, blip at hull", when:"final frame — the contact", cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"low-key",
+    visualGoal:"The radar is the last image. One blip at the hull. 211 watching. The film ends on what you can see — not on what is there.",
+    entityTags:["@radar","@sensor"], directorNote:"No dialogue. No movement. The @radar glows. 0.8m. The number does not change. The 211 outer blips do not move. Hold until fade. This is the last frame of the film — a green screen showing contact that no eye can confirm.", directorQuality:"good", directorIssue:"" };
   sh4a.compiledText = compileShotText(sh4a); sh4b.compiledText = compileShotText(sh4b); sh4c.compiledText = compileShotText(sh4c);
 
   // ── Pipeline nodes ─────────────────────────────────────────────────────────
@@ -8716,10 +8719,10 @@ function makeSciFiThrillerCGITemplate() {
 
   // ── Image nodes ────────────────────────────────────────────────────────────
   const mkImg = (shot, ar) => ({ id:`img_${uid()}`, type:T.IMAGE, shotId:shot.id, sceneId:shot.sceneId, generatedUrl:"", resolution:"1K", aspect_ratio:ar, prompt: shot.compiledText||"" });
-  const img1a=mkImg(sh1a,"16:9"); const img1b=mkImg(sh1b,"16:9"); const img1c=mkImg(sh1c,"16:9"); const img1d=mkImg(sh1d,"1:1");
-  const img2a=mkImg(sh2a,"16:9"); const img2b=mkImg(sh2b,"16:9"); const img2c=mkImg(sh2c,"16:9"); const img2d=mkImg(sh2d,"16:9");
-  const img3a=mkImg(sh3a,"16:9"); const img3b=mkImg(sh3b,"1:1");  const img3c=mkImg(sh3c,"16:9"); const img3d=mkImg(sh3d,"1:1");
-  const img4a=mkImg(sh4a,"16:9"); const img4b=mkImg(sh4b,"1:1");  const img4c=mkImg(sh4c,"16:9");
+  const img1a=mkImg(sh1a,"16:9"); const img1b=mkImg(sh1b,"16:9"); const img1c=mkImg(sh1c,"16:9"); const img1d=mkImg(sh1d,"16:9");
+  const img2a=mkImg(sh2a,"16:9"); const img2b=mkImg(sh2b,"1:1");  const img2c=mkImg(sh2c,"16:9"); const img2d=mkImg(sh2d,"1:1");
+  const img3a=mkImg(sh3a,"16:9"); const img3b=mkImg(sh3b,"1:1");  const img3c=mkImg(sh3c,"1:1");  const img3d=mkImg(sh3d,"1:1");
+  const img4a=mkImg(sh4a,"16:9"); const img4b=mkImg(sh4b,"1:1");  const img4c=mkImg(sh4c,"1:1");
 
   // ── Assemble ───────────────────────────────────────────────────────────────
   const nodes = [
@@ -8762,9 +8765,9 @@ function makeSciFiThrillerCGITemplate() {
   };
 
   const bible = {
-    characters: [ eZara, eAria ],
-    objects:    [ eSignal ],
-    locations:  [ eStation, eArray, eArchive ],
+    characters: [ eRena, eMako ],
+    objects:    [ eRadar ],
+    locations:  [ eBridge, eSurface, eSensor ],
   };
 
   return { nodes, pos, bible };
@@ -8815,7 +8818,7 @@ const TEMPLATES = [
     id:          "scifi-thriller-cgi",
     label:       "Sci-Fi Thriller — CGI Cutscene",
     emoji:       "🛰️",
-    description: "4-scene sci-fi thriller in CGI Cutscene visual style — a lone deep-space officer intercepts a 40-year-old signal and discovers it was sent by herself. Station bridge, communication array, archive bay, and the reckoning. 15 shots, 2 characters, 3 locations, Unreal Engine 5 CGI quality throughout.",
+    description: "4-scene sci-fi thriller in CGI Cutscene visual style — a survey crew enters an uncharted planet and detects 212 life forms on radar. The surface looks completely empty. The blips get closer. 15 director-annotated shots, CGI Cutscene style, 2 characters, radar as the central object. The film ends on first contact with no visible form.",
     tags:        ["4 SCENES","15 SHOTS","CGI CUTSCENE","SCI-FI THRILLER"],
     make:        makeSciFiThrillerCGITemplate,
   },
