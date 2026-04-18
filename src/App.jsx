@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, createContext, useContext } from "react";
-import { Film, Video, Image as ImageIcon, Clapperboard, Camera, User, MapPin, Box, Pencil, Link2, Bot, AlertTriangle, Loader2, X, ChevronDown, Download, Sparkles, Layers, Scissors, BookOpen, Plus, FolderOpen, FileText, PanelLeft, LogOut, LogIn, Save, FolderOpen as FolderOpenIcon, ChevronRight, ScrollText, Upload, Wand2, SplitSquareVertical, LayoutTemplate, Music } from "lucide-react";
+import { Film, Video, Image as ImageIcon, Clapperboard, Camera, User, MapPin, Box, Pencil, Link2, Bot, AlertTriangle, Loader2, X, ChevronDown, Download, Sparkles, Layers, Scissors, BookOpen, Plus, FolderOpen, FileText, FileDown, PanelLeft, LogOut, LogIn, Save, FolderOpen as FolderOpenIcon, ChevronRight, ScrollText, Upload, Wand2, SplitSquareVertical, LayoutTemplate, Music } from "lucide-react";
 import { supabase } from "./supabase";
 import LandingPage from "./LandingPage";
 import FeaturesPage from "./FeaturesPage";
@@ -430,6 +430,116 @@ function formatSceneMd(sceneNode, shots) {
     lines.push(`\n## Shots\n\n*(no shots linked)*`);
   }
   return lines.join("\n");
+}
+
+function formatProductionPackageMd(nodes, projectName = "Project") {
+  const sceneNodes = nodes.filter(n => n.type === T.SCENE);
+  const shotNodes = nodes.filter(n => n.type === T.SHOT);
+  const imageNodes = nodes.filter(n => n.type === T.IMAGE);
+  const klingNodes = nodes.filter(n => n.type === T.KLING);
+  const veoNodes = nodes.filter(n => n.type === T.VEO);
+  const audioNodes = nodes.filter(n => n.type === T.AUDIO);
+  const videoEditNodes = nodes.filter(n => n.type === T.VIDEOEDIT);
+
+  const lines = [];
+  lines.push(`# Production Package — ${projectName}`);
+  lines.push("");
+  lines.push(`Generated: ${new Date().toLocaleString()}`);
+  lines.push("");
+  lines.push("## Project Summary");
+  lines.push("");
+  lines.push(`- Scenes: ${sceneNodes.length}`);
+  lines.push(`- Shots: ${shotNodes.length}`);
+  lines.push(`- Images: ${imageNodes.length}`);
+  lines.push(`- Kling nodes: ${klingNodes.length}`);
+  lines.push(`- Veo nodes: ${veoNodes.length}`);
+  lines.push(`- Audio nodes: ${audioNodes.length}`);
+  lines.push(`- Video edits: ${videoEditNodes.length}`);
+  lines.push("");
+
+  sceneNodes
+    .slice()
+    .sort((a, b) => (a.id || "").localeCompare(b.id || ""))
+    .forEach((sceneNode, idx) => {
+      const shots = shotNodes
+        .filter(s => s.sceneId === sceneNode.id)
+        .sort((a, b) => (a.index || 0) - (b.index || 0));
+
+      lines.push(`---`);
+      lines.push("");
+      lines.push(`## Scene ${idx + 1} — ${capitalize(sceneNode.cinematicStyle || "scene")}`);
+      lines.push("");
+      lines.push(`### Scene Text`);
+      lines.push("");
+      lines.push(sceneNode.sceneText || "*(empty)*");
+      lines.push("");
+      lines.push(`### Styles`);
+      lines.push("");
+      lines.push(`- Cinematic: ${sceneNode.cinematicStyle || "—"}`);
+      lines.push(`- Visual: ${VISUAL_STYLE_PRESETS[sceneNode.visualStyle || "none"]?.label || "None"}`);
+      lines.push("");
+
+      if (sceneNode.directorCoherence) {
+        const c = sceneNode.directorCoherence;
+        lines.push(`### Continuity Report`);
+        lines.push("");
+        lines.push(`- Score: ${c.score ?? "—"}/100`);
+        if (c.recommendation) lines.push(`- Recommendation: ${c.recommendation}`);
+        if (c.skippedBeats?.length) {
+          lines.push(`- Skipped beats:`);
+          c.skippedBeats.forEach(b => lines.push(`  - ${b}`));
+        }
+        if (c.overlapIssues?.length) {
+          lines.push(`- Overlap issues:`);
+          c.overlapIssues.forEach(o => lines.push(`  - ${o}`));
+        }
+        lines.push("");
+      }
+
+      if (sceneNode.bible?.length) {
+        lines.push(`### Scene Bible`);
+        lines.push("");
+        sceneNode.bible.forEach(e => {
+          lines.push(`- ${e.tag} — ${e.name} (${e.kind})${e.notes ? `: ${e.notes}` : ""}`);
+        });
+        lines.push("");
+      }
+
+      if (shots.length) {
+        lines.push(`### Shots`);
+        lines.push("");
+        shots.forEach(s => {
+          lines.push(formatShotMd(s));
+          if (s.directorNote || s.directorIssue || s.visualHint) {
+            lines.push("");
+            lines.push(`**Director Layer**`);
+            if (s.directorQuality) lines.push(`- Quality: ${s.directorQuality}`);
+            if (s.directorNote) lines.push(`- Note: ${s.directorNote}`);
+            if (s.directorIssue) lines.push(`- Issue: ${s.directorIssue}`);
+            if (s.visualHint) lines.push(`- Visual Hint: ${s.visualHint}`);
+          }
+          lines.push("");
+          lines.push("---");
+          lines.push("");
+        });
+      } else {
+        lines.push(`### Shots`);
+        lines.push("");
+        lines.push("*(no shots linked)*");
+        lines.push("");
+      }
+    });
+
+  return lines.join("\n");
+}
+
+function getEditableNodeContent(n) {
+  if (!n) return {};
+  if (n.type === T.SHOT)  return { how:n.how, where:n.where, when:n.when, cameraSize:n.cameraSize, cameraAngle:n.cameraAngle, cameraMovement:n.cameraMovement, lighting:n.lighting, lens:n.lens, visualGoal:n.visualGoal, visualStyle:n.visualStyle, durationSec:n.durationSec, sourceAnchor:n.sourceAnchor, dialogue:n.dialogue };
+  if (n.type === T.SCENE) return { sceneText:n.sceneText, cinematicStyle:n.cinematicStyle, visualStyle:n.visualStyle };
+  if (n.type === T.IMAGE) return { prompt:n.prompt };
+  if (n.type === T.KLING || n.type === T.VEO) return { manualPrompt:n.manualPrompt };
+  return {};
 }
 
 function mkScene() { return { id:`sc_${uid()}`, type:T.SCENE, sceneText:"", cinematicStyle:"thriller", visualStyle:"none", shotCount:3, bible:[], dialogueLines:[] }; }
@@ -1356,7 +1466,7 @@ function InspectAction({ onClick, th }) {
 }
 
 // ─── SCENE NODE ───────────────────────────────────────────────────────────────
-function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected, onStartWire, nodePos, model, sceneStats, onExport, globalBible = [], onInspect }) {
+function SceneCard({ node, upd, onGenShots, onGenVersionB, onReviewContinuity, onRepairScene, reviewBusy = false, repairBusy = false, onDel, sel: selected, onStartWire, nodePos, model, sceneStats, onExport, globalBible = [], onInspect }) {
   const th = useTheme();
   const ac = th.dark ? (styleColor[node.cinematicStyle]||"#c084fc") : th.t2;
   const uac = th.dark ? ac : th.t0;
@@ -1814,6 +1924,18 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
           <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();genShots();}} disabled={busy||rewriting||injecting||(sceneStats?.shotCount>=KLING_MAX_SHOTS)||(sceneStats?.totalDur>=KLING_MAX_SECS)}
             style={{ flex:1,background:(busy||sceneStats?.shotCount>=KLING_MAX_SHOTS||sceneStats?.totalDur>=KLING_MAX_SECS)?th.b0:th.t0,border:"none",color:(busy||sceneStats?.shotCount>=KLING_MAX_SHOTS||sceneStats?.totalDur>=KLING_MAX_SECS)?th.t3:th.card,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:700,fontSize:8,padding:"9px",borderRadius:3,cursor:(busy||rewriting||sceneStats?.shotCount>=KLING_MAX_SHOTS||sceneStats?.totalDur>=KLING_MAX_SECS)?"not-allowed":"pointer",letterSpacing:"0.15em",transition:"all 0.2s",opacity:(busy||sceneStats?.shotCount>=KLING_MAX_SHOTS||sceneStats?.totalDur>=KLING_MAX_SECS)?0.5:1 }}>
             {busy?"◌  GENERATING SHOTS…":"▶  GENERATE SHOTS"}
+          </button>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:5 }}>
+          <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation(); onReviewContinuity && onReviewContinuity();}}
+            disabled={reviewBusy || busy || injecting}
+            style={{ background:"transparent", border:`1px solid ${uac}44`, color:uac, fontFamily:"'Inter',system-ui,sans-serif", fontWeight:700, fontSize:7, padding:"8px 9px", borderRadius:3, cursor:(reviewBusy||busy||injecting)?"not-allowed":"pointer", letterSpacing:"0.12em", opacity:(reviewBusy||busy||injecting)?0.5:1 }}>
+            {reviewBusy ? "◌ REVIEWING…" : "REVIEW CONTINUITY"}
+          </button>
+          <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation(); onRepairScene && onRepairScene();}}
+            disabled={repairBusy || reviewBusy || busy || injecting}
+            style={{ background:"transparent", border:`1px solid ${th.t3}55`, color:th.t2, fontFamily:"'Inter',system-ui,sans-serif", fontWeight:700, fontSize:7, padding:"8px 9px", borderRadius:3, cursor:(repairBusy||reviewBusy||busy||injecting)?"not-allowed":"pointer", letterSpacing:"0.12em", opacity:(repairBusy||reviewBusy||busy||injecting)?0.5:1 }}>
+            {repairBusy ? "◌ REPAIRING…" : "REPAIR SCENE"}
           </button>
         </div>
       </div>
@@ -9082,6 +9204,10 @@ export default function App() {
   const [pricingData,     setPricingData]      = useState(null);
   const [fullscreenVEId,  setFullscreenVEId]   = useState(null); // VideoEdit fullscreen overlay
   const [showTour,        setShowTour]         = useState(false);
+  const [reviewingSceneId,setReviewingSceneId] = useState(null);
+  const [repairingSceneId,setRepairingSceneId] = useState(null);
+  const [inspectorBusy,   setInspectorBusy]    = useState(false);
+  const [inspectorStatus, setInspectorStatus]  = useState("");
 
   // Check for existing session on mount
   useEffect(() => {
@@ -9656,6 +9782,8 @@ export default function App() {
   const renderInspectorContent = (n) => {
     if (!n) return null;
     if (n.type === T.SCENE) {
+      const coherence = n.directorCoherence || null;
+      const coherenceIssues = (coherence?.skippedBeats?.length || 0) + (coherence?.overlapIssues?.length || 0);
       return (
         <>
           {inspectorSection("Scene Text", (
@@ -9679,6 +9807,45 @@ export default function App() {
                   {VISUAL_STYLES.map(s => <option key={s} value={s}>{VISUAL_STYLE_PRESETS[s].label}</option>)}
                 </select>
               </div>
+            </div>
+          ))}
+          {inspectorSection("Director Workflow", (
+            <div style={{ display:"grid", gap:12 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 12px", border:`1px solid ${th.b0}`, borderRadius:10, background:th.card2 }}>
+                <div>
+                  <div style={{ fontSize:10, color:th.t3, letterSpacing:"0.12em", textTransform:"uppercase" }}>Coherence Score</div>
+                  <div style={{ fontSize:18, color: coherence ? (coherence.score >= 85 ? "#4ade80" : coherence.score >= 60 ? "#fbbf24" : "#f87171") : th.t1, fontWeight:700, marginTop:4 }}>
+                    {coherence ? `${coherence.score}/100` : "Not reviewed"}
+                  </div>
+                </div>
+                <div style={{ fontSize:11, color:th.t2, textAlign:"right", maxWidth:260, lineHeight:1.5 }}>
+                  {coherence?.recommendation || "Run a continuity pass to score beat coverage and flag overlaps before generating alternates."}
+                </div>
+              </div>
+              {coherenceIssues > 0 && (
+                <div style={{ display:"grid", gap:6 }}>
+                  {coherence?.skippedBeats?.map((beat, i) => (
+                    <div key={`skip-${i}`} style={{ fontSize:11, color:"#f87171", lineHeight:1.5 }}>Skipped beat: {beat}</div>
+                  ))}
+                  {coherence?.overlapIssues?.map((issue, i) => (
+                    <div key={`overlap-${i}`} style={{ fontSize:11, color:"#fbbf24", lineHeight:1.5 }}>Overlap issue: {issue}</div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                <button onClick={()=>runSceneDirectorReview(n)} disabled={reviewingSceneId===n.id || repairingSceneId===n.id}
+                  style={{ background:th.t0, border:"none", color:"#fff", borderRadius:10, padding:"10px 12px", fontSize:11, fontWeight:700, letterSpacing:"0.08em", cursor:(reviewingSceneId===n.id || repairingSceneId===n.id)?"not-allowed":"pointer", opacity:(reviewingSceneId===n.id || repairingSceneId===n.id)?0.5:1 }}>
+                  {reviewingSceneId===n.id ? "REVIEWING…" : "REVIEW CONTINUITY"}
+                </button>
+                <button onClick={()=>repairSceneCoherence(n)} disabled={repairingSceneId===n.id || reviewingSceneId===n.id}
+                  style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t1, borderRadius:10, padding:"10px 12px", fontSize:11, fontWeight:700, letterSpacing:"0.08em", cursor:(repairingSceneId===n.id || reviewingSceneId===n.id)?"not-allowed":"pointer", opacity:(repairingSceneId===n.id || reviewingSceneId===n.id)?0.5:1 }}>
+                  {repairingSceneId===n.id ? "REPAIRING…" : "REPAIR SCENE"}
+                </button>
+              </div>
+              <button onClick={exportProductionPackage}
+                style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t2, borderRadius:10, padding:"10px 12px", fontSize:11, fontWeight:700, letterSpacing:"0.08em", cursor:"pointer" }}>
+                EXPORT PRODUCTION PACKAGE
+              </button>
             </div>
           ))}
         </>
@@ -9774,6 +9941,46 @@ export default function App() {
               ) : (
                 <div style={{ ...inspectorText, minHeight:120, whiteSpace:"pre-wrap" }}>{n.compiledText || compileShotText(n)}</div>
               )}
+            </div>
+          ))}
+          {inspectorSection("Director Critique", (
+            <div style={{ display:"grid", gap:12 }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                <div style={{ padding:"10px 12px", border:`1px solid ${th.b0}`, borderRadius:10, background:th.card2 }}>
+                  <div style={{ fontSize:10, color:th.t3, letterSpacing:"0.12em", textTransform:"uppercase" }}>Quality</div>
+                  <div style={{ fontSize:18, fontWeight:700, marginTop:4, color:n.directorQuality === "good" ? "#4ade80" : n.directorQuality === "warn" ? "#fbbf24" : n.directorQuality === "flag" ? "#f87171" : th.t1 }}>
+                    {(n.directorQuality || "not reviewed").toUpperCase()}
+                  </div>
+                </div>
+                <button onClick={()=>critiqueSingleShot(n)} disabled={inspectorBusy}
+                  style={{ background:th.t0, border:"none", color:"#fff", borderRadius:10, padding:"10px 12px", fontSize:11, fontWeight:700, letterSpacing:"0.08em", cursor:inspectorBusy?"not-allowed":"pointer", opacity:inspectorBusy?0.5:1 }}>
+                  {inspectorBusy ? "CRITIQUING…" : "CRITIQUE SHOT"}
+                </button>
+              </div>
+              {n.directorIssue && <div style={{ fontSize:11, color:"#f87171", lineHeight:1.6 }}><strong>Issue:</strong> {n.directorIssue}</div>}
+              {n.directorNote && <div style={{ fontSize:11, color:th.t2, lineHeight:1.6 }}><strong>Director Note:</strong> {n.directorNote}</div>}
+              {n.visualHint && <div style={{ fontSize:11, color:th.t1, lineHeight:1.6 }}><strong>Visual Hint:</strong> {n.visualHint}</div>}
+            </div>
+          ))}
+          {inspectorSection("Semantic Actions", (
+            <div style={{ display:"grid", gap:10 }}>
+              <div style={{ fontSize:11, color:th.t3, lineHeight:1.6 }}>
+                Apply intent-level changes to this shot without manually rewriting every field.
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                {[
+                  ["Tighten Tension", "Tighten this shot's tension while preserving story intent. Increase urgency, make the image cleaner, and keep it practical for AI video generation."],
+                  ["Clarify Geography", "Clarify the physical geography of this shot so the audience immediately understands spatial relationships, eyelines, and movement paths."],
+                  ["Make Reveal Beat", "Turn this shot into a stronger reveal beat while preserving continuity. Increase information delivery, staging clarity, and dramatic emphasis."],
+                  ["Add Reaction Beat", "Refine this shot so it lands as a reaction beat. Favor readable emotion, timing, and subject behavior over spectacle."],
+                  ["Simplify For AI", "Simplify this shot for AI video generation while preserving intent. Reduce ambiguity, compress actions, and favor visually direct staging."],
+                ].map(([label, command]) => (
+                  <button key={label} onClick={()=>runSemanticEdit(n, command)} disabled={inspectorBusy}
+                    style={{ background:"transparent", border:`1px solid ${th.b0}`, color:th.t1, borderRadius:10, padding:"10px 12px", fontSize:11, fontWeight:700, letterSpacing:"0.06em", cursor:inspectorBusy?"not-allowed":"pointer", opacity:inspectorBusy?0.5:1 }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           ))}
         </>
@@ -9937,7 +10144,7 @@ export default function App() {
     const sceneNode = n.type===T.SHOT ? (nodes.find(x=>x.id===n.sceneId)||null) : null;
     return (
       <>
-        {n.type===T.SCENE&&<SceneCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onGenShots={onGenShots} onGenVersionB={onGenVersionB} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={nodePosValue} model={shotModel} sceneStats={getSceneShotStats(nodes,n.id)} onExport={()=>exportScene(n)} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.SCENE&&<SceneCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onGenShots={onGenShots} onGenVersionB={onGenVersionB} onReviewContinuity={()=>runSceneDirectorReview(n)} onRepairScene={()=>repairSceneCoherence(n)} reviewBusy={reviewingSceneId===n.id} repairBusy={repairingSceneId===n.id} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={nodePosValue} model={shotModel} sceneStats={getSceneShotStats(nodes,n.id)} onExport={()=>exportScene(n)} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.SHOT&&<ShotCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} sceneBible={sceneNode?.bible||[]} linkedScene={sceneNode} onLink={sceneId=>linkShot(n.id,sceneId)} onStartWire={startWire} nodePos={nodePosValue} sceneStats={getSceneShotStats(nodes,n.sceneId)} globalBible={globalBibleFlat} onRetrySingleShot={onRetrySingleShot} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.IMAGE&&<ImageCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} linkedShot={linkedShot} linkedScene={linkedScene} onUnlinkShot={()=>updNode(n.id,{shotId:null,prompt:""})} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onSaveToBible={saveToBible} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.KLING&&<KlingCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} credits={credits} onOutOfCredits={setOutOfCredits} />}
@@ -10078,6 +10285,144 @@ export default function App() {
     downloadMd(`scene-${slug}.txt`, content);
   };
 
+  const exportProductionPackage = useCallback(() => {
+    const projectName = currentProject?.name || "cartasis-project";
+    const slug = projectName.trim().replace(/[^a-z0-9]/gi, "-").toLowerCase() || "project";
+    const content = formatProductionPackageMd(nodesRef.current, projectName);
+    downloadMd(`production-package-${slug}.md`, content);
+  }, [currentProject]);
+
+  const applyDirectorReviewResult = useCallback((sceneNode, sceneShots, result) => {
+    const shotAnnotations = result?.shots || [];
+    const coherence = result?.coherence || null;
+
+    setNodes(prev => prev.map(n => {
+      if (n.type !== T.SHOT || n.sceneId !== sceneNode.id) return n;
+      const ann = shotAnnotations.find(d => d.index === n.index);
+      if (!ann) return n;
+      const patch = {
+        directorNote: ann.directorNote || "",
+        directorQuality: ann.quality || "good",
+        directorIssue: ann.issue || "",
+        visualHint: ann.visualHint || n.visualHint || "",
+      };
+      return { ...n, ...patch, ...(n.promptOverride ? {} : { compiledText: compileShotText({ ...n, ...patch }) }) };
+    }));
+
+    if (coherence) updNode(sceneNode.id, { directorCoherence: coherence });
+  }, []);
+
+  const runSceneDirectorReview = useCallback(async (sceneNode) => {
+    const latestScene = nodesRef.current.find(n => n.id === sceneNode.id) || sceneNode;
+    const sceneShots = nodesRef.current
+      .filter(n => n.type === T.SHOT && n.sceneId === latestScene.id)
+      .sort((a, b) => (a.index || 0) - (b.index || 0));
+    if (!sceneShots.length) {
+      alert("This scene has no shots to review yet.");
+      return;
+    }
+    setReviewingSceneId(latestScene.id);
+    try {
+      const result = await aiDirectorPass(latestScene, sceneShots, shotModel);
+      if (!result) throw new Error("Director review returned no result.");
+      applyDirectorReviewResult(latestScene, sceneShots, result);
+    } catch (e) {
+      alert(`Director review failed: ${e.message}`);
+    } finally {
+      setReviewingSceneId(null);
+    }
+  }, [applyDirectorReviewResult, shotModel]);
+
+  const repairSceneCoherence = useCallback(async (sceneNode) => {
+    const latestScene = nodesRef.current.find(n => n.id === sceneNode.id) || sceneNode;
+    const sceneShots = nodesRef.current
+      .filter(n => n.type === T.SHOT && n.sceneId === latestScene.id)
+      .sort((a, b) => (a.index || 0) - (b.index || 0));
+    if (!sceneShots.length) {
+      alert("This scene has no shots to repair yet.");
+      return;
+    }
+    setRepairingSceneId(latestScene.id);
+    try {
+      const patches = await aiCoherenceCheck([latestScene, ...sceneShots], "Repair continuity, coverage, and shot viability issues while preserving the scene's intent and structure.");
+      const filtered = Object.fromEntries(Object.entries(patches || {}).filter(([, v]) => v && Object.keys(v).length > 0));
+      if (Object.keys(filtered).length === 0) {
+        await runSceneDirectorReview(latestScene);
+        return;
+      }
+
+      setNodes(prev => prev.map(n => {
+        const patch = filtered[n.id];
+        if (!patch) return n;
+        const merged = { ...n, ...patch };
+        return n.type === T.SHOT && !n.promptOverride
+          ? { ...merged, compiledText: compileShotText(merged) }
+          : merged;
+      }));
+
+      const repairedScene = { ...latestScene, ...(filtered[latestScene.id] || {}) };
+      const repairedShots = sceneShots.map(s => {
+        const patch = filtered[s.id] || {};
+        const merged = { ...s, ...patch };
+        return s.promptOverride ? merged : { ...merged, compiledText: compileShotText(merged) };
+      });
+      const result = await aiDirectorPass(repairedScene, repairedShots, shotModel);
+      if (result) applyDirectorReviewResult(repairedScene, repairedShots, result);
+    } catch (e) {
+      alert(`Coherence repair failed: ${e.message}`);
+    } finally {
+      setRepairingSceneId(null);
+    }
+  }, [applyDirectorReviewResult, runSceneDirectorReview, shotModel]);
+
+  const critiqueSingleShot = useCallback(async (shotNode) => {
+    const latestShot = nodesRef.current.find(n => n.id === shotNode.id) || shotNode;
+    const sceneNode = nodesRef.current.find(n => n.id === latestShot.sceneId) || { id:null, sceneText:"", cinematicStyle:"thriller" };
+    setInspectorBusy(true);
+    setInspectorStatus("Critiquing shot…");
+    try {
+      const result = await aiDirectorPass(sceneNode, [latestShot], shotModel);
+      const ann = result?.shots?.[0];
+      if (!ann) throw new Error("No critique returned.");
+      const patch = {
+        directorNote: ann.directorNote || "",
+        directorQuality: ann.quality || "good",
+        directorIssue: ann.issue || "",
+        visualHint: ann.visualHint || latestShot.visualHint || "",
+      };
+      updNode(latestShot.id, {
+        ...patch,
+        ...(latestShot.promptOverride ? {} : { compiledText: compileShotText({ ...latestShot, ...patch }) }),
+      });
+    } catch (e) {
+      alert(`Shot critique failed: ${e.message}`);
+    } finally {
+      setInspectorBusy(false);
+      setInspectorStatus("");
+    }
+  }, [shotModel]);
+
+  const runSemanticEdit = useCallback(async (targetNode, command) => {
+    if (!targetNode || !command?.trim()) return;
+    setInspectorBusy(true);
+    setInspectorStatus("Applying semantic edit…");
+    try {
+      const latestTarget = nodesRef.current.find(n => n.id === targetNode.id) || targetNode;
+      const patch = await aiLlm(command, latestTarget.type, getEditableNodeContent(latestTarget));
+      if (!patch || Object.keys(patch).length === 0) return;
+      const merged = { ...latestTarget, ...patch };
+      updNode(latestTarget.id, latestTarget.type === T.SHOT && !latestTarget.promptOverride
+        ? { ...patch, compiledText: compileShotText(merged) }
+        : patch
+      );
+    } catch (e) {
+      alert(`Semantic edit failed: ${e.message}`);
+    } finally {
+      setInspectorBusy(false);
+      setInspectorStatus("");
+    }
+  }, []);
+
   const onGenShots = async (sceneNode) => {
     const raw = await aiShots(sceneNode, shotModel);
     const sp = pos[sceneNode.id]||{x:100,y:100};
@@ -10101,6 +10446,7 @@ export default function App() {
         directorNote:    ann.directorNote    || "",
         directorQuality: ann.quality         || "good",
         directorIssue:   ann.issue           || "",
+        visualHint:      ann.visualHint      || s.visualHint || "",
       };
       return { ...patched, compiledText: compileShotText(patched) };
     });
@@ -10156,7 +10502,7 @@ export default function App() {
     const finalShots = newShots.map(s => {
       const ann = shotAnnotations.find(d=>d.index===s.index);
       if (!ann) return s;
-      const patched = { ...s, directorNote:ann.directorNote||"", directorQuality:ann.quality||"good", directorIssue:ann.issue||"" };
+      const patched = { ...s, directorNote:ann.directorNote||"", directorQuality:ann.quality||"good", directorIssue:ann.issue||"", visualHint:ann.visualHint||s.visualHint||"" };
       return { ...patched, compiledText:compileShotText(patched) };
     });
 
@@ -10597,6 +10943,15 @@ export default function App() {
             onMouseLeave={e=>{e.currentTarget.style.borderColor=th.b0;}}>
             <Ico icon={LayoutTemplate} size={12} color={th.t2}/> SAVE AS TEMPLATE
           </button>
+          <button onClick={exportProductionPackage}
+            title="Export scenes, shots, bible, and director notes as a production package"
+            style={{ display:"flex", alignItems:"center", gap:6, background:"transparent",
+              border:`1px solid ${th.b0}`, color:th.t2, fontFamily:"'Inter',system-ui,sans-serif",
+              fontSize:11, padding:"5px 12px", borderRadius:5, cursor:"pointer", letterSpacing:"0.08em" }}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=th.t2;}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=th.b0;}}>
+            <Ico icon={FileDown} size={12} color={th.t2}/> EXPORT PACKAGE
+          </button>
         </div>
         <div style={{ width:1,height:22,background:th.b0 }} />
 
@@ -10775,6 +11130,11 @@ export default function App() {
             </div>
             <div style={{ flex:1, overflow:"auto", padding:"18px 18px 40px" }}>
               <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+                {inspectorStatus && (
+                  <div style={{ fontSize:11, color:th.t2, letterSpacing:"0.08em", padding:"10px 12px", border:`1px solid ${th.b0}`, borderRadius:10, background:th.card2 }}>
+                    {inspectorStatus}
+                  </div>
+                )}
                 {renderInspectorContent(inspectNode)}
               </div>
             </div>
