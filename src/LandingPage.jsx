@@ -752,7 +752,7 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
               body:"Add Kling or Veo nodes. Animate an approved still into a 5–10 second motion clip per shot.", },
             { step:"07", node:"Audio Node", emoji:"🎵", color:"#10b981",
               title:"Upload or generate your soundtrack",
-              body:"Drop in your own track or generate one with ElevenLabs. Beat detection snaps every cut to the music automatically.", },
+              body:"Drop in your own track or generate one with ElevenLabs. Use the Audio node for beat-sync in the edit, or feed it into Music DNA to turn the song into an audio-to-video blueprint with sections, pacing, and shot ideas.", },
             { step:"08", node:"Video Edit Node", emoji:"✂️", color:"#f59e0b",
               title:"Sequence clips into a final edit",
               body:"Drag clips into a Video Edit node. Trim, reorder, and export your finished edit for client review.", },
@@ -878,7 +878,7 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
             },
             {
               q: "How does beat-sync work with the Audio node?",
-              a: "Drop an audio file into the Audio node and it detects the BPM automatically — no external tool needed. Wire the Audio node into your Video Edit node and cuts will snap to the detected beat grid, so your edit stays in time with the track.",
+              a: "Drop an audio file into the Audio node and it detects the BPM automatically — no external tool needed. Wire the Audio node into your Video Edit node and cuts will snap to the detected beat grid, so your edit stays in time with the track. If you want to go further, you can also wire that same track into Music DNA to turn the song into an audio-to-video planning layer before generation begins.",
             },
             {
               q: "How does the Video Edit node fit into the workflow?",
