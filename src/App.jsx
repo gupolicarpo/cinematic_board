@@ -699,7 +699,7 @@ function analyzeAudioStructure(audioBuffer, preferredSections = "auto") {
   const wantedBoundaries = Math.max(1, targetSections - 1);
   const sortedBoundaries = changeScores
     .sort((a, b) => b.score - a.score)
-    .filter(({ index }, arr, pos, self) => {
+    .filter(({ index }, pos, self) => {
       return !self.slice(0, pos).some(prev => Math.abs(prev.index - index) < 2);
     })
     .slice(0, wantedBoundaries)
