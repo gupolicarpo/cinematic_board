@@ -550,7 +550,7 @@ function mkVeo()   { return { id:`veo_${uid()}`, type:T.VEO, shotId:null, videoU
 function mkLlm()   { return { id:`llm_${uid()}`, type:T.LLM, targetNodeIds:[], targetNodeId:null, llmMode:"edit", command:"", model:"claude-sonnet-4-5", lastResult:null }; }
 function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p", lastSplitAction:null, audioMix:{ videoVolume:1, soundtrackVolume:1 } }; }
 function mkScript()   { return { id:`scr_${uid()}`, type:T.SCRIPT, title:"Untitled Script", script:"", idea:"", format:"screenplay", scriptMode:"write" }; }
-function mkAudio()    { return { id:`aud_${uid()}`, type:T.AUDIO, audioUrl:null, fileName:null, bpm:null, beats:[], duration:0, snapEnabled:true, videoNodeId:null }; }
+function mkAudio()    { return { id:`aud_${uid()}`, type:T.AUDIO, audioUrl:null, fileName:null, bpm:null, beats:[], duration:0, snapEnabled:true, videoNodeId:null, musicAnalysis:null }; }
 function mkMusicDNA() { return { id:`mdna_${uid()}`, type:T.MUSICDNA, title:"Music DNA", audioNodeId:null, concept:"", lyrics:"", clipMode:"hybrid", preferredSections:"auto", visualStyle:"none", analysis:null, lastBlueprint:null }; }
 function mkClip()     { return { id:`clp_${uid()}`, type:T.CLIP,  videoUrl:null, fileName:null, duration:0 }; }
 
@@ -559,6 +559,208 @@ function estimateMusicSectionCount(duration = 0, preferred = "auto") {
   if (duration >= 150) return 6;
   if (duration >= 90) return 5;
   return 4;
+}
+
+function getMonoSamples(audioBuffer) {
+  const channelCount = audioBuffer.numberOfChannels || 1;
+  const length = audioBuffer.length;
+  if (channelCount === 1) return audioBuffer.getChannelData(0);
+  const mono = new Float32Array(length);
+  for (let ch = 0; ch < channelCount; ch++) {
+    const data = audioBuffer.getChannelData(ch);
+    for (let i = 0; i < length; i++) mono[i] += data[i] / channelCount;
+  }
+  return mono;
+}
+
+function movingAverage(values, radius) {
+  if (!values.length || radius <= 0) return values.slice();
+  const out = new Array(values.length).fill(0);
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+    if (i > radius * 2) sum -= values[i - radius * 2 - 1];
+    const span = Math.min(i, radius) + Math.min(values.length - 1 - i, radius) + 1;
+    out[i] = sum / span;
+  }
+  return out;
+}
+
+function percentile(values, p) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * p)));
+  return sorted[idx];
+}
+
+function peakPick(values, { threshold = 0, minDistance = 1 } = {}) {
+  const picks = [];
+  let last = -minDistance;
+  for (let i = 1; i < values.length - 1; i++) {
+    if (values[i] <= threshold) continue;
+    if (values[i] >= values[i - 1] && values[i] > values[i + 1]) {
+      if (i - last >= minDistance) {
+        picks.push(i);
+        last = i;
+      } else if (picks.length && values[i] > values[picks[picks.length - 1]]) {
+        picks[picks.length - 1] = i;
+        last = i;
+      }
+    }
+  }
+  return picks;
+}
+
+function estimateBpmFromNovelty(novelty, frameHopSec) {
+  if (!novelty.length || !frameHopSec) return null;
+  const minBpm = 60;
+  const maxBpm = 180;
+  const minLag = Math.floor((60 / maxBpm) / frameHopSec);
+  const maxLag = Math.ceil((60 / minBpm) / frameHopSec);
+  let bestLag = 0;
+  let bestScore = -Infinity;
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let score = 0;
+    for (let i = lag; i < novelty.length; i++) score += novelty[i] * novelty[i - lag];
+    if (score > bestScore) {
+      bestScore = score;
+      bestLag = lag;
+    }
+  }
+  if (!bestLag) return null;
+  return Math.round(60 / (bestLag * frameHopSec));
+}
+
+function classifyEnergy(value, low, high) {
+  if (value <= low) return "low";
+  if (value >= high) return "high";
+  return "medium";
+}
+
+function buildSectionLabel(index) {
+  return `SECTION ${String.fromCharCode(65 + index)}`;
+}
+
+function analyzeAudioStructure(audioBuffer, preferredSections = "auto") {
+  const mono = getMonoSamples(audioBuffer);
+  const sampleRate = audioBuffer.sampleRate || 44100;
+  const durationSec = Number(audioBuffer.duration.toFixed(2));
+  const frameSize = Math.max(1024, Math.round(sampleRate * 0.10));
+  const hopSize = Math.max(512, Math.round(sampleRate * 0.05));
+  const frameHopSec = hopSize / sampleRate;
+
+  const rms = [];
+  for (let start = 0; start + frameSize <= mono.length; start += hopSize) {
+    let sum = 0;
+    for (let i = 0; i < frameSize; i++) {
+      const s = mono[start + i] || 0;
+      sum += s * s;
+    }
+    rms.push(Math.sqrt(sum / frameSize));
+  }
+  const smoothedRms = movingAverage(rms, 2);
+  const novelty = smoothedRms.map((v, i) => i === 0 ? 0 : Math.max(0, v - smoothedRms[i - 1]));
+  const noveltySmooth = movingAverage(novelty, 1);
+
+  const bpm = estimateBpmFromNovelty(noveltySmooth, frameHopSec);
+  const beatThreshold = percentile(noveltySmooth, 0.78);
+  const beatFrames = peakPick(noveltySmooth, {
+    threshold: beatThreshold,
+    minDistance: Math.max(1, Math.round((60 / (bpm || 110)) / frameHopSec * 0.5)),
+  });
+  const beats = beatFrames.map(i => Number((i * frameHopSec).toFixed(3)));
+
+  const blockSec = 2;
+  const blockFrames = Math.max(1, Math.round(blockSec / frameHopSec));
+  const blocks = [];
+  for (let start = 0; start < smoothedRms.length; start += blockFrames) {
+    const end = Math.min(smoothedRms.length, start + blockFrames);
+    const energySlice = smoothedRms.slice(start, end);
+    const noveltySlice = noveltySmooth.slice(start, end);
+    if (!energySlice.length) continue;
+    const energyMean = energySlice.reduce((a, b) => a + b, 0) / energySlice.length;
+    const noveltyMean = noveltySlice.reduce((a, b) => a + b, 0) / noveltySlice.length;
+    blocks.push({
+      startSec: start * frameHopSec,
+      endSec: Math.min(durationSec, end * frameHopSec),
+      energyMean,
+      noveltyMean,
+    });
+  }
+
+  const changeScores = [];
+  for (let i = 1; i < blocks.length; i++) {
+    const energyDelta = Math.abs(blocks[i].energyMean - blocks[i - 1].energyMean);
+    const noveltyDelta = Math.abs(blocks[i].noveltyMean - blocks[i - 1].noveltyMean);
+    changeScores.push({ index: i, score: energyDelta * 0.7 + noveltyDelta * 1.3 });
+  }
+
+  const targetSections = estimateMusicSectionCount(durationSec, preferredSections);
+  const wantedBoundaries = Math.max(1, targetSections - 1);
+  const sortedBoundaries = changeScores
+    .sort((a, b) => b.score - a.score)
+    .filter(({ index }, arr, pos, self) => {
+      return !self.slice(0, pos).some(prev => Math.abs(prev.index - index) < 2);
+    })
+    .slice(0, wantedBoundaries)
+    .sort((a, b) => a.index - b.index);
+
+  const boundaryIndices = [0, ...sortedBoundaries.map(b => b.index), blocks.length].filter((v, i, arr) => i === 0 || v !== arr[i - 1]);
+  const energyValues = blocks.map(b => b.energyMean);
+  const lowEnergy = percentile(energyValues, 0.33);
+  const highEnergy = percentile(energyValues, 0.66);
+  const sections = [];
+
+  for (let i = 0; i < boundaryIndices.length - 1; i++) {
+    const startBlock = boundaryIndices[i];
+    const endBlock = boundaryIndices[i + 1];
+    const slice = blocks.slice(startBlock, endBlock);
+    if (!slice.length) continue;
+    const sectionEnergy = slice.reduce((a, b) => a + b.energyMean, 0) / slice.length;
+    const sectionNovelty = slice.reduce((a, b) => a + b.noveltyMean, 0) / slice.length;
+    const startSec = Number(slice[0].startSec.toFixed(2));
+    const endSec = Number(slice[slice.length - 1].endSec.toFixed(2));
+    const beatCount = beats.filter(t => t >= startSec && t < endSec).length;
+    sections.push({
+      label: buildSectionLabel(i),
+      key: `section-${i + 1}`,
+      startSec,
+      endSec,
+      durationSec: Number((endSec - startSec).toFixed(2)),
+      energy: classifyEnergy(sectionEnergy, lowEnergy, highEnergy),
+      energyValue: sectionEnergy,
+      noveltyValue: sectionNovelty,
+      beatCount,
+      estimatedBars: bpm ? Math.max(1, Math.round(beatCount / 4)) : 0,
+      visualRole: i === 0
+        ? "establish the opening visual language"
+        : i === boundaryIndices.length - 2
+          ? "land the final visual payoff"
+          : "shift the clip into a new visual phase",
+    });
+  }
+
+  const notableMoments = [...sortedBoundaries]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4)
+    .map((boundary, i) => ({
+      atSec: Number((blocks[boundary.index]?.startSec || 0).toFixed(2)),
+      label: `Transition ${i + 1}`,
+      reason: "strong structural change detected in the audio energy and onset profile",
+    }))
+    .sort((a, b) => a.atSec - b.atSec);
+
+  return {
+    durationSec,
+    bpm,
+    beats,
+    beatsDetected: beats.length,
+    sectionCount: sections.length,
+    energyCurve: sections.map(section => `${section.label}:${section.energy}`).join(" -> "),
+    sections,
+    notableMoments,
+    summary: `Detected ${sections.length} audio-driven sections across ${durationSec.toFixed(1)}s${bpm ? ` at roughly ${bpm} BPM` : ""}. Sections come from changes in energy and onset density, not fixed song templates.`,
+  };
 }
 
 const MUSIC_SECTION_LIBRARY = {
@@ -613,6 +815,9 @@ function inferMusicMoments(sections, duration) {
 }
 
 function buildMusicDNAAnalysis(audioNode, preferredSections = "auto") {
+  if (audioNode?.musicAnalysis?.sections?.length) {
+    return audioNode.musicAnalysis;
+  }
   if (!audioNode?.duration) return null;
   const duration = Number(audioNode.duration || 0);
   const bpm = Number(audioNode.bpm || 0);
@@ -4968,14 +5173,15 @@ function AudioTrackCard({ node, upd, onDel, sel: selected, onStartWire, nodePos,
     setAnalyzing(true);
     const url = URL.createObjectURL(file);
     // Immediately show filename
-    upd({ audioUrl: url, fileName: file.name, bpm: null, beats: [], duration: 0, snapEnabled: node.snapEnabled ?? true });
+    upd({ audioUrl: url, fileName: file.name, bpm: null, beats: [], duration: 0, musicAnalysis: null, snapEnabled: node.snapEnabled ?? true });
     try {
       const arrBuf  = await file.arrayBuffer();
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
       const decoded = await audioCtx.decodeAudioData(arrBuf);
       audioCtx.close();
       const { bpm, beats } = detectBeats(decoded);
-      upd({ audioUrl: url, fileName: file.name, bpm, beats, duration: parseFloat(decoded.duration.toFixed(2)), snapEnabled: node.snapEnabled ?? true });
+      const musicAnalysis = analyzeAudioStructure(decoded, node.preferredSections || "auto");
+      upd({ audioUrl: url, fileName: file.name, bpm, beats, duration: parseFloat(decoded.duration.toFixed(2)), musicAnalysis, snapEnabled: node.snapEnabled ?? true });
     } catch(e) {
       setErr("Could not analyze audio: " + e.message);
     } finally {
@@ -5007,14 +5213,15 @@ function AudioTrackCard({ node, upd, onDel, sel: selected, onStartWire, nodePos,
       const url      = URL.createObjectURL(blob);
       const fileName = `elevenlabs_${genTags.join("-") || "music"}_${genDuration}s.mp3`;
       setSavedUrl(null);
-      upd({ audioUrl: url, fileName, bpm: null, beats: [], duration: 0, snapEnabled: node.snapEnabled ?? true });
+      upd({ audioUrl: url, fileName, bpm: null, beats: [], duration: 0, musicAnalysis: null, snapEnabled: node.snapEnabled ?? true });
       setAnalyzing(true);
       try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
         const decoded  = await audioCtx.decodeAudioData(arrBuf.slice(0));
         audioCtx.close();
         const { bpm, beats } = detectBeats(decoded);
-        upd({ audioUrl: url, fileName, bpm, beats, duration: parseFloat(decoded.duration.toFixed(2)), snapEnabled: node.snapEnabled ?? true });
+        const musicAnalysis = analyzeAudioStructure(decoded, node.preferredSections || "auto");
+        upd({ audioUrl: url, fileName, bpm, beats, duration: parseFloat(decoded.duration.toFixed(2)), musicAnalysis, snapEnabled: node.snapEnabled ?? true });
       } finally {
         setAnalyzing(false);
       }
@@ -5046,14 +5253,15 @@ function AudioTrackCard({ node, upd, onDel, sel: selected, onStartWire, nodePos,
       const url    = URL.createObjectURL(blob);
       const fileName = `elevenlabs_video_${vidTags.join("-") || "music"}_${Math.round(videoNode?.duration||0)}s.mp3`;
       setSavedUrl(null);
-      upd({ audioUrl: url, fileName, bpm: null, beats: [], duration: 0, snapEnabled: node.snapEnabled ?? true });
+      upd({ audioUrl: url, fileName, bpm: null, beats: [], duration: 0, musicAnalysis: null, snapEnabled: node.snapEnabled ?? true });
       setAnalyzing(true);
       try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
         const decoded  = await audioCtx.decodeAudioData(arrBuf.slice(0));
         audioCtx.close();
         const { bpm, beats } = detectBeats(decoded);
-        upd({ audioUrl: url, fileName, bpm, beats, duration: parseFloat(decoded.duration.toFixed(2)), snapEnabled: node.snapEnabled ?? true });
+        const musicAnalysis = analyzeAudioStructure(decoded, node.preferredSections || "auto");
+        upd({ audioUrl: url, fileName, bpm, beats, duration: parseFloat(decoded.duration.toFixed(2)), musicAnalysis, snapEnabled: node.snapEnabled ?? true });
       } finally { setAnalyzing(false); }
     } catch(e) {
       setErr("Video-to-music failed: " + e.message);
