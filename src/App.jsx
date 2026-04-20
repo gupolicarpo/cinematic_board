@@ -551,8 +551,177 @@ function mkLlm()   { return { id:`llm_${uid()}`, type:T.LLM, targetNodeIds:[], t
 function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p", lastSplitAction:null, audioMix:{ videoVolume:1, soundtrackVolume:1 } }; }
 function mkScript()   { return { id:`scr_${uid()}`, type:T.SCRIPT, title:"Untitled Script", script:"", idea:"", format:"screenplay", scriptMode:"write" }; }
 function mkAudio()    { return { id:`aud_${uid()}`, type:T.AUDIO, audioUrl:null, fileName:null, bpm:null, beats:[], duration:0, snapEnabled:true, videoNodeId:null, musicAnalysis:null }; }
-function mkMusicDNA() { return { id:`mdna_${uid()}`, type:T.MUSICDNA, title:"Music DNA", audioNodeId:null, concept:"", lyrics:"", clipMode:"hybrid", preferredSections:"auto", visualStyle:"none", analysis:null, lastBlueprint:null }; }
+function mkMusicDNA() { return { id:`mdna_${uid()}`, type:T.MUSICDNA, title:"Music DNA", audioNodeId:null, concept:"", lyrics:"", clipMode:"hybrid", genre:"auto", preferredSections:"auto", visualStyle:"none", analysis:null, lastBlueprint:null }; }
 function mkClip()     { return { id:`clp_${uid()}`, type:T.CLIP,  videoUrl:null, fileName:null, duration:0 }; }
+
+const MUSIC_GENRES = [
+  "auto",
+  "trap",
+  "rap",
+  "drill",
+  "electro",
+  "techno",
+  "house",
+  "minimal",
+  "ambient",
+  "pop",
+  "rock",
+  "punk",
+  "experimental",
+];
+
+const MUSIC_GENRE_GRAMMARS = {
+  auto: {
+    moodBias: "follow the detected rhythm and energy rather than forcing a narrative trope",
+    imageBehavior: "repeat strong visual motifs when the pulse repeats",
+    cameraBehavior: "let movement density follow the beat pressure",
+    palette: "derive the look from the concept and energy rather than a default atmosphere",
+  },
+  trap: {
+    moodBias: "confident, nocturnal, hard-edged, status-driven",
+    imageBehavior: "bold silhouettes, flex moments, fragmentary body details, luxury or street iconography",
+    cameraBehavior: "low angles, assertive push-ins, controlled swagger, punctuated movement on hits",
+    palette: "deep blacks, chrome, red accents, sodium vapor, wet surfaces",
+  },
+  rap: {
+    moodBias: "presence, authorship, realism or stylized dominance",
+    imageBehavior: "performance-led frames, social environment, sharp emblematic details",
+    cameraBehavior: "deliberate tracking, hero framing, rhythmic cuts around bars and punchlines",
+    palette: "high contrast urban texture, practical light, skin and fabric detail",
+  },
+  drill: {
+    moodBias: "tense, cold, confrontational, raw",
+    imageBehavior: "masked groups, hard architecture, glare, repetition, compressed space",
+    cameraBehavior: "handheld threat energy, abrupt reframing, aggressive lateral motion",
+    palette: "cold LED, stark contrast, concrete, metallic reflections",
+  },
+  electro: {
+    moodBias: "synthetic, kinetic, graphic, body-meets-machine energy",
+    imageBehavior: "strobe logic, repetition, geometry, reflections, neon cues, graphic motion",
+    cameraBehavior: "pulsing push-ins, lateral glides, robotic pivots, tempo-responsive cuts",
+    palette: "neon, LED color contrast, reflective surfaces, dark club or industrial spaces",
+  },
+  techno: {
+    moodBias: "hypnotic, relentless, immersive, industrial",
+    imageBehavior: "pattern repetition, light architecture, smoke, crowd or machinery rhythm",
+    cameraBehavior: "steady pressure, loops, driving forward motion, trance-like repetition",
+    palette: "monochrome plus laser accents, steel, concrete, haze",
+  },
+  house: {
+    moodBias: "euphoric, fluid, sensual, communal",
+    imageBehavior: "dance energy, syncopated bodies, light bloom, nightlife ritual",
+    cameraBehavior: "flowing movement, circular motion, buoyant tracking, smooth rhythmic edits",
+    palette: "warm neon, color bloom, club atmospherics, skin glow",
+  },
+  minimal: {
+    moodBias: "precise, reduced, hypnotic, elegant restraint",
+    imageBehavior: "clean shapes, sparse motifs, repetition with small variation, negative space",
+    cameraBehavior: "measured motion, locked frames with subtle shifts, economical cuts",
+    palette: "controlled monochrome or two-tone palettes, polished surfaces, sparse light",
+  },
+  ambient: {
+    moodBias: "atmospheric, spacious, drifting, introspective",
+    imageBehavior: "slow transformation, texture, landscape, haze, suspended gestures",
+    cameraBehavior: "drift, float, gentle reveals, very low cut pressure",
+    palette: "soft gradients, mist, low contrast, diffuse light",
+  },
+  pop: {
+    moodBias: "hook-driven, glossy, legible, emotionally direct",
+    imageBehavior: "clear icon moments, repeatable motifs, star framing, choreography or color set pieces",
+    cameraBehavior: "clean energetic coverage, designed transitions, chorus escalation",
+    palette: "high color clarity, polished light, strong wardrobe/pop iconography",
+  },
+  rock: {
+    moodBias: "physical, expressive, raw, performance-heavy",
+    imageBehavior: "instrument force, sweat, texture, crowd or room energy, impact gestures",
+    cameraBehavior: "shoulder-level force, push-ins, whip energy, visceral cut rhythm",
+    palette: "stage light, practical haze, grit, sweat, contrast",
+  },
+  punk: {
+    moodBias: "urgent, abrasive, anti-polish, rebellious",
+    imageBehavior: "DIY surfaces, collision, crowd crush, chaos motifs, overexposed flashes",
+    cameraBehavior: "restless handheld, slam cuts, hard snap zoom energy",
+    palette: "dirty whites, black, red, photocopy textures, blown highlights",
+  },
+  experimental: {
+    moodBias: "rule-breaking, surprising, unstable, concept-first",
+    imageBehavior: "non-literal motifs, fragmentation, texture and pattern rupture",
+    cameraBehavior: "unconventional framing, abrupt grammar shifts, mixed temporal feel",
+    palette: "defined by concept; allow unusual combinations and non-naturalistic light",
+  },
+};
+
+function inferRhythmCharacter(bpm = 0, energy = "medium", clipMode = "hybrid") {
+  if (bpm >= 145) return clipMode === "abstract" ? "hyper-kinetic and relentless" : "driving and high-pressure";
+  if (bpm >= 125) return energy === "high" ? "club-driven and propulsive" : "steady and kinetic";
+  if (bpm >= 105) return energy === "high" ? "punchy and insistent" : "measured with forward pressure";
+  if (bpm >= 85) return energy === "low" ? "slow-burn and spacious" : "mid-tempo and deliberate";
+  return "slow and expansive";
+}
+
+function inferCutDensity(bpm = 0, energy = "medium", clipMode = "hybrid") {
+  const score = (bpm >= 140 ? 2 : bpm >= 110 ? 1 : 0) + (energy === "high" ? 2 : energy === "medium" ? 1 : 0) + (clipMode === "performance" ? 1 : 0);
+  if (score >= 4) return "fast";
+  if (score >= 2) return "medium";
+  return "slow";
+}
+
+function inferMovementBias(genre = "auto", clipMode = "hybrid", energy = "medium") {
+  if (clipMode === "abstract") return energy === "high" ? "patterned kinetic motion" : "designed controlled motion";
+  if (genre === "electro" || genre === "techno" || genre === "house") return energy === "high" ? "pulsing glide and rhythmic camera pressure" : "measured drift with pulse accents";
+  if (genre === "trap" || genre === "rap" || genre === "drill") return energy === "high" ? "assertive push-ins and hard reframes" : "hero framing with restrained motion";
+  if (genre === "ambient" || genre === "minimal") return "slow drift and restrained camera grammar";
+  return energy === "high" ? "rhythm-led movement" : "controlled minimal movement";
+}
+
+function buildMusicVideoBlueprintGuide(analysis, musicNode) {
+  const bpm = Number(analysis?.bpm || 0);
+  const genre = musicNode?.genre || "auto";
+  const clipMode = musicNode?.clipMode || "hybrid";
+  const grammar = MUSIC_GENRE_GRAMMARS[genre] || MUSIC_GENRE_GRAMMARS.auto;
+  const peakSection = (analysis?.sections || []).reduce((best, section) => {
+    if (!best) return section;
+    return (section.energyValue || 0) > (best.energyValue || 0) ? section : best;
+  }, null);
+  const overall = {
+    genre,
+    clipMode,
+    rhythmCharacter: inferRhythmCharacter(bpm, peakSection?.energy || "medium", clipMode),
+    cutDensity: inferCutDensity(bpm, peakSection?.energy || "medium", clipMode),
+    movementBias: inferMovementBias(genre, clipMode, peakSection?.energy || "medium"),
+    moodBias: grammar.moodBias,
+    imageBehavior: grammar.imageBehavior,
+    cameraBehavior: grammar.cameraBehavior,
+    palette: grammar.palette,
+    antiGenericRule: "Do not default to lonely figures, dawn fog, contemplative walking, or generic arthouse mood unless the concept or lyrics explicitly ask for that.",
+  };
+  const sections = (analysis?.sections || []).map((section, idx) => ({
+    label: section.label,
+    startSec: section.startSec,
+    endSec: section.endSec,
+    energy: section.energy,
+    visualRole: section.visualRole,
+    rhythmCharacter: inferRhythmCharacter(bpm, section.energy, clipMode),
+    cutDensity: inferCutDensity(bpm, section.energy, clipMode),
+    movementBias: inferMovementBias(genre, clipMode, section.energy),
+    imageDirection:
+      clipMode === "performance"
+        ? `Use the ${section.label.toLowerCase()} for performance-led coverage that visibly rides the pulse. ${grammar.imageBehavior}.`
+        : clipMode === "narrative"
+          ? `Use the ${section.label.toLowerCase()} as a clear story beat, but keep the visuals visibly driven by the music's pressure and repetition. ${grammar.imageBehavior}.`
+          : clipMode === "abstract"
+            ? `Use the ${section.label.toLowerCase()} to build a non-literal visual system shaped by repetition, geometry, texture, and pulse. ${grammar.imageBehavior}.`
+            : `Blend performance, motif repetition, and visual progression in the ${section.label.toLowerCase()}, following the pulse rather than generic cinematic filler. ${grammar.imageBehavior}.`,
+    shotGuidance:
+      section.energy === "high"
+        ? "Favor shorter shots, stronger impact frames, and visual escalation on section accents."
+        : section.energy === "low"
+          ? "Let shots breathe, but keep a visible link to the pulse through repetition, design, or micro-movement."
+          : "Use a balanced shot rhythm that advances visual momentum without flattening the section.",
+  }));
+
+  return { overall, sections };
+}
 
 function estimateMusicSectionCount(duration = 0, preferred = "auto") {
   if (preferred && preferred !== "auto") return Math.max(3, Math.min(6, Number(preferred) || 4));
@@ -1301,6 +1470,7 @@ RULES:
 async function aiMusicBlueprint(musicNode, audioNode) {
   const analysis = musicNode.analysis;
   if (!analysis?.sections?.length) throw new Error("Analyze the music before generating a blueprint.");
+  const blueprintGuide = buildMusicVideoBlueprintGuide(analysis, musicNode);
 
   const sys = `You are a music-video director. Convert a song structure analysis into a generation-ready visual blueprint for an AI filmmaking canvas.
 
@@ -1340,16 +1510,21 @@ Return ONLY a raw JSON object with this exact shape:
 Rules:
 - One scene per music section.
 - Each scene must reflect its section energy and visual role.
+- The blueprint must visibly express rhythm, repetition, pressure, and release from the music itself.
 - Each shot must describe ONE clear action or image, practical for AI generation.
 - Each shot duration must be an integer between 1 and 5 seconds.
 - Each scene must stay within ${KLING_MAX_SHOTS} shots and ${KLING_MAX_SECS} total seconds.
 - Prefer performance / motif / narrative staging that can be edited later.
+- Use the provided directionBlueprint as the primary visual grammar.
+- Avoid generic arthouse filler like lone figures at dawn, foggy contemplation, empty plazas, or vague mood-only scenes unless the user's concept or lyrics clearly call for that.
+- For beat-driven genres, prefer visual repetition, pressure, light logic, body rhythm, environment rhythm, and section-specific escalation.
 - If lyrics are present, use them as inspiration only where relevant; do not quote long passages.
 - Keep entityTags empty unless the user explicitly provided tagged entities.
 - Return only valid JSON, no markdown.`;
 
   const usr = JSON.stringify({
     clipMode: musicNode.clipMode || "hybrid",
+    genre: musicNode.genre || "auto",
     concept: musicNode.concept || "",
     lyrics: musicNode.lyrics || "",
     preferredVisualStyle: musicNode.visualStyle || "none",
@@ -1362,6 +1537,7 @@ Rules:
     },
     sections: analysis.sections,
     notableMoments: analysis.notableMoments,
+    directionBlueprint: blueprintGuide,
   }, null, 2);
 
   const r = await fetch("/api/messages", {
@@ -7039,6 +7215,7 @@ function MusicDnaCard({ node, upd, onDel, sel: selected, allNodes, onInspect, on
   const ac = "#ec4899";
   const audioNode = node.audioNodeId ? (allNodes || []).find(n => n.id === node.audioNodeId) : null;
   const analysis = node.analysis || null;
+  const directionGuide = analysis ? buildMusicVideoBlueprintGuide(analysis, node) : null;
   const linkedStats = audioNode?.duration
     ? `${audioNode.duration.toFixed(1)}s${audioNode.bpm ? ` · ${audioNode.bpm} BPM` : ""}${audioNode.beats?.length ? ` · ${audioNode.beats.length} beats` : ""}`
     : "No analyzed audio linked yet";
@@ -7078,6 +7255,15 @@ function MusicDnaCard({ node, upd, onDel, sel: selected, allNodes, onInspect, on
                 <option value="abstract">ABSTRACT</option>
               </select>
             </div>
+            <div>
+              <label style={{ fontSize:6, color:th.t3, letterSpacing:"0.12em", display:"block", marginBottom:4 }}>GENRE</label>
+              <select value={node.genre || "auto"} onChange={e=>upd({ genre:e.target.value })} style={{ ...mkSel(th), fontSize:8, padding:"7px 8px" }}>
+                {MUSIC_GENRES.map(opt => <option key={opt} value={opt}>{opt === "auto" ? "AUTO" : opt.toUpperCase()}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
             <div>
               <label style={{ fontSize:6, color:th.t3, letterSpacing:"0.12em", display:"block", marginBottom:4 }}>SECTIONS</label>
               <select value={node.preferredSections || "auto"} onChange={e=>upd({ preferredSections:e.target.value })} style={{ ...mkSel(th), fontSize:8, padding:"7px 8px" }}>
@@ -7121,6 +7307,18 @@ function MusicDnaCard({ node, upd, onDel, sel: selected, allNodes, onInspect, on
                 <div style={{ fontSize:7, color:th.t3, marginTop:5 }}>ENERGY CURVE · {analysis.energyCurve}</div>
               </div>
 
+              {directionGuide && (
+                <div style={{ border:`1px solid ${th.b0}`, borderRadius:8, padding:"8px 10px", background:th.card2 }}>
+                  <div style={{ fontSize:6, color:ac, letterSpacing:"0.12em", marginBottom:4 }}>VIDEO BLUEPRINT GUIDE</div>
+                  <div style={{ fontSize:8, color:th.t1, lineHeight:1.6 }}>
+                    {directionGuide.overall.rhythmCharacter} · {directionGuide.overall.cutDensity} cut density
+                  </div>
+                  <div style={{ fontSize:7, color:th.t3, marginTop:4, lineHeight:1.5 }}>
+                    {directionGuide.overall.movementBias}. {directionGuide.overall.imageBehavior}
+                  </div>
+                </div>
+              )}
+
               <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
                 {analysis.sections.map((section, idx) => (
                   <div key={`${section.key}-${idx}`} style={{ border:`1px solid ${th.b0}`, borderRadius:8, padding:"7px 9px", background:th.card2 }}>
@@ -7132,6 +7330,11 @@ function MusicDnaCard({ node, upd, onDel, sel: selected, allNodes, onInspect, on
                     <div style={{ fontSize:6, color:th.t3, marginTop:4 }}>
                       {section.energy.toUpperCase()} · {section.estimatedBars || "?"} bars · {section.beatCount || "?"} beats
                     </div>
+                    {directionGuide?.sections?.[idx] && (
+                      <div style={{ fontSize:6, color:th.t3, marginTop:5, lineHeight:1.5 }}>
+                        {directionGuide.sections[idx].rhythmCharacter} · {directionGuide.sections[idx].cutDensity} cuts · {directionGuide.sections[idx].movementBias}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -10778,6 +10981,14 @@ export default function App() {
                     <option value="abstract">Abstract</option>
                   </select>
                 </div>
+                <div>
+                  <label style={fieldLabel}>Genre</label>
+                  <select value={n.genre || "auto"} onChange={e=>updNode(n.id, { genre:e.target.value })} style={inspectorSelect}>
+                    {MUSIC_GENRES.map(opt => <option key={opt} value={opt}>{opt === "auto" ? "Auto" : capitalize(opt)}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
                 <div>
                   <label style={fieldLabel}>Sections</label>
                   <select value={n.preferredSections || "auto"} onChange={e=>updNode(n.id, { preferredSections:e.target.value })} style={inspectorSelect}>
