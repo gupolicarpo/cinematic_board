@@ -388,39 +388,35 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
           </div>
           <h1 className="fu fu1" style={{ fontSize:"clamp(40px,6vw,72px)", fontWeight:900, lineHeight:1.05,
             letterSpacing:"-0.03em", color:WHITE, marginBottom:24 }}>
-            Write your story.<br /><span style={{ color:ACCENT }}>Direct every frame.</span>
+            From script to storyboard to video.
           </h1>
           <p className="fu fu2" style={{ fontSize:"clamp(15px,1.8vw,19px)", color:"rgba(255,255,255,0.82)",
             lineHeight:1.7, maxWidth:600, margin:"0 auto 32px" }}>
-            Build your visual story the way a director thinks — scene by scene, shot by shot.
-            Write, visualize, generate, and edit, all wired together on one canvas.
+            Cartasis helps AI filmmakers plan scenes, shots, references, and continuity before generation.
           </p>
-          {/* Node count callout */}
-          <div className="fu fu2" style={{ display:"inline-flex", alignItems:"center", gap:16, background:"rgba(255,255,255,0.04)",
-            border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:"12px 24px", marginBottom:40 }}>
-            {[["Script","to shot"],["Image","to video"],["Edit","to export"]].map(([n,l]) => (
-              <div key={l} style={{ textAlign:"center" }}>
-                <div style={{ fontSize:15, fontWeight:900, color:WHITE, letterSpacing:"-0.02em" }}>{n}</div>
-                <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)", fontWeight:600, letterSpacing:"0.08em", textTransform:"uppercase" }}>{l}</div>
+          <div className="fu fu2" style={{ display:"grid", gap:10, maxWidth:680, margin:"0 auto 40px", textAlign:"left" }}>
+            {[
+              "Turn scripts into structured scenes and shots",
+              "Keep references and continuity organized",
+              "Generate with more control and less waste",
+            ].map((bullet) => (
+              <div key={bullet} style={{ display:"flex", alignItems:"center", gap:12, color:"rgba(255,255,255,0.82)", fontSize:14, lineHeight:1.6 }}>
+                <span style={{ width:7, height:7, borderRadius:"50%", background:ACCENT, flexShrink:0, boxShadow:`0 0 12px ${ACCENT}66` }} />
+                <span>{bullet}</span>
               </div>
             ))}
-            <div style={{ width:1, height:36, background:"rgba(255,255,255,0.08)" }} />
-            <div style={{ textAlign:"left" }}>
-              <div style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.7)", marginBottom:2 }}>One connected canvas.</div>
-              <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)" }}>Every node in your story, always in sync.</div>
-            </div>
           </div>
           <div className="fu fu3" style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap", marginBottom:56 }}>
             <button onClick={openAuth} style={{ background:WHITE, border:"none", borderRadius:10, padding:"14px 32px",
               fontSize:15, fontWeight:700, color:DARK, cursor:"pointer", fontFamily:"inherit" }}
               onMouseEnter={e => e.currentTarget.style.opacity="0.88"} onMouseLeave={e => e.currentTarget.style.opacity="1"}>
-              Start for free →
+              Start your first project
             </button>
             <a href="#nodes" style={{ background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.15)",
               borderRadius:10, padding:"14px 32px", fontSize:15, fontWeight:600, color:WHITE, display:"inline-block" }}
               onMouseEnter={e => e.target.style.background="rgba(255,255,255,0.12)"}
               onMouseLeave={e => e.target.style.background="rgba(255,255,255,0.08)"}>
-              See the node system ↓
+              See the workflow ↓
             </a>
           </div>
         </div>
