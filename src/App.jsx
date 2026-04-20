@@ -653,6 +653,64 @@ function buildMusicDNAAnalysis(audioNode, preferredSections = "auto") {
   };
 }
 
+function normalizeMusicBlueprintScenes(scenes = []) {
+  const normalized = [];
+
+  scenes.forEach((scene, sceneIndex) => {
+    const sourceShots = (scene.shots || []).map((shot, shotIndex) => ({
+      ...shot,
+      index: shotIndex + 1,
+      durationSec: Math.max(1, Math.min(5, Math.round(Number(shot.durationSec) || 3))),
+    }));
+
+    if (!sourceShots.length) {
+      normalized.push({
+        ...scene,
+        shotCount: 0,
+        shots: [],
+      });
+      return;
+    }
+
+    let bucket = [];
+    let bucketDur = 0;
+    let bucketIndex = 1;
+
+    const flushBucket = () => {
+      if (!bucket.length) return;
+      const splitLabel = sourceShots.length === bucket.length && bucketIndex === 1
+        ? (scene.sectionLabel || scene.heading || `SECTION ${sceneIndex + 1}`)
+        : `${scene.sectionLabel || scene.heading || `SECTION ${sceneIndex + 1}`} · PART ${bucketIndex}`;
+      normalized.push({
+        ...scene,
+        sectionLabel: splitLabel,
+        heading: splitLabel,
+        shotCount: bucket.length,
+        shots: bucket.map((shot, idx) => ({
+          ...shot,
+          index: idx + 1,
+          durationSec: Math.max(1, Math.min(5, Math.round(Number(shot.durationSec) || 3))),
+        })),
+      });
+      bucketIndex += 1;
+      bucket = [];
+      bucketDur = 0;
+    };
+
+    sourceShots.forEach((shot) => {
+      const nextDur = Math.max(1, Math.min(5, Math.round(Number(shot.durationSec) || 3)));
+      const wouldOverflow = bucket.length >= KLING_MAX_SHOTS || (bucketDur + nextDur) > KLING_MAX_SECS;
+      if (wouldOverflow) flushBucket();
+      bucket.push({ ...shot, durationSec: nextDur });
+      bucketDur += nextDur;
+    });
+
+    flushBucket();
+  });
+
+  return normalized;
+}
+
 // ─── AI ───────────────────────────────────────────────────────────────────────
 const SHOT_MODELS = [
   { id:"claude-sonnet-4-5", label:"Claude Sonnet 4.6", provider:"anthropic", color:"#f87171" },
@@ -1078,6 +1136,8 @@ Rules:
 - One scene per music section.
 - Each scene must reflect its section energy and visual role.
 - Each shot must describe ONE clear action or image, practical for AI generation.
+- Each shot duration must be an integer between 1 and 5 seconds.
+- Each scene must stay within ${KLING_MAX_SHOTS} shots and ${KLING_MAX_SECS} total seconds.
 - Prefer performance / motif / narrative staging that can be edited later.
 - If lyrics are present, use them as inspiration only where relevant; do not quote long passages.
 - Keep entityTags empty unless the user explicitly provided tagged entities.
@@ -2024,7 +2084,7 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onReviewContinuity, o
                     {sc}/{KLING_MAX_SHOTS} SHOTS {overShots?"⚠":""}
                   </span>
                   <span style={{ fontSize:7, color: overTime?"#f87171":uac, letterSpacing:"0.1em" }}>
-                    {td}/{KLING_MAX_SECS}s {overTime?"⚠":""}
+                    {Number(td.toFixed(1))}/{KLING_MAX_SECS}s {overTime?"⚠":""}
                   </span>
                   {beats > 0 && (
                     <span style={{ fontSize:7, color:th.t3, letterSpacing:"0.08em" }}>
@@ -2338,7 +2398,7 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                 <span style={{ fontSize:7, letterSpacing:"0.15em", color:overBudget?"#f87171":uac, fontWeight:700, flexShrink:0 }}>SHOT DURATION</span>
                 <span style={{ fontSize:7, color:th.t3, marginLeft:"auto", letterSpacing:"0.05em" }}>
-                  {otherDur}s other · {remaining}s left
+                  {Number(otherDur.toFixed(1))}s other · {Number(remaining.toFixed(1))}s left
                 </span>
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:8 }}>
@@ -9918,8 +9978,10 @@ export default function App() {
     }
     try {
       const blueprint = await aiMusicBlueprint(latest, linkedAudio);
-      updNode(latest.id, { lastBlueprint: blueprint });
-      placeScenesFromSource(latest.id, blueprint.scenes || []);
+      const normalizedScenes = normalizeMusicBlueprintScenes(blueprint.scenes || []);
+      if (!normalizedScenes.length) throw new Error("Blueprint returned no scenes.");
+      updNode(latest.id, { lastBlueprint: { ...blueprint, scenes: normalizedScenes } });
+      placeScenesFromSource(latest.id, normalizedScenes);
     } catch (e) {
       alert(`Music blueprint failed: ${e.message}`);
     }
