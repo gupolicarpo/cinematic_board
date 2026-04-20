@@ -6,11 +6,15 @@ const crypto   = require("crypto");
 const fs       = require("fs");
 const path     = require("path");
 const os       = require("os");
-const { exec } = require("child_process");
+const { exec, execFile } = require("child_process");
 const multer   = require("multer");
 const { createClient } = require("@supabase/supabase-js");
 const Stripe   = require("stripe");
+const ffmpegPath = require("ffmpeg-static");
+const ffprobeStatic = require("ffprobe-static");
 // Vite loaded dynamically in dev mode only (see start())
+
+const ffprobePath = ffprobeStatic?.path || ffprobeStatic;
 
 // ── SUPABASE ───────────────────────────────────────────────────────────────────
 const SUPABASE_URL         = process.env.SUPABASE_URL;
@@ -928,14 +932,21 @@ app.post("/api/videoedit/export", async (req, res) => {
   const tmpFiles = [];
   const outFile  = path.join(os.tmpdir(), `export_${Date.now()}.mp4`);
   try {
-    const runCmd = (cmd) => new Promise((resolve, reject) =>
-      exec(cmd, { maxBuffer: 64*1024*1024 }, (err, _out, stderr) =>
+    const runCmd = (binPath, args) => new Promise((resolve, reject) =>
+      execFile(binPath, args, { maxBuffer: 64 * 1024 * 1024 }, (err, _out, stderr) =>
         err ? reject(new Error(stderr || err.message)) : resolve()
       )
     );
     const hasAudioStream = async (filePath) => {
       try {
-        await runCmd(`ffprobe -v error -select_streams a:0 -show_entries stream=index -of csv=p=0 "${filePath}"`);
+        if (!ffprobePath) throw new Error("ffprobe binary is unavailable");
+        await runCmd(ffprobePath, [
+          "-v", "error",
+          "-select_streams", "a:0",
+          "-show_entries", "stream=index",
+          "-of", "csv=p=0",
+          filePath,
+        ]);
         return true;
       } catch {
         return false;
@@ -999,8 +1010,6 @@ app.post("/api/videoedit/export", async (req, res) => {
     }
 
     // Build ffmpeg filter_complex for trim + scale + concat + optional audio mix
-    const inputs = resolved.map(c => `-i "${c.path}"`).join(" ");
-    const extraInputs = audioTrackPath ? ` -i "${audioTrackPath}"` : "";
     const videoVolume = Math.max(0, Math.min(2, Number(mix?.videoVolume ?? 1)));
     const soundtrackVolume = Math.max(0, Math.min(2, Number(mix?.soundtrackVolume ?? 1)));
     const totalDuration = resolved.reduce((sum, c) => sum + Math.max(0.5, c.duration - c.trimStart - c.trimEnd), 0);
@@ -1037,8 +1046,23 @@ app.post("/api/videoedit/export", async (req, res) => {
       filterComplex += `;[aVid]anull[aout]`;
     }
 
-    const cmd = `ffmpeg -y ${inputs}${extraInputs} -filter_complex "${filterComplex}" -map "[vout]" -map "[aout]" -c:v libx264 -crf 18 -preset fast -c:a aac "${outFile}"`;
-    await runCmd(cmd);
+    if (!ffmpegPath) throw new Error("ffmpeg binary is unavailable");
+    const ffmpegArgs = ["-y"];
+    resolved.forEach(c => {
+      ffmpegArgs.push("-i", c.path);
+    });
+    if (audioTrackPath) ffmpegArgs.push("-i", audioTrackPath);
+    ffmpegArgs.push(
+      "-filter_complex", filterComplex,
+      "-map", "[vout]",
+      "-map", "[aout]",
+      "-c:v", "libx264",
+      "-crf", "18",
+      "-preset", "fast",
+      "-c:a", "aac",
+      outFile
+    );
+    await runCmd(ffmpegPath, ffmpegArgs);
     res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Content-Disposition", `attachment; filename="export_${format}.mp4"`);
     const stream = fs.createReadStream(outFile);
@@ -1051,8 +1075,8 @@ app.post("/api/videoedit/export", async (req, res) => {
     tmpFiles.forEach(f => fs.unlink(f, ()=>{}));
     fs.unlink(outFile, ()=>{});
     const msg = e.message || String(e);
-    if (msg.includes("ffmpeg") && msg.includes("not found")) {
-      res.status(500).json({ error:"FFmpeg not installed. Install it with: brew install ffmpeg (macOS) or sudo apt install ffmpeg (Linux)" });
+    if (msg.toLowerCase().includes("ffmpeg") || msg.toLowerCase().includes("ffprobe")) {
+      res.status(500).json({ error:"Video export could not start because FFmpeg is unavailable on the server." });
     } else {
       res.status(500).json({ error: msg });
     }
