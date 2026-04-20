@@ -59,7 +59,7 @@ const CAMERA_MOVEMENTS = ["static","slow-push-in","pull-back","pan","tilt","trac
 const LIGHTING_STYLES = ["natural-soft","hard-contrast","low-key","high-key","practical-night","backlit","silhouetted"];
 const styleColor = { drama:"#c084fc",thriller:"#f87171",action:"#fb923c",noir:"#94a3b8","sci-fi":"#38bdf8","epic-fantasy":"#a3e635",documentary:"#fbbf24",comedy:"#f472b6" };
 const styleEmoji = { drama:"🎭",thriller:"🔪",action:"💥",noir:"🌑","sci-fi":"🚀","epic-fantasy":"🐉",documentary:"🎥",comedy:"😂" };
-const T = { SCENE:"scene", SHOT:"shot", IMAGE:"image", KLING:"kling", VEO:"veo", LLM:"llm", VIDEOEDIT:"videoedit", SCRIPT:"script", AUDIO:"audio", CLIP:"clip" };
+const T = { SCENE:"scene", SHOT:"shot", IMAGE:"image", KLING:"kling", VEO:"veo", LLM:"llm", VIDEOEDIT:"videoedit", SCRIPT:"script", AUDIO:"audio", MUSICDNA:"musicdna", CLIP:"clip" };
 const uid = () => Math.random().toString(36).slice(2,9);
 
 // ─── KLING CONSTRAINTS ────────────────────────────────────────────────────────
@@ -551,7 +551,107 @@ function mkLlm()   { return { id:`llm_${uid()}`, type:T.LLM, targetNodeIds:[], t
 function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p", lastSplitAction:null, audioMix:{ videoVolume:1, soundtrackVolume:1 } }; }
 function mkScript()   { return { id:`scr_${uid()}`, type:T.SCRIPT, title:"Untitled Script", script:"", idea:"", format:"screenplay", scriptMode:"write" }; }
 function mkAudio()    { return { id:`aud_${uid()}`, type:T.AUDIO, audioUrl:null, fileName:null, bpm:null, beats:[], duration:0, snapEnabled:true, videoNodeId:null }; }
+function mkMusicDNA() { return { id:`mdna_${uid()}`, type:T.MUSICDNA, title:"Music DNA", audioNodeId:null, concept:"", lyrics:"", clipMode:"hybrid", preferredSections:"auto", visualStyle:"none", analysis:null, lastBlueprint:null }; }
 function mkClip()     { return { id:`clp_${uid()}`, type:T.CLIP,  videoUrl:null, fileName:null, duration:0 }; }
+
+function estimateMusicSectionCount(duration = 0, preferred = "auto") {
+  if (preferred && preferred !== "auto") return Math.max(3, Math.min(6, Number(preferred) || 4));
+  if (duration >= 150) return 6;
+  if (duration >= 90) return 5;
+  return 4;
+}
+
+const MUSIC_SECTION_LIBRARY = {
+  3: [
+    { label:"INTRO", key:"intro", start:0.00, end:0.20, energy:"low", visualRole:"establish the visual world and first emotional signal" },
+    { label:"BODY", key:"body", start:0.20, end:0.72, energy:"medium", visualRole:"carry the main visual progression and repeatable motif" },
+    { label:"PAYOFF", key:"payoff", start:0.72, end:1.00, energy:"high", visualRole:"deliver the strongest visual payoff and close with a final image" },
+  ],
+  4: [
+    { label:"INTRO", key:"intro", start:0.00, end:0.16, energy:"low", visualRole:"open with mood, iconography, and world definition" },
+    { label:"VERSE", key:"verse", start:0.16, end:0.44, energy:"medium", visualRole:"introduce the visual premise or performance language" },
+    { label:"CHORUS", key:"chorus", start:0.44, end:0.76, energy:"high", visualRole:"expand scale, motion, and emotional clarity" },
+    { label:"OUTRO", key:"outro", start:0.76, end:1.00, energy:"medium-high", visualRole:"land the final motif and leave a strong closing frame" },
+  ],
+  5: [
+    { label:"INTRO", key:"intro", start:0.00, end:0.14, energy:"low", visualRole:"set mood and first visual symbols" },
+    { label:"VERSE", key:"verse", start:0.14, end:0.34, energy:"medium", visualRole:"build the visual world and subject focus" },
+    { label:"PRE-CHORUS", key:"pre-chorus", start:0.34, end:0.48, energy:"rising", visualRole:"increase tension and prepare a transition" },
+    { label:"CHORUS", key:"chorus", start:0.48, end:0.76, energy:"high", visualRole:"deliver the biggest performance or narrative lift" },
+    { label:"OUTRO", key:"outro", start:0.76, end:1.00, energy:"medium", visualRole:"echo the core motif and resolve visually" },
+  ],
+  6: [
+    { label:"INTRO", key:"intro", start:0.00, end:0.12, energy:"low", visualRole:"define the world and first mood signal" },
+    { label:"VERSE A", key:"verse-a", start:0.12, end:0.28, energy:"medium", visualRole:"introduce primary subject behavior and visual motif" },
+    { label:"PRE-CHORUS", key:"pre-chorus", start:0.28, end:0.40, energy:"rising", visualRole:"tighten rhythm and anticipation" },
+    { label:"CHORUS", key:"chorus", start:0.40, end:0.62, energy:"high", visualRole:"expand movement, scale, and graphic impact" },
+    { label:"BRIDGE", key:"bridge", start:0.62, end:0.80, energy:"dynamic", visualRole:"break the pattern with contrast or surprise" },
+    { label:"FINAL CHORUS / OUTRO", key:"final-chorus", start:0.80, end:1.00, energy:"peak", visualRole:"deliver the signature image and final emotional release" },
+  ],
+};
+
+function inferMusicMoments(sections, duration) {
+  if (!sections?.length || !duration) return [];
+  const moments = sections.slice(0, -1).map((section, index) => ({
+    atSec: Number(section.endSec.toFixed(2)),
+    label: `${section.label} transition`,
+    reason: index === 0
+      ? "first major change in visual rhythm"
+      : index === sections.length - 2
+        ? "final lift into closing payoff"
+        : "section handoff with new pacing pressure",
+  }));
+  const chorusLike = sections.find(s => /chorus|payoff/i.test(s.label));
+  if (chorusLike) {
+    moments.unshift({
+      atSec: Number(Math.max(0, chorusLike.startSec).toFixed(2)),
+      label: `${chorusLike.label} impact point`,
+      reason: "best candidate for the clip's widest or most iconic visual escalation",
+    });
+  }
+  return moments.slice(0, 5);
+}
+
+function buildMusicDNAAnalysis(audioNode, preferredSections = "auto") {
+  if (!audioNode?.duration) return null;
+  const duration = Number(audioNode.duration || 0);
+  const bpm = Number(audioNode.bpm || 0);
+  const sectionCount = estimateMusicSectionCount(duration, preferredSections);
+  const template = MUSIC_SECTION_LIBRARY[sectionCount] || MUSIC_SECTION_LIBRARY[4];
+  const beatsPerBar = 4;
+  const secondsPerBeat = bpm ? 60 / bpm : 0;
+
+  const sections = template.map((section, index) => {
+    const startSec = Number((duration * section.start).toFixed(2));
+    const endSec = Number((duration * (index === template.length - 1 ? 1 : section.end)).toFixed(2));
+    const beatCount = secondsPerBeat ? Math.max(1, Math.round((endSec - startSec) / secondsPerBeat)) : 0;
+    const estimatedBars = beatCount ? Math.max(1, Math.round(beatCount / beatsPerBar)) : 0;
+    return {
+      ...section,
+      startSec,
+      endSec,
+      durationSec: Number((endSec - startSec).toFixed(2)),
+      beatCount,
+      estimatedBars,
+    };
+  });
+
+  const notableMoments = inferMusicMoments(sections, duration);
+  const energyCurve = sections.map(section => `${section.label}:${section.energy}`).join(" -> ");
+
+  return {
+    durationSec: duration,
+    bpm: bpm || null,
+    beatsDetected: audioNode.beats?.length || 0,
+    sectionCount,
+    energyCurve,
+    sections,
+    notableMoments,
+    summary: bpm
+      ? `Detected ${sectionCount} structural sections across ${duration.toFixed(1)}s at roughly ${bpm} BPM. Use the chorus/payoff moments as your highest-contrast visual events.`
+      : `Built a ${sectionCount}-section timing map across ${duration.toFixed(1)}s. Add a stronger concept or lyrics pass if you want more story-specific blueprinting.`,
+  };
+}
 
 // ─── AI ───────────────────────────────────────────────────────────────────────
 const SHOT_MODELS = [
@@ -935,6 +1035,91 @@ RULES:
 }
 
 // ─── AI COHERENCE CHECK — multi-node scene+shot analysis ──────────────────────
+async function aiMusicBlueprint(musicNode, audioNode) {
+  const analysis = musicNode.analysis;
+  if (!analysis?.sections?.length) throw new Error("Analyze the music before generating a blueprint.");
+
+  const sys = `You are a music-video director. Convert a song structure analysis into a generation-ready visual blueprint for an AI filmmaking canvas.
+
+Return ONLY a raw JSON object with this exact shape:
+{
+  "title": "short clip title",
+  "creativeSummary": "1-2 sentence overview",
+  "scenes": [
+    {
+      "sectionLabel": "INTRO",
+      "sceneText": "continuous prose describing what happens visually in this section",
+      "cinematicStyle": "must be one of ${JSON.stringify(CINEMATIC_STYLES)}",
+      "visualStyle": "must be one of ${JSON.stringify(VISUAL_STYLES)}",
+      "shotCount": 2,
+      "shots": [
+        {
+          "index": 1,
+          "durationSec": 3,
+          "sourceAnchor": "short quote from the section label or lyric idea",
+          "where": "visible location",
+          "entityTags": [],
+          "how": "single primary visible action",
+          "when": "simple temporal context",
+          "cameraSize": "medium",
+          "cameraAngle": "eye-level",
+          "cameraMovement": "static",
+          "lens": "35mm",
+          "lighting": "natural-soft",
+          "visualGoal": "specific cinematic purpose",
+          "dialogue": ""
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- One scene per music section.
+- Each scene must reflect its section energy and visual role.
+- Each shot must describe ONE clear action or image, practical for AI generation.
+- Prefer performance / motif / narrative staging that can be edited later.
+- If lyrics are present, use them as inspiration only where relevant; do not quote long passages.
+- Keep entityTags empty unless the user explicitly provided tagged entities.
+- Return only valid JSON, no markdown.`;
+
+  const usr = JSON.stringify({
+    clipMode: musicNode.clipMode || "hybrid",
+    concept: musicNode.concept || "",
+    lyrics: musicNode.lyrics || "",
+    preferredVisualStyle: musicNode.visualStyle || "none",
+    audio: {
+      fileName: audioNode?.fileName || "",
+      durationSec: analysis.durationSec,
+      bpm: analysis.bpm,
+      beatsDetected: analysis.beatsDetected,
+      energyCurve: analysis.energyCurve,
+    },
+    sections: analysis.sections,
+    notableMoments: analysis.notableMoments,
+  }, null, 2);
+
+  const r = await fetch("/api/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-5",
+      max_tokens: 4000,
+      system: sys,
+      messages: [{ role: "user", content: usr }],
+    }),
+  });
+  const raw = await r.text();
+  if (!r.ok) throw new Error(`Claude ${r.status}: ${raw.slice(0, 250)}`);
+  const d = JSON.parse(raw);
+  const txt = d.content?.map(block => block.text || "").join("") || "";
+  const clean = txt.replace(/```json|```/g, "").trim();
+  const start = clean.indexOf("{");
+  const end = clean.lastIndexOf("}");
+  if (start === -1 || end === -1) throw new Error("No JSON object in music blueprint response.");
+  return JSON.parse(clean.slice(start, end + 1));
+}
+
 async function aiCoherenceCheck(nodes, command) {
   const sceneNodes = nodes.filter(n => n.type === T.SCENE);
   const shotNodes  = nodes.filter(n => n.type === T.SHOT);
@@ -6581,6 +6766,115 @@ function BiblePopup({ bible, setBible, onClose }) {
 
 
 // ─── LEFT DRAWER ──────────────────────────────────────────────────────────────
+function MusicDnaCard({ node, upd, onDel, sel: selected, allNodes, onInspect, onAnalyze, onGenerateBlueprint }) {
+  const th = useTheme();
+  const ac = "#ec4899";
+  const audioNode = node.audioNodeId ? (allNodes || []).find(n => n.id === node.audioNodeId) : null;
+  const analysis = node.analysis || null;
+  const linkedStats = audioNode?.duration
+    ? `${audioNode.duration.toFixed(1)}s${audioNode.bpm ? ` · ${audioNode.bpm} BPM` : ""}${audioNode.beats?.length ? ` · ${audioNode.beats.length} beats` : ""}`
+    : "No analyzed audio linked yet";
+  const portY = 44;
+
+  return (
+    <div data-nodeid={node.id} data-nodetype={T.MUSICDNA} style={{ position:"relative", width:320 }}>
+      <div style={{ position:"absolute", left:-4, top:portY, width:8, height:8, background:th.card, border:`1.5px solid ${audioNode ? ac : th.b0}`, borderRadius:"50%", zIndex:10, pointerEvents:"none" }} />
+      <div style={{ width:320, background:th.card, border:`1px solid ${selected ? ac : th.b0}`, borderRadius:16, overflow:"hidden", fontFamily:"'Inter',system-ui,sans-serif", boxShadow:`0 4px 24px ${th.sh}` }}>
+        <div style={{ padding:"10px 12px 6px", borderBottom:`1px solid ${th.b0}`, display:"flex", alignItems:"center", gap:7 }}>
+          <Ico icon={Layers} size={11} color={ac}/>
+          <span style={{ fontSize:7, letterSpacing:"0.2em", color:ac, fontWeight:700 }}>MUSIC DNA</span>
+          {analysis?.sectionCount && <span style={{ fontSize:6, color:th.t3 }}>{analysis.sectionCount} SECTIONS</span>}
+          <div style={{ flex:1 }} />
+          {onInspect && <InspectAction onClick={onInspect} th={th} />}
+          <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation(); onDel();}} style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:11, padding:"0 2px", lineHeight:1 }}>✕</button>
+        </div>
+
+        <div style={{ padding:10, display:"flex", flexDirection:"column", gap:8 }}>
+          <div style={{ border:`1px solid ${audioNode ? `${ac}33` : th.b0}`, borderRadius:8, padding:"8px 10px", background:audioNode ? `${ac}10` : th.card2 }}>
+            <div style={{ fontSize:6, color:audioNode ? ac : th.t3, letterSpacing:"0.12em", marginBottom:3 }}>
+              {audioNode ? "AUDIO NODE LINKED" : "WIRE AN AUDIO NODE HERE"}
+            </div>
+            <div style={{ fontSize:8, color:th.t1, lineHeight:1.5 }}>
+              {audioNode?.fileName || "Music DNA needs an analyzed audio track to read timing, beats, and section flow."}
+            </div>
+            <div style={{ fontSize:7, color:th.t3, marginTop:4 }}>{linkedStats}</div>
+          </div>
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+            <div>
+              <label style={{ fontSize:6, color:th.t3, letterSpacing:"0.12em", display:"block", marginBottom:4 }}>CLIP MODE</label>
+              <select value={node.clipMode || "hybrid"} onChange={e=>upd({ clipMode:e.target.value })} style={{ ...mkSel(th), fontSize:8, padding:"7px 8px" }}>
+                <option value="performance">PERFORMANCE</option>
+                <option value="narrative">NARRATIVE</option>
+                <option value="hybrid">HYBRID</option>
+                <option value="abstract">ABSTRACT</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize:6, color:th.t3, letterSpacing:"0.12em", display:"block", marginBottom:4 }}>SECTIONS</label>
+              <select value={node.preferredSections || "auto"} onChange={e=>upd({ preferredSections:e.target.value })} style={{ ...mkSel(th), fontSize:8, padding:"7px 8px" }}>
+                <option value="auto">AUTO</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ fontSize:6, color:th.t3, letterSpacing:"0.12em", display:"block", marginBottom:4 }}>CONCEPT</label>
+            <textarea value={node.concept || ""} onChange={e=>upd({ concept:e.target.value })} placeholder="Optional: describe the clip idea you want the song structure to drive." rows={3}
+              style={{ ...mkInp(th), minHeight:66, resize:"vertical", lineHeight:1.6, fontSize:8 }} />
+          </div>
+
+          <div>
+            <label style={{ fontSize:6, color:th.t3, letterSpacing:"0.12em", display:"block", marginBottom:4 }}>LYRICS / KEY LINES</label>
+            <textarea value={node.lyrics || ""} onChange={e=>upd({ lyrics:e.target.value })} placeholder="Optional: paste lyrics or key lines to shape section meaning." rows={4}
+              style={{ ...mkInp(th), minHeight:88, resize:"vertical", lineHeight:1.6, fontSize:8 }} />
+          </div>
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+            <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation(); onAnalyze();}}
+              style={{ background:`${ac}18`, border:`1px solid ${ac}44`, color:ac, borderRadius:8, padding:"9px 10px", fontSize:8, fontWeight:700, letterSpacing:"0.1em", cursor:"pointer" }}>
+              ANALYZE MUSIC
+            </button>
+            <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation(); onGenerateBlueprint();}} disabled={!analysis}
+              style={{ background:analysis ? th.t0 : th.card2, border:"none", color:analysis ? "#fff" : th.t3, borderRadius:8, padding:"9px 10px", fontSize:8, fontWeight:700, letterSpacing:"0.1em", cursor:analysis ? "pointer" : "not-allowed", opacity:analysis ? 1 : 0.55 }}>
+              GENERATE BLUEPRINT
+            </button>
+          </div>
+
+          {analysis && (
+            <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+              <div style={{ border:`1px solid ${th.b0}`, borderRadius:8, padding:"8px 10px", background:th.card2 }}>
+                <div style={{ fontSize:6, color:ac, letterSpacing:"0.12em", marginBottom:4 }}>ANALYSIS SUMMARY</div>
+                <div style={{ fontSize:8, color:th.t1, lineHeight:1.6 }}>{analysis.summary}</div>
+                <div style={{ fontSize:7, color:th.t3, marginTop:5 }}>ENERGY CURVE · {analysis.energyCurve}</div>
+              </div>
+
+              <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+                {analysis.sections.map((section, idx) => (
+                  <div key={`${section.key}-${idx}`} style={{ border:`1px solid ${th.b0}`, borderRadius:8, padding:"7px 9px", background:th.card2 }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
+                      <span style={{ fontSize:7, color:ac, letterSpacing:"0.12em", fontWeight:700 }}>{section.label}</span>
+                      <span style={{ fontSize:6, color:th.t3 }}>{section.startSec.toFixed(1)}s–{section.endSec.toFixed(1)}s</span>
+                    </div>
+                    <div style={{ fontSize:7, color:th.t2, marginTop:4, lineHeight:1.5 }}>{section.visualRole}</div>
+                    <div style={{ fontSize:6, color:th.t3, marginTop:4 }}>
+                      {section.energy.toUpperCase()} · {section.estimatedBars || "?"} bars · {section.beatCount || "?"} beats
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const ASSET_TABS = [
   { key:"images", label:"IMAGES", icon:ImageIcon, accept:"image/*"  },
   { key:"videos", label:"VIDEOS", icon:Video,     accept:"video/*"  },
@@ -9553,10 +9847,10 @@ export default function App() {
   const front = useCallback((id)=>{ setZTop(z=>{ const nz=z+1; setZMap(m=>({...m,[id]:nz})); return nz; }); },[]);
 
   // ── Script: split scenes callback ──────────────────────────────────────────
-  const onSplitScenes = useCallback((scriptNodeId, scenes) => {
-    const scriptPos = pos[scriptNodeId] || { x:80, y:80 };
-    const startX = scriptPos.x + 420;
-    let cursor = scriptPos.y;
+  const placeScenesFromSource = useCallback((sourceId, scenes) => {
+    const sourcePos = pos[sourceId] || { x:80, y:80 };
+    const startX = sourcePos.x + 420;
+    let cursor = sourcePos.y;
     const newNodes = [];
     const newPos = {};
     scenes.forEach(s => {
@@ -9565,15 +9859,72 @@ export default function App() {
       sc.cinematicStyle = s.cinematicStyle || "drama";
       sc.visualStyle    = s.visualStyle    || "none";
       sc.shotCount      = s.shotCount      || 3;
-      sc.sceneHeading   = s.heading        || "";
+      sc.sceneHeading   = s.heading        || s.sectionLabel || "";
       sc.dialogueLines  = s.dialogueLines  || [];
       newNodes.push(sc);
       newPos[sc.id] = { x: startX, y: cursor };
-      cursor += 920; // scene card with content can reach ~840px; 920 gives 80px breathing gap
+
+      let shotCursor = cursor + 220;
+      (s.shots || []).forEach((shotData, shotIndex) => {
+        const shot = {
+          ...mkShot(sc.id, shotIndex + 1),
+          ...shotData,
+          id:`sh_${uid()}`,
+          type:T.SHOT,
+          sceneId:sc.id,
+          index:shotIndex + 1,
+        };
+        shot.compiledText = compileShotText(shot);
+        newNodes.push(shot);
+        newPos[shot.id] = { x: startX + 430, y: shotCursor };
+        shotCursor += 300;
+      });
+
+      cursor += Math.max(920, 280 + (s.shots?.length || 0) * 300);
     });
     setNodes(prev => [...prev, ...newNodes]);
     setPos(prev => ({ ...prev, ...newPos }));
   }, [pos]);
+
+  const onSplitScenes = useCallback((scriptNodeId, scenes) => {
+    placeScenesFromSource(scriptNodeId, scenes);
+  }, [placeScenesFromSource]);
+
+  const analyzeMusicNode = useCallback((musicNode) => {
+    const latest = nodesRef.current.find(n => n.id === musicNode.id) || musicNode;
+    const linkedAudio = nodesRef.current.find(n => n.id === latest.audioNodeId);
+    if (!linkedAudio?.audioUrl) {
+      alert("Wire an analyzed AUDIO node into Music DNA first.");
+      return;
+    }
+    const analysis = buildMusicDNAAnalysis(linkedAudio, latest.preferredSections || "auto");
+    if (!analysis) {
+      alert("This audio track still needs duration and beat data before it can be analyzed.");
+      return;
+    }
+    updNode(latest.id, { analysis });
+  }, []);
+
+  const generateMusicBlueprint = useCallback(async (musicNode) => {
+    const latest = nodesRef.current.find(n => n.id === musicNode.id) || musicNode;
+    const linkedAudio = nodesRef.current.find(n => n.id === latest.audioNodeId);
+    if (!linkedAudio?.audioUrl) {
+      alert("Wire an AUDIO node into Music DNA first.");
+      return;
+    }
+    if (!latest.analysis?.sections?.length) {
+      alert("Analyze the music first so the blueprint has timing and section data.");
+      return;
+    }
+    try {
+      const blueprint = await aiMusicBlueprint(latest, linkedAudio);
+      updNode(latest.id, { lastBlueprint: blueprint });
+      placeScenesFromSource(latest.id, blueprint.scenes || []);
+    } catch (e) {
+      alert(`Music blueprint failed: ${e.message}`);
+    }
+  }, [placeScenesFromSource]);
+
 
   // ── wire drag: start from scene output port
   const startWire = useCallback((fromId, fromType, portX, portY) => {
@@ -9652,6 +10003,10 @@ export default function App() {
           setNodes(prev => prev.map(n =>
             n.id === targetId ? {...n, audioNodeId: fromId} : n
           ));
+        } else if (fromType === T.AUDIO && targetType === T.MUSICDNA) {
+          setNodes(prev => prev.map(n =>
+            n.id === targetId ? { ...n, audioNodeId: fromId } : n
+          ));
         } else if ((fromType === T.KLING || fromType === T.VEO || fromType === T.CLIP) && targetType === T.AUDIO) {
           // Wire a video into the Audio node for video-to-music analysis
           setNodes(prev => prev.map(n =>
@@ -9680,9 +10035,9 @@ export default function App() {
   }, [pan, zoom]);
 
   const spawnNode = (type) => {
-    const n = type===T.SCENE?mkScene():type===T.SHOT?mkShot(null):type===T.KLING?mkKling():type===T.VEO?mkVeo():type===T.LLM?mkLlm():type===T.VIDEOEDIT?mkVideoEdit():type===T.SCRIPT?mkScript():type===T.AUDIO?mkAudio():type===T.CLIP?mkClip():mkImage(null);
+    const n = type===T.SCENE?mkScene():type===T.SHOT?mkShot(null):type===T.KLING?mkKling():type===T.VEO?mkVeo():type===T.LLM?mkLlm():type===T.VIDEOEDIT?mkVideoEdit():type===T.SCRIPT?mkScript():type===T.AUDIO?mkAudio():type===T.MUSICDNA?mkMusicDNA():type===T.CLIP?mkClip():mkImage(null);
     // Estimated card widths per node type
-    const NODE_W = { [T.SCENE]:380, [T.SHOT]:300, [T.IMAGE]:220, [T.KLING]:290, [T.VEO]:290, [T.LLM]:280, [T.VIDEOEDIT]:420, [T.SCRIPT]:320, [T.AUDIO]:280, [T.CLIP]:260 };
+    const NODE_W = { [T.SCENE]:380, [T.SHOT]:300, [T.IMAGE]:220, [T.KLING]:290, [T.VEO]:290, [T.LLM]:280, [T.VIDEOEDIT]:420, [T.SCRIPT]:320, [T.AUDIO]:280, [T.MUSICDNA]:320, [T.CLIP]:260 };
     const GAP = 40;
     const cw = cvRef.current?.offsetWidth||800;
     const ch = cvRef.current?.offsetHeight||600;
@@ -10129,6 +10484,49 @@ export default function App() {
         </>
       );
     }
+    if (n.type === T.MUSICDNA) {
+      const audioNode = nodes.find(x => x.id === n.audioNodeId) || null;
+      return (
+        <>
+          {inspectorSection("Music DNA", (
+            <div style={{ display:"grid", gap:12 }}>
+              <div>
+                <label style={fieldLabel}>Concept</label>
+                <textarea value={n.concept || ""} onChange={e=>updNode(n.id, { concept:e.target.value })} style={{ ...inspectorText, minHeight:110 }} />
+              </div>
+              <div>
+                <label style={fieldLabel}>Lyrics / Key Lines</label>
+                <textarea value={n.lyrics || ""} onChange={e=>updNode(n.id, { lyrics:e.target.value })} style={{ ...inspectorText, minHeight:180 }} />
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                <div>
+                  <label style={fieldLabel}>Clip Mode</label>
+                  <select value={n.clipMode || "hybrid"} onChange={e=>updNode(n.id, { clipMode:e.target.value })} style={inspectorSelect}>
+                    <option value="performance">Performance</option>
+                    <option value="narrative">Narrative</option>
+                    <option value="hybrid">Hybrid</option>
+                    <option value="abstract">Abstract</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={fieldLabel}>Sections</label>
+                  <select value={n.preferredSections || "auto"} onChange={e=>updNode(n.id, { preferredSections:e.target.value })} style={inspectorSelect}>
+                    <option value="auto">Auto</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ fontSize:11, color:th.t2, lineHeight:1.6 }}>
+                Linked audio: {audioNode?.fileName || "none"} {audioNode?.duration ? `· ${audioNode.duration.toFixed(1)}s` : ""}
+              </div>
+            </div>
+          ))}
+        </>
+      );
+    }
     return inspectorSection("Node Content", (
       <div style={{ fontSize:12, color:th.t2, lineHeight:1.7 }}>
         This node does not have a dedicated inspector form yet. Its main editable content is still available in the card.
@@ -10152,6 +10550,7 @@ export default function App() {
         {n.type===T.LLM&&<LlmCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onUpdateNode={updNode} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.VIDEOEDIT&&<VideoEditCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} audioNode={nodes.find(x=>x.id===n.audioNodeId)||null} onInspect={()=>openInspector(n.id)} onOpenFullscreen={()=>setFullscreenVEId(n.id)} />}
         {n.type===T.AUDIO&&<AudioTrackCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={nodePosValue} allNodes={nodes} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.MUSICDNA&&<MusicDnaCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onInspect={()=>openInspector(n.id)} onAnalyze={()=>analyzeMusicNode(n)} onGenerateBlueprint={()=>generateMusicBlueprint(n)} />}
         {n.type===T.SCRIPT&&<ScriptCard node={n} sel={isSel} upd={pr=>updNode(n.id,pr)} onDel={()=>delNode(n.id)} onSplitScenes={scenes=>onSplitScenes(n.id,scenes)} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.CLIP&&<ClipCard node={n} sel={isSel} upd={pr=>updNode(n.id,pr)} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={nodePosValue} onInspect={()=>openInspector(n.id)} />}
       </>
@@ -10591,6 +10990,10 @@ export default function App() {
     return { id:`vidaud-${an.id}`, fx:vp.x+srcW, fy:vp.y+44, tx:ap.x, ty:ap.y+44, color:"#10b98177" };
   });
   // Clip node → VideoEdit edges
+  const musicDNAEdges = nodes.filter(n=>n.type===T.MUSICDNA && n.audioNodeId && pos[n.audioNodeId] && pos[n.id]).map(md=>{
+    const ap=pos[md.audioNodeId], mp=pos[md.id];
+    return { id:`mdna-${md.id}`, fx:ap.x+280, fy:ap.y+44, tx:mp.x, ty:mp.y+44, color:"#ec489977" };
+  });
   const clipEdges = nodes.filter(n=>n.type===T.VIDEOEDIT).flatMap(ve=>
     (ve.videoNodeIds||[]).filter(vid => {
       const src = nodes.find(x=>x.id===vid);
@@ -10600,9 +11003,10 @@ export default function App() {
       return { id:`clp-${ve.id}-${vid}`, fx:fp.x+260, fy:fp.y+44, tx:tp.x, ty:tp.y+44+i*14, color:`#3b82f677` };
     })
   );
-  const edges = [...sceneEdges, ...shotEdges, ...klingEdges, ...veoEdges, ...veoFrameEdges, ...videoEditEdges, ...audioEdges, ...videoAudioEdges, ...clipEdges];
+  const edges = [...sceneEdges, ...shotEdges, ...klingEdges, ...veoEdges, ...veoFrameEdges, ...videoEditEdges, ...audioEdges, ...videoAudioEdges, ...musicDNAEdges, ...clipEdges];
 
   const TOOLS = [
+    { type:T.MUSICDNA, icon:Layers,      label:"MUSIC DNA", color:"#ec4899", desc:"Analyze music structure and turn it into a clip blueprint" },
     { type:T.SCRIPT,   icon:ScrollText,  label:"SCRIPT", color:"#94a3b8", desc:"Script node — write, upload or generate a script and split into scenes" },
     { type:T.SCENE,    icon:Clapperboard,label:"SCENE",  color:"#f87171", desc:"Scene node" },
     { type:T.SHOT,     icon:Camera,      label:"SHOT",   color:"#38bdf8", desc:"Shot node" },
