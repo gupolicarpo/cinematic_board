@@ -479,10 +479,10 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
               borderRadius:100, padding:"5px 16px", textTransform:"uppercase", marginBottom:20 }}>Node System</span>
             <h2 style={{ fontSize:"clamp(30px,4.5vw,54px)", fontWeight:900, letterSpacing:"-0.03em", lineHeight:1.08,
               color:"#ffffff", marginBottom:20 }}>
-              Seven node types.<br /><span style={{ color:ACCENT }}>One infinite canvas.</span>
+              Structure every part<br /><span style={{ color:ACCENT }}>of the production.</span>
             </h2>
-            <p style={{ fontSize:17, color:"rgba(255,255,255,0.4)", maxWidth:560, margin:"0 auto", lineHeight:1.7 }}>
-              Every piece of your production lives as a node. Nodes connect, reference each other, and compose into a living graph — from first idea to final cut.
+            <p style={{ fontSize:17, color:"rgba(255,255,255,0.4)", maxWidth:620, margin:"0 auto", lineHeight:1.7 }}>
+              Each part of your workflow lives in its own node — from script and scenes to shots, references, generation, and editing.
             </p>
           </div>
 
