@@ -833,6 +833,22 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
               a: "No. The app guides you through every step — you write your idea in plain language, pick a cinematic style, and the AI builds the shot breakdown for you. The director annotations explain every technical choice in plain terms, so you learn as you go.",
             },
             {
+              q: "How does the workflow actually start?",
+              a: "Most projects start in a Script node or directly in Scene nodes. You can write a rough idea, a treatment, or a more complete screenplay. From there, Cartasis turns that writing into structured scenes you can break down shot by shot.",
+            },
+            {
+              q: "What happens after I write the script?",
+              a: "Once you have script text, you split it into Scene nodes. Each scene becomes its own planning space with scene text, cinematic style, visual style, world-bible references, and a shot target. That is where the production workflow becomes visual instead of staying as raw text.",
+            },
+            {
+              q: "How do scenes turn into shots?",
+              a: "Each Scene node can generate Shot nodes from the scene brief. Those shots are not generic prompts — they become structured production units with camera size, angle, movement, lens, lighting, dialogue, visual goal, and director notes.",
+            },
+            {
+              q: "Why not just prompt Kling or Veo directly?",
+              a: "You can, but direct prompting usually turns into trial and error. Cartasis is built to help you organize the creative decisions before generation: scene intent, shot logic, references, continuity, and visual structure. That gives you more control and usually wastes fewer credits.",
+            },
+            {
               q: "Which AI models does it use for video generation?",
               a: "Currently Kling 3.0 and Google Veo 3.1. Both are available from the same canvas — just drop a Kling or Veo node next to your shots and wire them up. You choose which one to use per scene.",
             },
@@ -841,12 +857,32 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
               a: "A World Bible is a set of reference entries — characters, locations, objects — that you define once and reuse across every scene. When you generate images or videos, the bible is injected automatically so your characters look the same in every shot without re-prompting.",
             },
             {
+              q: "How do references flow through the project?",
+              a: "References are not trapped in one image prompt. Characters, objects, and locations live inside the World Bible, and both Scene and Shot nodes can carry their own local references too. That means approved visual identity can flow forward into image generation, video generation, and editing instead of being rebuilt every time.",
+            },
+            {
               q: "Can I upload my own reference images?",
               a: "Yes. You can add an Image node with any reference URL or upload directly, then save it to the bible. Once it's in the bible, every shot that references that entity will use it as a visual anchor for generation.",
             },
             {
+              q: "Do I need to generate images before generating video?",
+              a: "Not always. Cartasis supports both approaches. You can go directly into video from scenes and references, or you can use Image nodes first to lock a shot visually before sending it into Kling or Veo. The image-first path is often better when consistency matters.",
+            },
+            {
+              q: "How does continuity stay organized across scenes?",
+              a: "Continuity is supported through the World Bible, scene-level planning, shot metadata, and the newer director workflow tools. Instead of treating every generation as isolated, Cartasis helps keep references, intent, and shot logic connected from scene to scene.",
+            },
+            {
+              q: "Can I review or repair a scene before generating more?",
+              a: "Yes. Scene nodes can run director-style continuity review and repair passes. That means you can inspect whether beats are missing, whether the scene logic is overcrowded, and whether the shots need a better structure before you spend more time or credits on generation.",
+            },
+            {
               q: "How does beat-sync work with the Audio node?",
               a: "Drop an audio file into the Audio node and it detects the BPM automatically — no external tool needed. Wire the Audio node into your Video Edit node and cuts will snap to the detected beat grid, so your edit stays in time with the track.",
+            },
+            {
+              q: "How does the Video Edit node fit into the workflow?",
+              a: "The Video Edit node is where generated clips come back together. You can sequence clips, trim them, split them, undo splits, sync them to audio, and export a finished edit. It is not a separate app — it is the final stage of the same planning-to-generation workflow.",
             },
             {
               q: "Is there a limit to how many nodes I can have on the canvas?",
@@ -855,6 +891,10 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
             {
               q: "Can I save my work and come back to it?",
               a: "Yes. Projects auto-save to the cloud whenever you make a change. You can also save any canvas state as a custom template and reload it from the Templates picker at any time.",
+            },
+            {
+              q: "Can I export more than just the final video?",
+              a: "Yes. In addition to clip exports from the Video Edit node, Cartasis can export structured production material such as scene markdown, bible information, and production-package style outputs that document the planning layer behind the renders.",
             },
             {
               q: "What video formats can I export from the Video Edit node?",
