@@ -1712,10 +1712,10 @@ const SITE_HOSTNAME = (() => {
 // always getting the homepage copy.
 const PAGE_META = {
   "/": {
-    title: "Cartasis — AI Video Production Canvas | Script to Screen with Kling & Veo",
-    description: "Cartasis is the AI-powered director's canvas that takes you from script to finished video. Write scenes, plan shots, generate images, create AI videos with Kling and Veo, compose music, and edit — all in one visual workflow.",
-    ogTitle: "Cartasis — AI Video Production Canvas",
-    ogDescription: "From idea to finished video. Write your script, plan every shot, generate AI images, produce videos with Kling & Veo, and compose music — all on one canvas.",
+    title: "Cartasis - From Script to Storyboard to Video",
+    description: "Cartasis helps AI filmmakers plan scenes, shots, references, and continuity before generation. Turn scripts into structured visual workflows before rendering with AI tools.",
+    ogTitle: "Cartasis - From Script to Storyboard to Video",
+    ogDescription: "Plan scenes, shots, references, and continuity before generation. Cartasis is the visual workflow for AI filmmakers.",
     canonical: `${SITE_ORIGIN}/`,
   },
   "/pricing": {
@@ -1767,7 +1767,7 @@ const PAGE_META = {
     canonical: `${SITE_ORIGIN}/kling-lipsync`,
   },
   "/workspace": {
-    title: "Cartasis Workspace — AI Video Production Canvas",
+    title: "Cartasis - From Script to Storyboard to Video",
     description: "Your Cartasis production canvas. Write scripts, plan scenes and shots, generate AI images, produce videos with Kling & Veo, add lipsync, compose music, and edit — all in one workflow.",
     ogTitle: "Cartasis Workspace",
     ogDescription: "Your AI director's canvas. Script to finished video in one place.",
