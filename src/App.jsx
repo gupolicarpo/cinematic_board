@@ -8983,6 +8983,50 @@ function makeTrapMusicVideoTemplate() {
 // Dark, cinematic pirate animation for adults — 4 scenes, 15 shots.
 // A pirate captain hunts a cursed treasure, is betrayed by her navigator,
 // and must choose between the gold and her crew's freedom.
+function makeSteampunkWildWestTemplate() {
+  const eHale = { id:`e_${uid()}`, kind:"character", name:"Sheriff Iron Hale", tag:"@hale", description:"A robotic sheriff built from brushed brass, steel, and dark leather. Human-sized but heavier in posture, with a faceplate shaped like a stern frontier lawman. One glowing blue ocular lens, one iron mechanical eye aperture. Long weathered duster coat, metal sheriff's badge bolted to the chest, articulated hands fast as pistons. He moves with deliberate restraint until violence starts.", notes:"Primary hero — brass faceplate, blue eye glow, heavy duster, and badge must stay consistent. He should feel lawful, intimidating, and almost mythic.", _imgUrl:"", assetId:"" };
+  const eRourke = { id:`e_${uid()}`, kind:"character", name:"Rourke Flint", tag:"@rourke", description:"A lean human gunslinger in his late 30s. Dusty black hat, long dark coat, thin mustache, sun-cut face. He carries himself like a man who has won too many duels and wants the town to remember it. His revolver is polished steel with a carved bone grip. Smiles with contempt, not joy.", notes:"Antagonist — human, proud, sharp-featured. His confidence should contrast with Hale's mechanical stillness.", _imgUrl:"", assetId:"" };
+  const eSaloon = { id:`e_${uid()}`, kind:"location", name:"The Brass Spur Saloon", tag:"@saloon", description:"A frontier saloon reimagined through steampunk machinery. Batwing doors, smoky amber light, brass pipes running along the walls, a self-playing steam piano hissing in the corner, ceiling fans driven by belts and gears. Whiskey glasses glow under warm practical lamps. The room feels tense even before anyone speaks.", notes:"Opening location — warm practical light, smoke, brass machinery, and old wood are key.", _imgUrl:"", assetId:"" };
+  const eStreet = { id:`e_${uid()}`, kind:"location", name:"Gearwheel Street", tag:"@street", description:"A dusty frontier main street under hard noon light. Wood storefronts mixed with steam vents, hanging cables, pressure gauges, iron water towers, and rail tracks half-buried in dirt. Wind pushes dust in slow sheets. The street should feel wide, exposed, and perfect for a duel.", notes:"Duel location — harsh light, dust, distance between bodies, and steampunk infrastructure should define the frame.", _imgUrl:"", assetId:"" };
+  const eRevolver = { id:`e_${uid()}`, kind:"object", name:"Hale's Steam Revolver", tag:"@revolver", description:"A heavy six-shot revolver with brass chambers, steel barrel, and a pressure valve that exhales a short burst of steam before firing. Built for fast draw and brutal stopping power. The weapon feels engineered, not ornamental.", notes:"Key prop — the steam venting before the winning shot is a signature visual beat.", _imgUrl:"", assetId:"" };
+  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:e._imgUrl||"", assetId:e.assetId||"" });
+
+  const sc1id = `sc_${uid()}`;
+  const sc1 = {
+    id:sc1id, type:T.SCENE, cinematicStyle:"action", shotCount:6,
+    bible:[ sbEntry(eHale), sbEntry(eRourke), sbEntry(eSaloon), sbEntry(eStreet), sbEntry(eRevolver) ],
+    dialogueLines:[
+      { speaker:"Townsman", line:"Sheriff! Rourke Flint's waiting outside." },
+      { speaker:"Rourke Flint", line:"Come on out, tin lawman." },
+      { speaker:"Sheriff Iron Hale", line:"You came looking for judgment." },
+    ],
+    sceneText:`@saloon, midday. Brass pipes hiss softly above the bar while the self-playing piano dies in the middle of a note. @hale stands alone near the far end of the room, still as a machine at rest, one blue ocular lens glowing through cigar smoke. A frightened townsman calls out that @rourke is waiting outside. @hale turns his head, gears whispering, and settles one articulated hand near @revolver. He walks through the batwing doors into the brutal white light of @street. Outside, @rourke stands at the far end of the dusty road, coat open, hand hovering near his holster. The town holds its breath. Wind pushes dust between them. Extreme silence, hard close-ups, and widening distance build the classic duel tension. @rourke twitches first and draws. @hale clears leather a fraction later but fires with impossible speed. Steam vents from @revolver as the shot lands. @rourke drops into the dust. @hale remains standing in the center of the street, unshaken, as the town exhales around him.`,
+    directorCoherence:{ score:98, skippedBeats:[], overlapIssues:[], recommendation:"Treat this like a Sergio Leone duel translated into steampunk. Long holds, hard silence, severe close-ups, then explosive speed. The whole scene is about anticipation and control before the draw." },
+  };
+  const sh1 = { ...mkShot(sc1id,1), id:`sh_${uid()}`, sceneId:sc1id, index:1, durationSec:3, how:"Wide interior reveal of @saloon as the self-playing steam piano dies and every patron turns toward @hale at the back of the room", where:"@saloon interior, smoky amber light", when:"opening beat, midday", cameraSize:"wide", cameraAngle:"eye-level", cameraMovement:"slow-push-in", lens:"35mm", lighting:"practical-fire", visualGoal:"Establish the steampunk western world and the sudden silence before violence", entityTags:["@hale","@saloon"], dialogue:`TOWNSMAN (O.S.)\nSheriff! Rourke Flint's waiting outside.`, directorNote:"Start wide and patient. Let the room feel hot, mechanical, and tense. The piano stopping is the real cue that the duel has begun.", directorQuality:"good", directorIssue:"" };
+  const sh2 = { ...mkShot(sc1id,2), id:`sh_${uid()}`, sceneId:sc1id, index:2, durationSec:2, how:"Tight close-up on @hale's brass faceplate and articulated hand lowering beside @revolver as hidden gears whisper under the duster", where:"@saloon, isolated close-up", when:"accepting the challenge", cameraSize:"close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"85mm", lighting:"practical-fire", visualGoal:"Make Hale's restraint feel more dangerous than anger", entityTags:["@hale","@revolver"], directorNote:"This is pure anticipation. No wasted motion. Let the servo detail and the blue lens sell the robotic calm.", directorQuality:"good", directorIssue:"" };
+  const sh3 = { ...mkShot(sc1id,3), id:`sh_${uid()}`, sceneId:sc1id, index:3, durationSec:2, how:"Tracking from behind as @hale pushes through the batwing doors and steps into the blinding noon of @street where @rourke waits at long distance", where:"transition from @saloon to @street", when:"stepping into the duel", cameraSize:"medium", cameraAngle:"low-angle", cameraMovement:"tracking", lens:"35mm", lighting:"hard-contrast", visualGoal:"Turn the doorway into a mythic threshold from interior tension to exposed confrontation", entityTags:["@hale","@rourke","@saloon","@street"], dialogue:`ROURKE\nCome on out, tin lawman.`, directorNote:"The doors open like a stage curtain. The outside light should hit hard and flatten the world into pure duel space.", directorQuality:"good", directorIssue:"" };
+  const sh4 = { ...mkShot(sc1id,4), id:`sh_${uid()}`, sceneId:sc1id, index:4, durationSec:3, how:"Extreme-wide duel tableau with @hale and @rourke facing each other across the full width of @street while dust drifts through the gap and steam leaks from street valves", where:"@street main line, full duel distance", when:"the standoff", cameraSize:"extreme-wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"24mm", lighting:"hard-contrast", visualGoal:"Show the classic western geometry of distance, stillness, and public judgment", entityTags:["@hale","@rourke","@street"], directorNote:"Hold this longer than feels comfortable. This is the Leone frame. The distance between them is the scene's central tension.", directorQuality:"good", directorIssue:"" };
+  const sh5 = { ...mkShot(sc1id,5), id:`sh_${uid()}`, sceneId:sc1id, index:5, durationSec:2, how:"Rapid close-up sequence energy centered on @rourke's twitching trigger hand and narrowed eyes just before he jerks for the draw", where:"@street, isolated duel details", when:"last instant before violence", cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"hard-contrast", visualGoal:"Compress all the anticipation into one unbearable instant before the first move", entityTags:["@rourke","@street"], directorNote:"This should feel like the whole town holding one breath. The twitch is the point of no return.", directorQuality:"good", directorIssue:"" };
+  const sh6 = { ...mkShot(sc1id,6), id:`sh_${uid()}`, sceneId:sc1id, index:6, durationSec:3, how:"Medium-low shot as @rourke draws first, @hale clears @revolver with mechanical speed, steam vents from the cylinder, and @rourke collapses into the dust while @hale stays perfectly upright", where:"@street center line, duel finish", when:"the draw and aftermath", cameraSize:"medium", cameraAngle:"low-angle", cameraMovement:"whip-pan", lens:"50mm", lighting:"hard-contrast", visualGoal:"Deliver the duel payoff with brutal clarity and leave Hale as the immovable victor", entityTags:["@hale","@rourke","@revolver","@street"], dialogue:`HALE\nYou came looking for judgment.`, directorNote:"The violence should be sudden and over almost instantly. The steam burst is the signature steampunk punctuation after the shot lands.", directorQuality:"good", directorIssue:"" };
+  [sh1, sh2, sh3, sh4, sh5, sh6].forEach(sh => { sh.compiledText = compileShotText(sh); });
+  const mkImg = (shot, ar = "16:9") => ({ id:`img_${uid()}`, type:T.IMAGE, shotId:shot.id, sceneId:shot.sceneId, generatedUrl:"", resolution:"1K", aspect_ratio:ar, prompt: shot.compiledText || "" });
+  const img1 = mkImg(sh1), img2 = mkImg(sh2), img3 = mkImg(sh3), img4 = mkImg(sh4), img5 = mkImg(sh5), img6 = mkImg(sh6);
+  const kl = mkKling(); const veo = mkVeo(); const audio = mkAudio(); const edit = { ...mkVideoEdit(), audioNodeId: audio.id };
+  const nodes = [sc1, sh1, sh2, sh3, sh4, sh5, sh6, img1, img2, img3, img4, img5, img6, kl, veo, audio, edit];
+  const sceneX = 80, shotStart = sceneX + 310 + 70, shotGapX = 340, imgStart = shotStart + shotGapX * 6 + 80, pipeA = imgStart + shotGapX * 2 + 80, pipeB = pipeA + 380, rowY = 80;
+  const pos = {
+    [sc1.id]: { x:sceneX, y:rowY },
+    [sh1.id]: { x:shotStart, y:rowY }, [sh2.id]: { x:shotStart + shotGapX, y:rowY }, [sh3.id]: { x:shotStart + shotGapX * 2, y:rowY },
+    [sh4.id]: { x:shotStart + shotGapX * 3, y:rowY }, [sh5.id]: { x:shotStart + shotGapX * 4, y:rowY }, [sh6.id]: { x:shotStart + shotGapX * 5, y:rowY },
+    [img1.id]: { x:imgStart, y:rowY }, [img2.id]: { x:imgStart + shotGapX, y:rowY }, [img3.id]: { x:imgStart + shotGapX * 2, y:rowY },
+    [img4.id]: { x:imgStart + shotGapX * 3, y:rowY }, [img5.id]: { x:imgStart + shotGapX * 4, y:rowY }, [img6.id]: { x:imgStart + shotGapX * 5, y:rowY },
+    [kl.id]: { x:pipeA, y:rowY + 20 }, [veo.id]: { x:pipeA, y:rowY + 400 }, [audio.id]: { x:pipeB, y:rowY + 20 }, [edit.id]: { x:pipeB, y:rowY + 400 },
+  };
+  const bible = { characters:[eHale, eRourke], objects:[eRevolver], locations:[eSaloon, eStreet] };
+  return { nodes, pos, bible };
+}
+
 function makePirateAnimationTemplate() {
 
   // ── Bible entities ─────────────────────────────────────────────────────────
@@ -9692,6 +9736,14 @@ const TEMPLATES = [
     description: "4-scene trap clip — cold open on the block, street flex with the whip, studio cypher, cinematic rooftop close. 15 director-annotated shots + 5 reference Image nodes. Add an AUDIO node with your track → wire into VIDEO EDIT → snap cuts to beats.",
     tags:        ["4 SCENES","15 SHOTS","5 REF IMAGES","BEAT SYNC READY"],
     make:        makeTrapMusicVideoTemplate,
+  },
+  {
+    id:          "steampunk-wild-west-duel",
+    label:       "Steampunk Wild West Duel",
+    emoji:       "🤠",
+    description: "Steampunk western starter — a robo sheriff is called out of a brass-and-smoke saloon to face a human gunslinger in a noon-street duel. 1 scene, 6 director-annotated shots built around classic western anticipation and a fast mechanical payoff.",
+    tags:        ["1 SCENE","6 SHOTS","STEAMPUNK","WESTERN"],
+    make:        makeSteampunkWildWestTemplate,
   },
   {
     id:          "medieval-fantasy-epic",
