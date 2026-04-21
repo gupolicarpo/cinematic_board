@@ -2612,7 +2612,10 @@ function ShotCard({ node, upd, onDel, sceneBible, linkedScene, onLink, sel: sele
   const ac = th.dark ? "#38bdf8" : th.t2;
   const uac = th.dark ? ac : th.t0;
   // recompile rebuilds compiledText from fields — skipped when user has manually overridden the prompt
-  const recompile = (patch) => { const n={...node,...patch}; upd({ ...patch, ...(node.promptOverride ? {} : { compiledText: compileShotText(n) }) }); };
+  const recompile = (patch) => {
+    const n = { ...node, ...patch, promptOverride: false };
+    upd({ ...patch, promptOverride: false, compiledText: compileShotText(n) });
+  };
 
   // local bible state
   const fRefs = useRef({});
@@ -10788,9 +10791,12 @@ export default function App() {
       {content}
     </div>
   );
+  const syncManualShotPatch = (shot, patch) => {
+    const next = { ...shot, ...patch, promptOverride: false };
+    return { ...patch, promptOverride: false, compiledText: compileShotText(next) };
+  };
   const patchShotFromInspector = (shot, patch) => {
-    const next = { ...shot, ...patch };
-    updNode(shot.id, { ...patch, ...(shot.promptOverride ? {} : { compiledText: compileShotText(next) }) });
+    updNode(shot.id, syncManualShotPatch(shot, patch));
   };
   const renderInspectorContent = (n) => {
     if (!n) return null;
