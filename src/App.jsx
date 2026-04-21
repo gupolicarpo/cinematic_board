@@ -4004,6 +4004,11 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                   <div style={{ fontSize:6, color:"#38bdf8", letterSpacing:"0.06em", marginBottom:2 }}>
                     SHOT #{sh.index} · {sh.durationSec||5}s
                   </div>
+                  {!!sh.dialogue?.trim() && (
+                    <div style={{ fontSize:6, color:"#a78bfa", lineHeight:1.5, marginBottom:2, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>
+                      {stripSpeakerNames(sh.dialogue).replace(/\s+/g, " ").trim()}
+                    </div>
+                  )}
                   <div style={{ fontSize:6, color:th.t2, lineHeight:1.5, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>
                     {sh.compiledText || sh.how || "—"}
                   </div>
