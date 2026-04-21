@@ -10222,11 +10222,16 @@ export default function App() {
 
   const loadTemplate = (template) => {
     const { nodes: tNodes, pos: tPos, bible: tBible } = template.make();
+    const normalizedTemplateBible = {
+      characters: (tBible?.characters || []).map(e => ({ ...e, _imgUrl: resolveEntryImage(e, "none"), _prev: resolveEntryImage(e, "none") })),
+      objects: (tBible?.objects || []).map(e => ({ ...e, _imgUrl: resolveEntryImage(e, "none"), _prev: resolveEntryImage(e, "none") })),
+      locations: (tBible?.locations || []).map(e => ({ ...e, _imgUrl: resolveEntryImage(e, "none"), _prev: resolveEntryImage(e, "none") })),
+    };
     const allTemplateBible = [
-      ...(tBible?.characters || []),
-      ...(tBible?.objects || []),
-      ...(tBible?.locations || []),
-    ].map(e => ({ ...e, _prev: resolveEntryImage(e, "none"), _imgUrl: resolveEntryImage(e, "none") }));
+      ...normalizedTemplateBible.characters,
+      ...normalizedTemplateBible.objects,
+      ...normalizedTemplateBible.locations,
+    ];
     const tagToEntry = Object.fromEntries(allTemplateBible.filter(e => e.tag).map(e => [e.tag, e]));
     const syncedTemplateNodes = (tNodes || []).map(n => {
       if (n.type !== T.SCENE && n.type !== T.SHOT) return n;
@@ -10244,7 +10249,7 @@ export default function App() {
     });
     setNodes(syncedTemplateNodes);
     setPos(tPos);
-    setBible(tBible);
+    setBible(normalizedTemplateBible);
     setSelId(null);
     setTemplatePickerOpen(false);
     setPan({ x: 40, y: 40 });
