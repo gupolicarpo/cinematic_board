@@ -10222,7 +10222,27 @@ export default function App() {
 
   const loadTemplate = (template) => {
     const { nodes: tNodes, pos: tPos, bible: tBible } = template.make();
-    setNodes(tNodes);
+    const allTemplateBible = [
+      ...(tBible?.characters || []),
+      ...(tBible?.objects || []),
+      ...(tBible?.locations || []),
+    ].map(e => ({ ...e, _prev: resolveEntryImage(e, "none"), _imgUrl: resolveEntryImage(e, "none") }));
+    const tagToEntry = Object.fromEntries(allTemplateBible.filter(e => e.tag).map(e => [e.tag, e]));
+    const syncedTemplateNodes = (tNodes || []).map(n => {
+      if (n.type !== T.SCENE && n.type !== T.SHOT) return n;
+      const syncedBible = (n.bible || []).map(b => {
+        const src = tagToEntry[b.tag];
+        if (!src) return b;
+        return {
+          ...b,
+          _imgUrl: resolveEntryImage(src, "none"),
+          _prev: resolveEntryImage(src, "none"),
+          assetId: src.assetId || b.assetId || "",
+        };
+      });
+      return { ...n, bible: syncedBible };
+    });
+    setNodes(syncedTemplateNodes);
     setPos(tPos);
     setBible(tBible);
     setSelId(null);
