@@ -8247,9 +8247,26 @@ function Drag({ id, x, y, onMove, onFocus, children, z, zoom=1 }) {
 }
 
 // ─── EDGE SVG ─────────────────────────────────────────────────────────────────
-function Edge({ fx, fy, tx, ty, color }) {
+function Edge({ fx, fy, tx, ty, color, onDelete }) {
   const mx = fx+(tx-fx)*0.5;
-  return <path d={`M${fx},${fy} C${mx},${fy} ${mx},${ty} ${tx},${ty}`} stroke={color} strokeWidth="1.5" fill="none" strokeDasharray="6 3" opacity="0.6" />;
+  const cx = mx;
+  const cy = fy + (ty - fy) * 0.5 - 12;
+  return (
+    <g>
+      <path d={`M${fx},${fy} C${mx},${fy} ${mx},${ty} ${tx},${ty}`} stroke={color} strokeWidth="1.5" fill="none" strokeDasharray="6 3" opacity="0.6" />
+      {onDelete && (
+        <g
+          transform={`translate(${cx},${cy})`}
+          style={{ pointerEvents:"all", cursor:"pointer" }}
+          onMouseDown={e=>{ e.preventDefault(); e.stopPropagation(); }}
+          onClick={e=>{ e.preventDefault(); e.stopPropagation(); onDelete(); }}
+        >
+          <circle r="8" fill="rgba(255,255,255,0.96)" stroke={color} strokeWidth="1.5" />
+          <path d="M-3.5,-3.5 L3.5,3.5 M3.5,-3.5 L-3.5,3.5" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+        </g>
+      )}
+    </g>
+  );
 }
 
 // ─── AUTH SCREEN ──────────────────────────────────────────────────────────────
@@ -10934,6 +10951,24 @@ export default function App() {
 
   const updNode = (id, patch) => setNodes(prev=>prev.map(n=>n.id===id?{...n,...patch}:n));
   const linkShot = (shotId, sceneId) => setNodes(prev=>prev.map(n=>n.id===shotId?{...n,sceneId}:n));
+  const removeConnection = useCallback((edge) => {
+    if (!edge) return;
+    setNodes(prev => prev.map(n => {
+      if (edge.kind === "scene-shot" && n.id === edge.toId) return { ...n, sceneId: null };
+      if (edge.kind === "scene-image" && n.id === edge.toId) return { ...n, sceneId: null };
+      if (edge.kind === "shot-image" && n.id === edge.toId) return { ...n, shotId: null };
+      if (edge.kind === "shot-kling" && n.id === edge.toId) return { ...n, shotIds: (n.shotIds || []).filter(id => id !== edge.fromId) };
+      if (edge.kind === "shot-veo" && n.id === edge.toId) return { ...n, shotId: null };
+      if (edge.kind === "veo-start-frame" && n.id === edge.toId) return { ...n, startFrameNodeId: null };
+      if (edge.kind === "veo-end-frame" && n.id === edge.toId) return { ...n, endFrameNodeId: null };
+      if (edge.kind === "veo-ref" && n.id === edge.toId) return { ...n, refNodeIds: (n.refNodeIds || []).filter(id => id !== edge.fromId) };
+      if (edge.kind === "videoedit-video" && n.id === edge.toId) return { ...n, videoNodeIds: (n.videoNodeIds || []).filter(id => id !== edge.fromId) };
+      if (edge.kind === "videoedit-audio" && n.id === edge.toId) return { ...n, audioNodeId: null };
+      if (edge.kind === "audio-video" && n.id === edge.toId) return { ...n, videoNodeId: null };
+      if (edge.kind === "musicdna-audio" && n.id === edge.toId) return { ...n, audioNodeId: null };
+      return n;
+    }));
+  }, []);
   const applySceneRestructurePatch = useCallback((sceneId, scenePatch, shotPlan = []) => {
     const latestNodes = nodesRef.current;
     const latestPos = posRef.current;
@@ -11918,36 +11953,36 @@ export default function App() {
     const fp=pos[n.sceneId], tp=pos[n.id];
     const sc=nodes.find(x=>x.id===n.sceneId);
     const color = th.dark ? (sc ? (styleColor[sc.cinematicStyle]||"#f87171")+"66" : "#2d374866") : "rgba(0,0,0,0.2)";
-    return { id:`sc-${n.sceneId}-${n.id}`, fx:fp.x+310, fy:fp.y+70, tx:tp.x, ty:tp.y+50, color };
+    return { id:`sc-${n.sceneId}-${n.id}`, fx:fp.x+310, fy:fp.y+70, tx:tp.x, ty:tp.y+50, color, fromId:n.sceneId, toId:n.id, kind:n.type===T.SHOT ? "scene-shot" : "scene-image" };
   });
   const shotEdges = nodes.filter(n=>n.type===T.IMAGE&&n.shotId&&pos[n.shotId]&&pos[n.id]).map(n=>{
     const fp=pos[n.shotId], tp=pos[n.id];
-    return { id:`sh-${n.shotId}-${n.id}`, fx:fp.x+268, fy:fp.y+50, tx:tp.x, ty:tp.y+50, color: th.dark ? "#38bdf855" : "rgba(0,0,0,0.2)" };
+    return { id:`sh-${n.shotId}-${n.id}`, fx:fp.x+268, fy:fp.y+50, tx:tp.x, ty:tp.y+50, color: th.dark ? "#38bdf855" : "rgba(0,0,0,0.2)", fromId:n.shotId, toId:n.id, kind:"shot-image" };
   });
   const klingEdges = nodes.filter(n=>n.type===T.KLING).flatMap(kn=>
     (kn.shotIds||[]).filter(sid=>pos[sid]&&pos[kn.id]).map((sid,i)=>{
       const fp=pos[sid], tp=pos[kn.id];
-      return { id:`kl-${sid}-${kn.id}-${i}`, fx:fp.x+268, fy:fp.y+50, tx:tp.x, ty:tp.y+44+i*26, color: th.dark ? "#f9731666" : "rgba(0,0,0,0.2)" };
+      return { id:`kl-${sid}-${kn.id}-${i}`, fx:fp.x+268, fy:fp.y+50, tx:tp.x, ty:tp.y+44+i*26, color: th.dark ? "#f9731666" : "rgba(0,0,0,0.2)", fromId:sid, toId:kn.id, kind:"shot-kling" };
     })
   );
   const veoEdges = nodes.filter(n=>n.type===T.VEO&&n.shotId&&pos[n.shotId]&&pos[n.id]).map(n=>{
     const fp=pos[n.shotId], tp=pos[n.id];
-    return { id:`veo-${n.shotId}-${n.id}`, fx:fp.x+268, fy:fp.y+50, tx:tp.x, ty:tp.y+44, color: th.dark ? "#a855f766" : "rgba(0,0,0,0.2)" };
+    return { id:`veo-${n.shotId}-${n.id}`, fx:fp.x+268, fy:fp.y+50, tx:tp.x, ty:tp.y+44, color: th.dark ? "#a855f766" : "rgba(0,0,0,0.2)", fromId:n.shotId, toId:n.id, kind:"shot-veo" };
   });
   const veoFrameEdges = nodes.filter(n=>n.type===T.VEO).flatMap(vn=>{
     const out = [];
     if (vn.startFrameNodeId && pos[vn.startFrameNodeId] && pos[vn.id]) {
       const fp=pos[vn.startFrameNodeId], tp=pos[vn.id];
-      out.push({ id:`veo-sf-${vn.id}`, fx:fp.x+220, fy:fp.y+50, tx:tp.x, ty:tp.y+95, color: th.dark ? "#a855f755" : "rgba(0,0,0,0.15)" });
+      out.push({ id:`veo-sf-${vn.id}`, fx:fp.x+220, fy:fp.y+50, tx:tp.x, ty:tp.y+95, color: th.dark ? "#a855f755" : "rgba(0,0,0,0.15)", fromId:vn.startFrameNodeId, toId:vn.id, kind:"veo-start-frame" });
     }
     if (vn.endFrameNodeId && pos[vn.endFrameNodeId] && pos[vn.id]) {
       const fp=pos[vn.endFrameNodeId], tp=pos[vn.id];
-      out.push({ id:`veo-ef-${vn.id}`, fx:fp.x+220, fy:fp.y+50, tx:tp.x, ty:tp.y+125, color: th.dark ? "#a855f733" : "rgba(0,0,0,0.1)" });
+      out.push({ id:`veo-ef-${vn.id}`, fx:fp.x+220, fy:fp.y+50, tx:tp.x, ty:tp.y+125, color: th.dark ? "#a855f733" : "rgba(0,0,0,0.1)", fromId:vn.endFrameNodeId, toId:vn.id, kind:"veo-end-frame" });
     }
     (vn.refNodeIds||[]).forEach((rid,i) => {
       if (pos[rid] && pos[vn.id]) {
         const fp=pos[rid], tp=pos[vn.id];
-        out.push({ id:`veo-ref-${vn.id}-${rid}`, fx:fp.x+220, fy:fp.y+50, tx:tp.x, ty:tp.y+155+i*16, color: th.dark ? "#a855f733" : "rgba(0,0,0,0.1)" });
+        out.push({ id:`veo-ref-${vn.id}-${rid}`, fx:fp.x+220, fy:fp.y+50, tx:tp.x, ty:tp.y+155+i*16, color: th.dark ? "#a855f733" : "rgba(0,0,0,0.1)", fromId:rid, toId:vn.id, kind:"veo-ref" });
       }
     });
     return out;
@@ -11957,24 +11992,24 @@ export default function App() {
       const fp=pos[vid], tp=pos[ve.id];
       const srcNode = nodes.find(x=>x.id===vid);
       const srcW = srcNode ? 290 : 220;
-      return { id:`ved-${ve.id}-${vid}`, fx:fp.x+srcW, fy:fp.y+44, tx:tp.x, ty:tp.y+44+i*14, color: th.dark?"rgba(255,255,255,0.18)":"rgba(0,0,0,0.18)" };
+      return { id:`ved-${ve.id}-${vid}`, fx:fp.x+srcW, fy:fp.y+44, tx:tp.x, ty:tp.y+44+i*14, color: th.dark?"rgba(255,255,255,0.18)":"rgba(0,0,0,0.18)", fromId:vid, toId:ve.id, kind:"videoedit-video" };
     })
   );
   const audioEdges = nodes.filter(n=>n.type===T.VIDEOEDIT && n.audioNodeId && pos[n.audioNodeId] && pos[n.id]).map(ve=>{
     const ap=pos[ve.audioNodeId], vp=pos[ve.id];
-    return { id:`aud-${ve.id}`, fx:ap.x+280, fy:ap.y+44, tx:vp.x, ty:vp.y+44, color:"#10b981" };
+    return { id:`aud-${ve.id}`, fx:ap.x+280, fy:ap.y+44, tx:vp.x, ty:vp.y+44, color:"#10b981", fromId:ve.audioNodeId, toId:ve.id, kind:"videoedit-audio" };
   });
   // Video node → Audio node edges (for video-to-music)
   const videoAudioEdges = nodes.filter(n=>n.type===T.AUDIO && n.videoNodeId && pos[n.videoNodeId] && pos[n.id]).map(an=>{
     const vp=pos[an.videoNodeId], ap=pos[an.id];
     const srcNode = nodes.find(x=>x.id===an.videoNodeId);
     const srcW = srcNode?.type===T.CLIP ? 260 : 290;
-    return { id:`vidaud-${an.id}`, fx:vp.x+srcW, fy:vp.y+44, tx:ap.x, ty:ap.y+44, color:"#10b98177" };
+    return { id:`vidaud-${an.id}`, fx:vp.x+srcW, fy:vp.y+44, tx:ap.x, ty:ap.y+44, color:"#10b98177", fromId:an.videoNodeId, toId:an.id, kind:"audio-video" };
   });
   // Clip node → VideoEdit edges
   const musicDNAEdges = nodes.filter(n=>n.type===T.MUSICDNA && n.audioNodeId && pos[n.audioNodeId] && pos[n.id]).map(md=>{
     const ap=pos[md.audioNodeId], mp=pos[md.id];
-    return { id:`mdna-${md.id}`, fx:ap.x+280, fy:ap.y+44, tx:mp.x, ty:mp.y+44, color:"#ec489977" };
+    return { id:`mdna-${md.id}`, fx:ap.x+280, fy:ap.y+44, tx:mp.x, ty:mp.y+44, color:"#ec489977", fromId:md.audioNodeId, toId:md.id, kind:"musicdna-audio" };
   });
   const clipEdges = nodes.filter(n=>n.type===T.VIDEOEDIT).flatMap(ve=>
     (ve.videoNodeIds||[]).filter(vid => {
@@ -11982,7 +12017,7 @@ export default function App() {
       return src?.type===T.CLIP && pos[vid] && pos[ve.id];
     }).map((vid,i)=>{
       const fp=pos[vid], tp=pos[ve.id];
-      return { id:`clp-${ve.id}-${vid}`, fx:fp.x+260, fy:fp.y+44, tx:tp.x, ty:tp.y+44+i*14, color:`#3b82f677` };
+      return { id:`clp-${ve.id}-${vid}`, fx:fp.x+260, fy:fp.y+44, tx:tp.x, ty:tp.y+44+i*14, color:`#3b82f677`, fromId:vid, toId:ve.id, kind:"videoedit-video" };
     })
   );
   const edges = [...sceneEdges, ...shotEdges, ...klingEdges, ...veoEdges, ...veoFrameEdges, ...videoEditEdges, ...audioEdges, ...videoAudioEdges, ...musicDNAEdges, ...clipEdges];
@@ -12436,7 +12471,7 @@ export default function App() {
           <div style={{ position:"absolute",top:0,left:0,transformOrigin:"0 0",transform:`translate(${pan.x}px,${pan.y}px) scale(${zoom})`,width:0,height:0 }}>
             {/* Edges */}
             <svg style={{ position:"absolute",top:0,left:0,overflow:"visible",pointerEvents:"none",zIndex:1 }}>
-              {edges.map(e=><Edge key={e.id} fx={e.fx} fy={e.fy} tx={e.tx} ty={e.ty} color={e.color} />)}
+              {edges.map(e=><Edge key={e.id} fx={e.fx} fy={e.fy} tx={e.tx} ty={e.ty} color={e.color} onDelete={()=>removeConnection(e)} />)}
               {/* Live wire being dragged */}
               {wire && (() => {
                 const mx = wire.fromX+(wire.toX-wire.fromX)*0.5;
