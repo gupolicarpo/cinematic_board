@@ -1690,10 +1690,64 @@ Example:
   if (!r.ok) throw new Error(`Claude ${r.status}: ${raw.slice(0, 200)}`);
   const d = JSON.parse(raw);
   const txt = d.content?.map(b => b.text || "").join("") || "";
-  const clean = txt.replace(/```json|```/g, "").trim();
-  const start = clean.indexOf("{"); const end = clean.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("No JSON in response: " + clean.slice(0, 200));
-  return JSON.parse(clean.slice(start, end + 1));
+  return extractJsonPayload(txt, "No JSON in coherence response");
+}
+
+function extractJsonPayload(txt, label = "No JSON in response") {
+  const clean = String(txt || "").replace(/```json|```/g, "").trim();
+  const starts = [];
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean[i];
+    if (ch === "{" || ch === "[") starts.push(i);
+  }
+  for (const start of starts) {
+    const open = clean[start];
+    const close = open === "{" ? "}" : "]";
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < clean.length; i++) {
+      const ch = clean[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === "\\") {
+          escaped = true;
+        } else if (ch === "\"") {
+          inString = false;
+        }
+        continue;
+      }
+      if (ch === "\"") {
+        inString = true;
+        continue;
+      }
+      if (ch === open) depth++;
+      if (ch === close) {
+        depth--;
+        if (depth === 0) {
+          const candidate = clean.slice(start, i + 1);
+          try {
+            return JSON.parse(candidate);
+          } catch {
+            break;
+          }
+        }
+      }
+    }
+  }
+  throw new Error(`${label}: ${clean.slice(0, 300)}`);
+}
+
+function commandWantsSceneRestructure(command = "") {
+  const text = String(command || "").toLowerCase();
+  if (!text.trim()) return false;
+  return (
+    /(break|split|expand|restructure|rebuild|reconstruct)/i.test(text) ||
+    /(add|create|insert).{0,40}(shot|shots|coverage|reaction shot|insert shot)/i.test(text) ||
+    /(more shots|missing shots|necessary shots|additional shots|new shots)/i.test(text) ||
+    /(western tension|build tension|show the tension|before the duel|reaction beat|coverage)/i.test(text)
+  );
 }
 
 async function aiRestructureScene(sceneNode, shotNodes, command) {
@@ -1777,10 +1831,7 @@ Rules:
   if (!r.ok) throw new Error(`Claude ${r.status}: ${raw.slice(0, 200)}`);
   const d = JSON.parse(raw);
   const txt = d.content?.map(b => b.text || "").join("") || "";
-  const clean = txt.replace(/```json|```/g, "").trim();
-  const start = clean.indexOf("{"); const end = clean.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("No JSON in restructure response: " + clean.slice(0, 200));
-  return JSON.parse(clean.slice(start, end + 1));
+  return extractJsonPayload(txt, "No JSON in restructure response");
 }
 
 const STYLE_GUIDE = {
@@ -4941,7 +4992,7 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onAp
     if (!node.command?.trim() || !editTarget) return;
     setStatus("running"); setError(""); setPreview(null);
     try {
-      const wantsRestructure = /break|split|add more shots|more shots|expand.*shots|restructure|rebuild|reconstruct/i.test(node.command || "");
+      const wantsRestructure = commandWantsSceneRestructure(node.command || "");
       if (wantsRestructure) {
         const targetScene = targetNodes.find(n => n.type === T.SCENE)
           || (editTarget?.type === T.SCENE ? editTarget : null)
@@ -5014,7 +5065,7 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onAp
     if (targetNodes.length === 0) return;
     setStatus("running"); setError(""); setMultiPrev(null);
     try {
-      const wantsRestructure = /break|split|add more shots|more shots|expand.*shots|restructure|rebuild|reconstruct/i.test(node.command || "");
+      const wantsRestructure = commandWantsSceneRestructure(node.command || "");
       let patches;
       if (wantsRestructure) {
         const targetScene = targetNodes.find(n => n.type === T.SCENE);
