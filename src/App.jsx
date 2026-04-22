@@ -10354,14 +10354,14 @@ export default function App() {
         : n
     );
 
-    await supabase.from("projects").upsert({
+    const { error: projectSaveError } = await supabase.from("projects").upsert({
       id:        projectId,
       user_id:   user.id,
       name:      projectName || "Untitled Project",
       nodes:     serializedNodes,
       positions: posVal,
-      data:      { bible: resolvedBible },
     });
+    if (projectSaveError) throw projectSaveError;
 
     await supabase.from("bible_entries").delete().eq("user_id", user.id).eq("project_id", projectId);
     const allEntries = allKinds.map((e, i) => {
@@ -10415,29 +10415,6 @@ export default function App() {
       );
       return { ...entry, _imgUrl: baseUrl, _prev: baseUrl, _styleVariants: Object.fromEntries(hydratedVariants) };
     };
-    if (data.data?.bible) {
-      const projectBible = data.data.bible;
-      const [characters, objects, locations] = await Promise.all([
-        Promise.all((projectBible.characters||[]).map(hydrateEntry)),
-        Promise.all((projectBible.objects||[]).map(hydrateEntry)),
-        Promise.all((projectBible.locations||[]).map(hydrateEntry)),
-      ]);
-      setBible({ characters, objects, locations });
-
-      const tagToEntry = {};
-      [...characters, ...objects, ...locations].forEach(e => { if (e.tag) tagToEntry[e.tag] = e; });
-      const syncedNodes = rawNodes.map(n => {
-        if (!n.bible?.length) return n;
-        const synced = n.bible.map(b => tagToEntry[b.tag]
-          ? { ...b, ...tagToEntry[b.tag], _prev: resolveEntryImage(tagToEntry[b.tag], "none") }
-          : b);
-        return { ...n, bible: synced };
-      });
-      setNodes(syncedNodes);
-      setCurrentProject({ id: project.id, name: project.name });
-      setProjectPickerOpen(false);
-      return;
-    }
     // Load bible — fetch remote images and convert to data URLs so generation
     // code (which filters for "data:") works immediately after reload.
     const { data: bEntries } = await supabase.from("bible_entries").select("*").eq("project_id", project.id);
@@ -11296,22 +11273,45 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from("projects")
-        .select("id, name, data, updated_at")
+        .select("id, name, description, nodes, positions, updated_at")
         .eq("user_id", user.id)
         .order("updated_at", { ascending: false });
       if (error || !data) return;
-      setUserTemplates(data.filter(p => p.data?.isTemplate === true).map(p => ({
-        id:          p.id,
-        label:       p.data?.templateMeta?.name  || p.name,
-        emoji:       p.data?.templateMeta?.emoji || "📋",
-        description: p.data?.templateMeta?.desc  || "",
-        tags:        p.data?.templateMeta?.tags  || ["CUSTOM"],
-        make: () => ({
-          nodes:  p.data?.nodes     || [],
-          pos:    p.data?.positions || {},
-          bible:  p.data?.bible     || { characters:[], objects:[], locations:[] },
-        }),
-      })));
+      const templateProjects = data.filter(p => String(p.name || "").startsWith("__TPL__"));
+      const templateIds = templateProjects.map(p => p.id);
+      let bibleByProject = {};
+      if (templateIds.length) {
+        const { data: tEntries } = await supabase
+          .from("bible_entries")
+          .select("*")
+          .in("project_id", templateIds);
+        bibleByProject = (tEntries || []).reduce((acc, entry) => {
+          const pid = entry.project_id;
+          if (!acc[pid]) acc[pid] = { characters:[], objects:[], locations:[] };
+          if (entry.kind === "character") acc[pid].characters.push(entry);
+          if (entry.kind === "object") acc[pid].objects.push(entry);
+          if (entry.kind === "location") acc[pid].locations.push(entry);
+          return acc;
+        }, {});
+      }
+
+      setUserTemplates(templateProjects.map(p => {
+        let meta = {};
+        try { meta = p.description ? JSON.parse(p.description) : {}; } catch { meta = {}; }
+        const label = meta?.templateMeta?.name || String(p.name || "").replace(/^__TPL__/, "") || p.name;
+        return {
+          id:          p.id,
+          label,
+          emoji:       meta?.templateMeta?.emoji || "📋",
+          description: meta?.templateMeta?.desc  || "",
+          tags:        meta?.templateMeta?.tags  || ["CUSTOM"],
+          make: () => ({
+            nodes:  p.nodes || [],
+            pos:    p.positions || {},
+            bible:  bibleByProject[p.id] || { characters:[], objects:[], locations:[] },
+          }),
+        };
+      }));
     } catch(e) { console.warn("Load user templates failed:", e.message); }
   }, [user]);
 
@@ -11322,7 +11322,7 @@ export default function App() {
     const imgCount  = nodesRef.current.filter(n=>n.type===T.IMAGE).length;
     const shotCount = nodesRef.current.filter(n=>n.type===T.SHOT).length;
     const sceneCount= nodesRef.current.filter(n=>n.type===T.SCENE).length;
-    const data = {
+    const templateMeta = {
       isTemplate:   true,
       templateMeta: {
         name:  templateSaveName.trim(),
@@ -11330,18 +11330,36 @@ export default function App() {
         desc:  templateSaveDesc.trim() || `${sceneCount} scenes · ${shotCount} shots · ${imgCount} images`,
         tags:  [`${sceneCount} SCENES`, `${shotCount} SHOTS`, `${imgCount} IMAGES`, "CUSTOM"],
       },
-      nodes:     nodesRef.current,
-      positions: posRef.current,
-      bible,
     };
     try {
-      const { error } = await supabase.from("projects").insert({
+      const serializedNodes = (nodesRef.current || []).map(n =>
+        n.bible?.length
+          ? { ...n, bible: n.bible.map(stripBibleEntryForStorage) }
+          : n
+      );
+      const { data: insertedProject, error } = await supabase.from("projects").insert({
         user_id:    user.id,
         name:       `__TPL__${templateSaveName.trim()}`,
-        data,
+        description: JSON.stringify(templateMeta),
+        nodes: serializedNodes,
+        positions: posRef.current,
         updated_at: new Date().toISOString(),
-      });
+      }).select("id").single();
       if (error) throw error;
+      const allEntries = [
+        ...(bible.characters||[]).map(e=>({ ...e, kind:"character" })),
+        ...(bible.objects||[]).map(e=>({ ...e, kind:"object" })),
+        ...(bible.locations||[]).map(e=>({ ...e, kind:"location" })),
+      ].map(({ _savedUrl, _savedPath, _styleVariants, _imgUrl, _prev, assetId, ...rest }) => ({
+        ...rest,
+        user_id: user.id,
+        project_id: insertedProject.id,
+        img_url: _imgUrl || _prev || "",
+      }));
+      if (allEntries.length) {
+        const { error: bibleError } = await supabase.from("bible_entries").insert(allEntries);
+        if (bibleError) throw bibleError;
+      }
       setSaveTemplateOpen(false);
       setTemplateSaveName("");
       setTemplateSaveDesc("");
