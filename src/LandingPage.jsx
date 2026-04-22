@@ -425,6 +425,7 @@ export default function LandingPage({ onAuth, initialSection = "" }) {
         {(() => {
           const HERO_CLIPS = [
             { src:"/trap_video_clip.mp4",     label:"Trap · Music Video" },
+            { src:"/western_clip.mp4",        label:"Steampunk Western · Duel" },
             { src:"/action_movie_clip.mp4",   label:"Action · Feature Film" },
             { src:"/fantasy_style_video.mp4", label:"Fantasy · Epic" },
             { src:"/scifi_thriller.mp4",      label:"Sci-Fi · Thriller" },
