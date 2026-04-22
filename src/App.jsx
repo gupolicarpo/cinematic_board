@@ -9137,7 +9137,7 @@ function makeSteampunkWildWestTemplate() {
   const p3Kling = mkKling(), p3Veo = mkVeo(), p3Audio = mkAudio(), p3Edit = { ...mkVideoEdit(), audioNodeId: p3Audio.id };
 
   const nodes = [sc1, sc2, sc3, sh1, sh2, sh3, sh4, sh5, sh6, img1, img2, img3, img4, img5, img6, p1Kling, p1Veo, p1Audio, p1Edit, p2Kling, p2Veo, p2Audio, p2Edit, p3Kling, p3Veo, p3Audio, p3Edit];
-  const sceneX = 80, shotStart = sceneX + 310 + 70, shotGapX = 340, sceneGapY = 860;
+  const sceneX = 80, shotStart = sceneX + 310 + 70, shotGapX = 340, sceneGapY = 1040;
   const rowY = (row) => 80 + row * sceneGapY;
   const imgStart = shotStart + shotGapX * 2 + 80;
   const pipeA = imgStart + shotGapX * 2 + 80, pipeB = pipeA + 380, pipeRowB = 380;
