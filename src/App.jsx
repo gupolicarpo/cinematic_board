@@ -1696,6 +1696,93 @@ Example:
   return JSON.parse(clean.slice(start, end + 1));
 }
 
+async function aiRestructureScene(sceneNode, shotNodes, command) {
+  const sys = `You are a film editor and storyboard director restructuring a scene into cleaner AI-generatable coverage.
+
+Return ONLY raw JSON with this exact shape:
+{
+  "sceneId": "${sceneNode.id}",
+  "shotCount": 4,
+  "restructureShots": [
+    {
+      "sourceAnchor": "5-20 word quote from scene text",
+      "how": "one clear visible action",
+      "where": "visible location",
+      "when": "simple temporal context",
+      "entityTags": [],
+      "cameraSize": "medium",
+      "cameraAngle": "eye-level",
+      "cameraMovement": "static",
+      "lighting": "natural-soft",
+      "lens": "35mm",
+      "visualGoal": "specific cinematic purpose",
+      "dialogue": "",
+      "durationSec": 3
+    }
+  ]
+}
+
+Rules:
+- Keep the scene's creative intent, but rebuild the coverage to be cleaner and more generatable.
+- Add shots when needed for reaction beats, inserts, or splitting overloaded actions.
+- One shot = one clear action or one clear reaction.
+- Respect Kling constraints: max ${KLING_MAX_SHOTS} shots, max ${KLING_MAX_SECS}s total, each shot 1-5 seconds.
+- Maintain dialogue in the correct shot(s).
+- Use only valid enums already used in the app:
+  cameraSize: ${JSON.stringify(CAMERA_SIZES)}
+  cameraAngle: ${JSON.stringify(CAMERA_ANGLES)}
+  cameraMovement: ${JSON.stringify(CAMERA_MOVEMENTS)}
+  lighting: ${JSON.stringify(LIGHTING_STYLES)}
+- Return only valid JSON. No markdown.`;
+
+  const usr = JSON.stringify({
+    command: command || "",
+    scene: {
+      id: sceneNode.id,
+      sceneText: sceneNode.sceneText || "",
+      cinematicStyle: sceneNode.cinematicStyle || "drama",
+      visualStyle: sceneNode.visualStyle || "none",
+    },
+    existingShots: shotNodes
+      .sort((a, b) => (a.index || 0) - (b.index || 0))
+      .map(sh => ({
+        id: sh.id,
+        index: sh.index,
+        sourceAnchor: sh.sourceAnchor || "",
+        how: sh.how || "",
+        where: sh.where || "",
+        when: sh.when || "",
+        entityTags: sh.entityTags || [],
+        cameraSize: sh.cameraSize || "medium",
+        cameraAngle: sh.cameraAngle || "eye-level",
+        cameraMovement: sh.cameraMovement || "static",
+        lighting: sh.lighting || "natural-soft",
+        lens: sh.lens || "50mm",
+        visualGoal: sh.visualGoal || "",
+        dialogue: sh.dialogue || "",
+        durationSec: sh.durationSec || 3,
+      })),
+  }, null, 2);
+
+  const r = await fetch("/api/messages", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-5",
+      max_tokens: 4000,
+      system: sys,
+      messages: [{ role: "user", content: usr }],
+    }),
+  });
+  const raw = await r.text();
+  if (!r.ok) throw new Error(`Claude ${r.status}: ${raw.slice(0, 200)}`);
+  const d = JSON.parse(raw);
+  const txt = d.content?.map(b => b.text || "").join("") || "";
+  const clean = txt.replace(/```json|```/g, "").trim();
+  const start = clean.indexOf("{"); const end = clean.lastIndexOf("}");
+  if (start === -1 || end === -1) throw new Error("No JSON in restructure response: " + clean.slice(0, 200));
+  return JSON.parse(clean.slice(start, end + 1));
+}
+
 const STYLE_GUIDE = {
   drama:         "Slow, deliberate pacing. Focus on emotional subtext, tension in silence, internal conflict made visible through action and environment. Language is measured and weighty.",
   thriller:      "Tight, urgent pacing. Every detail feels like a threat or clue. Paranoia, shadows, and misdirection dominate. Sentences are short, punchy, breathless.",
@@ -4810,7 +4897,7 @@ function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, o
 }
 
 // ─── LLM NODE ─────────────────────────────────────────────────────────────────
-function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onInspect }) {
+function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onApplySceneRestructure, onInspect }) {
   const th = useTheme();
   const ac = th.dark ? "#6366f1" : th.t2;
   const selColor = selected ? ac : th.dark ? `${ac}44` : th.b0;
@@ -4877,7 +4964,12 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onIn
     if (multiPrev && Object.keys(multiPrev).length > 0) {
       Object.entries(multiPrev).forEach(([nid, patch]) => {
         const target = targetNodes.find(n => n.id === nid);
-        if (target) onUpdateNode(nid, syncShotPatch(target, patch));
+        if (!target) return;
+        if (target.type === T.SCENE && Array.isArray(patch.restructureShots) && patch.restructureShots.length) {
+          onApplySceneRestructure?.(nid, patch, patch.restructureShots);
+          return;
+        }
+        onUpdateNode(nid, syncShotPatch(target, patch));
       });
       upd({ lastResult: multiPrev });
       setStatus("applied"); setMultiPrev(null); setPreview(null);
@@ -4896,7 +4988,27 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onIn
     if (targetNodes.length === 0) return;
     setStatus("running"); setError(""); setMultiPrev(null);
     try {
-      const patches = await aiCoherenceCheck(targetNodes, node.command);
+      const wantsRestructure = /break|split|add more shots|more shots|expand.*shots|restructure|rebuild|reconstruct/i.test(node.command || "");
+      let patches;
+      if (wantsRestructure) {
+        const targetScene = targetNodes.find(n => n.type === T.SCENE);
+        const targetSceneShots = targetScene
+          ? targetNodes.filter(n => n.type === T.SHOT && n.sceneId === targetScene.id).sort((a, b) => (a.index || 0) - (b.index || 0))
+          : [];
+        if (targetScene && targetSceneShots.length) {
+          const restructure = await aiRestructureScene(targetScene, targetSceneShots, node.command);
+          patches = {
+            [targetScene.id]: {
+              shotCount: Array.isArray(restructure?.restructureShots) ? restructure.restructureShots.length : targetScene.shotCount,
+              restructureShots: restructure?.restructureShots || [],
+            },
+          };
+        } else {
+          patches = await aiCoherenceCheck(targetNodes, node.command);
+        }
+      } else {
+        patches = await aiCoherenceCheck(targetNodes, node.command);
+      }
       // Filter to only patches that have actual changes
       const filtered = Object.fromEntries(Object.entries(patches).filter(([, v]) => Object.keys(v).length > 0));
       setMultiPrev(filtered); setStatus("preview");
@@ -4905,6 +5017,9 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onIn
   // Helper: recompile compiledText for SHOT patches before applying
   const withRecompile = (nid, patch) => {
     const target = targetNodes.find(n => n.id === nid);
+    if (target?.type === T.SCENE && Array.isArray(patch.restructureShots) && patch.restructureShots.length) {
+      return patch;
+    }
     return syncShotPatch(target, patch);
   };
 
@@ -4912,13 +5027,26 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onIn
     if (!multiPrev) return;
     let count = 0;
     Object.entries(multiPrev).forEach(([nid, patch]) => {
-      if (Object.keys(patch).length > 0) { onUpdateNode(nid, withRecompile(nid, patch)); count++; }
+      if (Object.keys(patch).length > 0) {
+        const target = targetNodes.find(n => n.id === nid);
+        if (target?.type === T.SCENE && Array.isArray(patch.restructureShots) && patch.restructureShots.length) {
+          onApplySceneRestructure?.(nid, patch, patch.restructureShots);
+        } else {
+          onUpdateNode(nid, withRecompile(nid, patch));
+        }
+        count++;
+      }
     });
     upd({ lastResult: multiPrev });
     setStatus("applied"); setMultiPrev(null);
   };
   const applySingleCoherence = (nid, patch) => {
-    onUpdateNode(nid, withRecompile(nid, patch));
+    const target = targetNodes.find(n => n.id === nid);
+    if (target?.type === T.SCENE && Array.isArray(patch.restructureShots) && patch.restructureShots.length) {
+      onApplySceneRestructure?.(nid, patch, patch.restructureShots);
+    } else {
+      onUpdateNode(nid, withRecompile(nid, patch));
+    }
     const remaining = Object.fromEntries(Object.entries(multiPrev).filter(([k]) => k !== nid));
     setMultiPrev(Object.keys(remaining).length ? remaining : null);
     if (Object.keys(remaining).length === 0) setStatus("applied");
@@ -5092,7 +5220,7 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onIn
                       <div key={k} style={{ display:"flex", gap:5, marginBottom:2, alignItems:"flex-start" }}>
                         <span style={{ fontSize:5, color:th.t3, letterSpacing:"0.06em", flexShrink:0, minWidth:65 }}>{k}</span>
                         <span style={{ fontSize:5, color:th.t0, lineHeight:1.5, wordBreak:"break-word", fontStyle: k==="sourceAnchor"?"italic":"normal" }}>
-                          {k==="sourceAnchor" ? `"${v}"` : String(v)}
+                          {k==="sourceAnchor" ? `"${v}"` : Array.isArray(v) ? `${v.length} item(s)` : String(v)}
                         </span>
                       </div>
                     ))}
@@ -10729,6 +10857,72 @@ export default function App() {
 
   const updNode = (id, patch) => setNodes(prev=>prev.map(n=>n.id===id?{...n,...patch}:n));
   const linkShot = (shotId, sceneId) => setNodes(prev=>prev.map(n=>n.id===shotId?{...n,sceneId}:n));
+  const applySceneRestructurePatch = useCallback((sceneId, scenePatch, shotPlan = []) => {
+    const latestNodes = nodesRef.current;
+    const latestPos = posRef.current;
+    const existingShots = latestNodes
+      .filter(n => n.type === T.SHOT && n.sceneId === sceneId)
+      .sort((a, b) => (a.index || 0) - (b.index || 0));
+    const sceneNode = latestNodes.find(n => n.id === sceneId);
+    if (!sceneNode) return;
+
+    const normalizedPlan = (shotPlan || []).map((spec, idx) => {
+      const existing = existingShots[idx];
+      const base = existing ? { ...existing } : { ...mkShot(sceneId, idx + 1), id:`sh_${uid()}` };
+      const merged = {
+        ...base,
+        ...spec,
+        type: T.SHOT,
+        sceneId,
+        index: idx + 1,
+        entityTags: Array.isArray(spec.entityTags) ? spec.entityTags : (base.entityTags || []),
+        durationSec: Math.max(1, Math.min(5, Number(spec.durationSec) || 3)),
+        promptOverride: false,
+      };
+      return { ...merged, compiledText: compileShotText(merged) };
+    });
+
+    const removedShotIds = existingShots.slice(normalizedPlan.length).map(s => s.id);
+    const newShots = normalizedPlan.filter(s => !existingShots.find(e => e.id === s.id));
+    const replacementMap = Object.fromEntries(normalizedPlan.map(s => [s.id, s]));
+    const scenePatchClean = { ...scenePatch };
+    delete scenePatchClean.restructureShots;
+
+    setNodes(prev => {
+      const patched = prev
+        .filter(n => !(removedShotIds.includes(n.id) || (n.type === T.IMAGE && removedShotIds.includes(n.shotId))))
+        .map(n => {
+          if (n.id === sceneId) {
+            return { ...n, ...scenePatchClean, shotCount: normalizedPlan.length || n.shotCount };
+          }
+          if (replacementMap[n.id]) return replacementMap[n.id];
+          if (n.type === T.KLING) {
+            const remaining = (n.shotIds || []).filter(id => !removedShotIds.includes(id) && !existingShots.some(s => s.id === id));
+            const intersectsScene = (n.shotIds || []).some(id => existingShots.some(s => s.id === id));
+            return intersectsScene ? { ...n, shotIds: [...remaining, ...normalizedPlan.map(s => s.id)] } : n;
+          }
+          return n;
+        });
+      return [...patched, ...newShots];
+    });
+
+    setPos(prev => {
+      const next = { ...prev };
+      const scenePos = latestPos[sceneId] || { x: 80, y: 80 };
+      const firstShotPos = existingShots.length ? latestPos[existingShots[0].id] : null;
+      const baseX = firstShotPos?.x ?? (scenePos.x + 430);
+      const baseY = firstShotPos?.y ?? scenePos.y;
+      const shotGap = 320;
+      normalizedPlan.forEach((shot, idx) => {
+        next[shot.id] = { x: baseX + (idx * shotGap), y: baseY };
+      });
+      removedShotIds.forEach(id => { delete next[id]; });
+      latestNodes
+        .filter(n => n.type === T.IMAGE && removedShotIds.includes(n.shotId))
+        .forEach(n => { delete next[n.id]; });
+      return next;
+    });
+  }, []);
 
   // Save a generated image URL into a global bible entry as its visual reference
   const saveToBible = useCallback((entryId, imgUrl, visualStyle = "none") => {
@@ -11217,7 +11411,7 @@ export default function App() {
         {n.type===T.IMAGE&&<ImageCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} linkedShot={linkedShot} linkedScene={linkedScene} onUnlinkShot={()=>updNode(n.id,{shotId:null,prompt:""})} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onSaveToBible={saveToBible} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.KLING&&<KlingCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} credits={credits} onOutOfCredits={setOutOfCredits} />}
         {n.type===T.VEO&&<VeoCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={nodePosValue} globalBible={globalBibleFlat} onInspect={()=>openInspector(n.id)} credits={credits} onOutOfCredits={setOutOfCredits} />}
-        {n.type===T.LLM&&<LlmCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onUpdateNode={updNode} onInspect={()=>openInspector(n.id)} />}
+        {n.type===T.LLM&&<LlmCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onUpdateNode={updNode} onApplySceneRestructure={applySceneRestructurePatch} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.VIDEOEDIT&&<VideoEditCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} audioNode={nodes.find(x=>x.id===n.audioNodeId)||null} onInspect={()=>openInspector(n.id)} onOpenFullscreen={()=>setFullscreenVEId(n.id)} />}
         {n.type===T.AUDIO&&<AudioTrackCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={nodePosValue} allNodes={nodes} onInspect={()=>openInspector(n.id)} />}
         {n.type===T.MUSICDNA&&<MusicDnaCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onInspect={()=>openInspector(n.id)} onAnalyze={()=>analyzeMusicNode(n)} onGenerateBlueprint={()=>generateMusicBlueprint(n)} />}
