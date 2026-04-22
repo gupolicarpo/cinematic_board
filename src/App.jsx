@@ -9137,11 +9137,11 @@ function makeSteampunkWildWestTemplate() {
   const p3Kling = mkKling(), p3Veo = mkVeo(), p3Audio = mkAudio(), p3Edit = { ...mkVideoEdit(), audioNodeId: p3Audio.id };
 
   const nodes = [sc1, sc2, sc3, sh1, sh2, sh3, sh4, sh5, sh6, img1, img2, img3, img4, img5, img6, p1Kling, p1Veo, p1Audio, p1Edit, p2Kling, p2Veo, p2Audio, p2Edit, p3Kling, p3Veo, p3Audio, p3Edit];
-  const sceneX = 80, shotStart = sceneX + 310 + 70, shotGapX = 340, sceneGapY = 1040;
+  const sceneX = 80, shotStart = sceneX + 310 + 70, shotGapX = 340, sceneGapY = 1280;
   const rowY = (row) => 80 + row * sceneGapY;
   const imgStart = shotStart + shotGapX * 2 + 80;
-  const pipeA = imgStart + shotGapX * 2 + 80, pipeB = pipeA + 380, pipeRowB = 380;
-  const pipePos = (row) => ({ kling:{ x:pipeA, y:rowY(row)+20 }, veo:{ x:pipeA, y:rowY(row)+20+pipeRowB }, audio:{ x:pipeB, y:rowY(row)+20 }, edit:{ x:pipeB, y:rowY(row)+20+pipeRowB } });
+  const pipeA = imgStart + shotGapX * 2 + 80, pipeB = pipeA + 380, pipeTopOffset = 30, pipeRowB = 420;
+  const pipePos = (row) => ({ kling:{ x:pipeA, y:rowY(row)+pipeTopOffset }, veo:{ x:pipeA, y:rowY(row)+pipeTopOffset+pipeRowB }, audio:{ x:pipeB, y:rowY(row)+pipeTopOffset }, edit:{ x:pipeB, y:rowY(row)+pipeTopOffset+pipeRowB } });
   const pp1 = pipePos(0), pp2 = pipePos(1), pp3 = pipePos(2);
   const pos = {
     [sc1.id]:{ x:sceneX, y:rowY(0) }, [sc2.id]:{ x:sceneX, y:rowY(1) }, [sc3.id]:{ x:sceneX, y:rowY(2) },
