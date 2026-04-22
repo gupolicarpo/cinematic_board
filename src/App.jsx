@@ -4854,20 +4854,38 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onIn
     if (!node.command?.trim() || !editTarget) return;
     setStatus("running"); setError(""); setPreview(null);
     try {
+      if (targetNodes.length > 1) {
+        const patches = await Promise.all(targetNodes.map(async target => ([
+          target.id,
+          await aiLlm(node.command, target.type, getNodeContent(target)),
+        ])));
+        const filtered = Object.fromEntries(patches.filter(([, patch]) => patch && Object.keys(patch).length > 0));
+        setMultiPrev(filtered);
+        setStatus("preview");
+        return;
+      }
       const patch = await aiLlm(node.command, editTarget.type, getNodeContent(editTarget));
       setPreview(patch); setStatus("preview");
     } catch(e) { setStatus("failed"); setError(e.message); }
   };
+  const syncShotPatch = (target, patch) => {
+    if (target?.type !== T.SHOT) return patch;
+    const merged = { ...target, ...patch, promptOverride: false };
+    return { ...patch, promptOverride: false, compiledText: compileShotText(merged) };
+  };
   const applyEdit = () => {
+    if (multiPrev && Object.keys(multiPrev).length > 0) {
+      Object.entries(multiPrev).forEach(([nid, patch]) => {
+        const target = targetNodes.find(n => n.id === nid);
+        if (target) onUpdateNode(nid, syncShotPatch(target, patch));
+      });
+      upd({ lastResult: multiPrev });
+      setStatus("applied"); setMultiPrev(null); setPreview(null);
+      return;
+    }
     if (!preview || !editTarget) return;
     let finalPatch = preview;
-    // For SHOT nodes, recompile compiledText from the merged fields so the
-    // video node always gets the updated prompt — unless the user has manually
-    // overridden the compiled prompt (promptOverride flag).
-    if (editTarget.type === T.SHOT && !editTarget.promptOverride) {
-      const merged = { ...editTarget, ...preview };
-      finalPatch = { ...preview, compiledText: compileShotText(merged) };
-    }
+    finalPatch = syncShotPatch(editTarget, preview);
     onUpdateNode(editTarget.id, finalPatch);
     upd({ lastResult: finalPatch });
     setStatus("applied"); setPreview(null);
@@ -4887,11 +4905,7 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onIn
   // Helper: recompile compiledText for SHOT patches before applying
   const withRecompile = (nid, patch) => {
     const target = targetNodes.find(n => n.id === nid);
-    if (target?.type === T.SHOT && !target.promptOverride) {
-      const merged = { ...target, ...patch };
-      return { ...patch, compiledText: compileShotText(merged) };
-    }
-    return patch;
+    return syncShotPatch(target, patch);
   };
 
   const applyAllCoherence = () => {
@@ -5049,11 +5063,11 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onIn
           )}
 
           {/* ── COHERENCE MODE PREVIEW ── */}
-          {mode==="coherence" && status==="preview" && multiPrev && (
+          {(mode==="coherence" || mode==="edit") && status==="preview" && multiPrev && (
             <div style={{ background:th.bg, border:`1px solid ${ac}44`, borderRadius:4, padding:"6px 8px" }}>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:5 }}>
                 <span style={{ fontSize:6, color:ac, letterSpacing:"0.1em" }}>COHERENCE REPORT — {Object.keys(multiPrev).length} node{Object.keys(multiPrev).length>1?"s":""} to fix</span>
-                <button onMouseDown={e=>e.stopPropagation()} onClick={applyAllCoherence}
+                <button onMouseDown={e=>e.stopPropagation()} onClick={mode==="coherence" ? applyAllCoherence : applyEdit}
                   style={{ fontSize:6, fontWeight:700, letterSpacing:"0.1em", padding:"3px 8px", borderRadius:2, border:`1px solid ${ac}88`, background:`${ac}22`, color:ac, cursor:"pointer", fontFamily:"'Inter',system-ui,sans-serif" }}>
                   APPLY ALL
                 </button>
@@ -5067,10 +5081,12 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onIn
                       <span style={{ fontSize:5, color:nc, letterSpacing:"0.1em", fontWeight:700 }}>
                         {n?.type?.toUpperCase()} {n?.type===T.SHOT ? `#${n.index||""}` : ""}
                       </span>
-                      <button onMouseDown={e=>e.stopPropagation()} onClick={()=>applySingleCoherence(nid, patch)}
-                        style={{ fontSize:5, padding:"2px 6px", borderRadius:2, border:`1px solid ${nc}55`, background:`${nc}18`, color:nc, cursor:"pointer", fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em" }}>
-                        APPLY
-                      </button>
+                      {mode==="coherence" && (
+                        <button onMouseDown={e=>e.stopPropagation()} onClick={()=>applySingleCoherence(nid, patch)}
+                          style={{ fontSize:5, padding:"2px 6px", borderRadius:2, border:`1px solid ${nc}55`, background:`${nc}18`, color:nc, cursor:"pointer", fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em" }}>
+                          APPLY
+                        </button>
+                      )}
                     </div>
                     {Object.entries(patch).map(([k, v]) => (
                       <div key={k} style={{ display:"flex", gap:5, marginBottom:2, alignItems:"flex-start" }}>
@@ -9020,7 +9036,7 @@ function makeSteampunkWildWestTemplate() {
 
   const sc2 = mkSceneNode(
     sc2id,
-    `@street, brutal noon light. @hale steps out of @saloon into the dust while @rourke waits far down the street. Steam leaks from valves, wind moves loose dirt across the road, and the whole town watches from porches and windows. The scene is pure duel anticipation: distance, stillness, severe close-ups, and the classic western geometry of two bodies waiting to move.`,
+    `@street, brutal noon light. @rourke waits in the open street first, already owning the space. @hale then steps out of @saloon into the dust and stops. Steam leaks from valves, wind moves loose dirt across the road, and the whole town watches from porches and windows. The scene is pure duel anticipation: first the taunt, then the threshold crossing, then the wide geometry of two bodies holding still.`,
     [{ speaker:"Rourke Flint", line:"Come on out, tin lawman." }],
     2
   );
@@ -9028,7 +9044,7 @@ function makeSteampunkWildWestTemplate() {
 
   const sc3 = mkSceneNode(
     sc3id,
-    `@street, same noon light. The duel snaps from stillness into speed. @rourke twitches first and draws. @hale clears @revolver with impossible mechanical precision, steam venting as the shot lands. @rourke drops into the dust and @hale remains standing in the center of the street, unshaken. This scene is about violent release after prolonged tension.`,
+    `@street, same noon light. The duel snaps from stillness into speed. First hold on @hale's unreadable mechanical calm. Then @rourke twitches first and draws. @hale clears @revolver with impossible mechanical precision, steam venting as the shot lands. @rourke drops into the dust and @hale remains standing in the center of the street, unshaken. This scene is about violent release after prolonged tension.`,
     [{ speaker:"Sheriff Iron Hale", line:"You came looking for judgment." }],
     2
   );
@@ -9071,39 +9087,39 @@ function makeSteampunkWildWestTemplate() {
 
   const sh3 = baseShot(sc2id, 1, {
     durationSec:4,
-    how:"Tracking from behind as @hale pushes through the batwing doors and steps into the blinding noon of @street where @rourke waits at long distance",
-    where:"transition from @saloon to @street, harsh dust and steam, live-action steampunk western",
-    when:"stepping into the duel",
-    cameraSize:"medium", cameraAngle:"low-angle", cameraMovement:"tracking", lens:"35mm", lighting:"hard-contrast",
-    visualGoal:"Turn the doorway into a mythic threshold from interior tension to exposed confrontation",
+    how:"Medium portrait of @rourke alone in the street as he waits with one hand hovering near his revolver and throws the challenge toward @saloon",
+    where:"@street under brutal noon light, dust and leaking steam, live-action steampunk western",
+    when:"the taunt before @hale appears",
+    cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"slow-push-in", lens:"50mm", lighting:"hard-contrast",
+    visualGoal:"Let @rourke own the frame first so the threat feels human, arrogant, and deliberate",
     entityTags:["@hale","@rourke","@saloon","@street"],
     dialogue:`ROURKE\nCome on out, tin lawman.`,
-    directorNote:"The doorway is the curtain reveal. The outside world must feel dry, real, dusty, and severe."
+    directorNote:"Hold on Rourke's confidence. The frame should feel like a classic bandit introduction, not a rushed transition."
   });
   const sh4 = baseShot(sc2id, 2, {
     durationSec:4,
-    how:"Extreme-wide duel tableau with @hale and @rourke facing each other across the full width of @street while dust drifts through the gap and steam leaks from street valves",
-    where:"@street main line, full duel distance, live-action steampunk western",
-    when:"the standoff",
-    cameraSize:"extreme-wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"24mm", lighting:"hard-contrast",
-    visualGoal:"Show classic western distance, stillness, and public judgment with photoreal steampunk production design",
+    how:"Track with @hale as he pushes through the batwing doors, steps into the noon glare, then stop in an extreme-wide tableau once @hale and @rourke face each other across the full width of @street",
+    where:"transition from @saloon threshold to @street main line, live-action steampunk western",
+    when:"the threshold crossing into the standoff",
+    cameraSize:"extreme-wide", cameraAngle:"eye-level", cameraMovement:"tracking", lens:"24mm", lighting:"hard-contrast",
+    visualGoal:"Make Hale's entrance feel ceremonial, then lock into the classic western geometry of the standoff",
     entityTags:["@hale","@rourke","@street"],
-    directorNote:"This is the Leone frame. Hold the distance and let the dust do the work."
+    directorNote:"This shot must earn the wide by first watching Hale enter the arena. Only then settle into the Leone frame."
   });
 
   const sh5 = baseShot(sc3id, 1, {
     durationSec:2,
-    how:"Extreme close-up on @rourke's twitching trigger hand and narrowed eyes just before he jerks for the draw",
+    how:"Tight alternating anticipation beat on @hale's still mechanical hand beside @revolver and his unblinking brass face as he waits for @rourke to move first",
     where:"@street, isolated duel details, live-action steampunk western",
     when:"last instant before violence",
     cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"hard-contrast",
-    visualGoal:"Compress all anticipation into one unbearable instant before the move",
-    entityTags:["@rourke","@street"],
-    directorNote:"Keep this brutally simple and photoreal. No stylized distortion."
+    visualGoal:"Put the anticipation on Hale's restraint so the audience waits for the exact instant he decides to move",
+    entityTags:["@hale","@revolver","@street"],
+    directorNote:"This is the sheriff's held breath. No stylized distortion, just unbearable stillness."
   });
   const sh6 = baseShot(sc3id, 2, {
     durationSec:3,
-    how:"Medium-low shot as @rourke draws first, @hale clears @revolver with mechanical speed, steam vents from the cylinder, and @rourke collapses into the dust while @hale stays perfectly upright",
+    how:"Medium-low payoff shot as @rourke twitches and draws first, @hale clears @revolver with mechanical speed, steam vents from the cylinder, and @rourke collapses into the dust while @hale stays perfectly upright",
     where:"@street center line, duel finish, live-action steampunk western",
     when:"the draw and aftermath",
     cameraSize:"medium", cameraAngle:"low-angle", cameraMovement:"whip-pan", lens:"50mm", lighting:"hard-contrast",
