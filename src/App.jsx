@@ -9260,7 +9260,7 @@ function makeSteampunkWildWestTemplate() {
     sc2id,
     `@street, brutal noon light. @rourke waits in the open street first, already owning the space. @hale then steps out of @saloon into the dust and stops. Steam leaks from valves, wind moves loose dirt across the road, and the whole town watches from porches and windows. The scene is pure duel anticipation: first the taunt, then the threshold crossing, then the wide geometry of two bodies holding still.`,
     [{ speaker:"Rourke Flint", line:"Come on out, tin lawman." }],
-    2
+    3
   );
   sc2.directorCoherence = { score:98, skippedBeats:[], overlapIssues:[], recommendation:"Treat this scene like Leone anticipation. Hold the wide longer and reduce visible action to almost nothing." };
 
@@ -9268,9 +9268,9 @@ function makeSteampunkWildWestTemplate() {
     sc3id,
     `@street, same noon light. The duel snaps from stillness into speed. First hold on @hale's unreadable mechanical calm. Then @rourke twitches first and draws. @hale clears @revolver with impossible mechanical precision, steam venting as the shot lands. @rourke drops into the dust and @hale remains standing in the center of the street, unshaken. This scene is about violent release after prolonged tension.`,
     [{ speaker:"Sheriff Iron Hale", line:"You came looking for judgment." }],
-    2
+    3
   );
-  sc3.directorCoherence = { score:98, skippedBeats:[], overlapIssues:[], recommendation:"This final scene must be brutally simple: twitch, draw, shot, aftermath. Do not add extra beats." };
+  sc3.directorCoherence = { score:98, skippedBeats:[], overlapIssues:[], recommendation:"Build the payoff with classic duel inserts: eyes, hands, then the explosive draw." };
 
   const baseShot = (sceneId, index, data) => {
     const shot = {
@@ -9319,27 +9319,47 @@ function makeSteampunkWildWestTemplate() {
     directorNote:"Hold on Rourke's confidence. The frame should feel like a classic bandit introduction, not a rushed transition."
   });
   const sh4 = baseShot(sc2id, 2, {
-    durationSec:4,
-    how:"Track with @hale as he pushes through the batwing doors, steps into the noon glare, then stop in an extreme-wide tableau once @hale and @rourke face each other across the full width of @street",
-    where:"transition from @saloon threshold to @street main line, live-action steampunk western",
-    when:"the threshold crossing into the standoff",
-    cameraSize:"extreme-wide", cameraAngle:"eye-level", cameraMovement:"tracking", lens:"24mm", lighting:"hard-contrast",
-    visualGoal:"Make Hale's entrance feel ceremonial, then lock into the classic western geometry of the standoff",
+    durationSec:2,
+    how:"Track with @hale as he pushes through the batwing doors and steps into the noon glare, stopping the instant both boots hit the dust",
+    where:"@saloon threshold spilling into @street, live-action steampunk western",
+    when:"the threshold crossing into the duel space",
+    cameraSize:"full", cameraAngle:"low-angle", cameraMovement:"tracking", lens:"35mm", lighting:"hard-contrast",
+    visualGoal:"Make Hale's entrance feel ceremonial and heavy before the standoff locks into pure geometry",
+    entityTags:["@hale","@saloon","@street"],
+    directorNote:"Let the doors, boots, and glare do the work. Save the full duel geometry for its own dedicated wide."
+  });
+  const sh5 = baseShot(sc2id, 3, {
+    durationSec:3,
+    how:"Extreme-wide tableau of @hale and @rourke held at opposite far corners of @street, both motionless with the full dusty distance between them",
+    where:"@street main line under hard noon sun, live-action steampunk western",
+    when:"the held wide before the draw",
+    cameraSize:"extreme-wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"24mm", lighting:"hard-contrast",
+    visualGoal:"Land the iconic western geometry of the duel by making the empty street between them feel as important as the men themselves",
     entityTags:["@hale","@rourke","@street"],
-    directorNote:"This shot must earn the wide by first watching Hale enter the arena. Only then settle into the Leone frame."
+    directorNote:"This is the Leone wide. Keep both duelers pinned to opposite sides of the frame with a lot of hostile empty space between them."
   });
 
-  const sh5 = baseShot(sc3id, 1, {
+  const sh6 = baseShot(sc3id, 1, {
     durationSec:2,
-    how:"Tight alternating anticipation beat on @hale's still mechanical hand beside @revolver and his unblinking brass face as he waits for @rourke to move first",
-    where:"@street, isolated duel details, live-action steampunk western",
-    when:"last instant before violence",
+    how:"Extreme close-up on both duelers' eyes in hard noon light, cutting from @rourke's contempt to @hale's unreadable mechanical stare",
+    where:"@street, isolated duel face details, live-action steampunk western",
+    when:"the last held eye-line beat before anyone moves",
     cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"hard-contrast",
-    visualGoal:"Put the anticipation on Hale's restraint so the audience waits for the exact instant he decides to move",
-    entityTags:["@hale","@revolver","@street"],
-    directorNote:"This is the sheriff's held breath. No stylized distortion, just unbearable stillness."
+    visualGoal:"Push the duel into pure anticipation by letting the eyes carry the threat before the draw begins",
+    entityTags:["@hale","@rourke","@street"],
+    directorNote:"Classic duel grammar: eyes first. Keep this brutally spare and photoreal, with no stylized exaggeration."
   });
-  const sh6 = baseShot(sc3id, 2, {
+  const sh7 = baseShot(sc3id, 2, {
+    durationSec:2,
+    how:"Extreme close-up on the duelers' hands hovering above their guns at the waist, fingers almost twitching over leather and metal",
+    where:"@street, isolated holster detail, live-action steampunk western",
+    when:"the final half-second of stillness before the draw",
+    cameraSize:"extreme-close-up", cameraAngle:"eye-level", cameraMovement:"static", lens:"100mm", lighting:"hard-contrast",
+    visualGoal:"Make the audience feel the draw living in the hands before the bodies move",
+    entityTags:["@hale","@rourke","@revolver","@street"],
+    directorNote:"This should feel iconic and minimal: waistline, holster, fingers, dust, no extra action."
+  });
+  const sh8 = baseShot(sc3id, 3, {
     durationSec:3,
     how:"Medium-low payoff shot as @rourke twitches and draws first, @hale clears @revolver with mechanical speed, steam vents from the cylinder, and @rourke collapses into the dust while @hale stays perfectly upright",
     where:"@street center line, duel finish, live-action steampunk western",
@@ -9352,13 +9372,13 @@ function makeSteampunkWildWestTemplate() {
   });
 
   const mkImg = (shot, ar = "16:9") => ({ id:`img_${uid()}`, type:T.IMAGE, shotId:shot.id, sceneId:shot.sceneId, generatedUrl:"", resolution:"1K", aspect_ratio:ar, prompt: shot.compiledText || "" });
-  const img1 = mkImg(sh1), img2 = mkImg(sh2), img3 = mkImg(sh3), img4 = mkImg(sh4), img5 = mkImg(sh5), img6 = mkImg(sh6);
+  const img1 = mkImg(sh1), img2 = mkImg(sh2), img3 = mkImg(sh3), img4 = mkImg(sh4), img5 = mkImg(sh5), img6 = mkImg(sh6), img7 = mkImg(sh7), img8 = mkImg(sh8);
 
   const p1Kling = mkKling(), p1Veo = mkVeo(), p1Audio = mkAudio(), p1Edit = { ...mkVideoEdit(), audioNodeId: p1Audio.id };
   const p2Kling = mkKling(), p2Veo = mkVeo(), p2Audio = mkAudio(), p2Edit = { ...mkVideoEdit(), audioNodeId: p2Audio.id };
   const p3Kling = mkKling(), p3Veo = mkVeo(), p3Audio = mkAudio(), p3Edit = { ...mkVideoEdit(), audioNodeId: p3Audio.id };
 
-  const nodes = [sc1, sc2, sc3, sh1, sh2, sh3, sh4, sh5, sh6, img1, img2, img3, img4, img5, img6, p1Kling, p1Veo, p1Audio, p1Edit, p2Kling, p2Veo, p2Audio, p2Edit, p3Kling, p3Veo, p3Audio, p3Edit];
+  const nodes = [sc1, sc2, sc3, sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, img1, img2, img3, img4, img5, img6, img7, img8, p1Kling, p1Veo, p1Audio, p1Edit, p2Kling, p2Veo, p2Audio, p2Edit, p3Kling, p3Veo, p3Audio, p3Edit];
   const sceneX = 80, shotStart = sceneX + 310 + 70, shotGapX = 340, sceneGapY = 1280;
   const rowY = (row) => 80 + row * sceneGapY;
   const imgStart = shotStart + shotGapX * 2 + 80;
@@ -10095,7 +10115,7 @@ const TEMPLATES = [
     id:          "steampunk-wild-west-duel",
     label:       "Steampunk Wild West Duel",
     emoji:       "🤠",
-    description: "Steampunk western starter — a robo sheriff is called out of a brass-and-smoke saloon to face a human gunslinger in a noon-street duel. 3 compact scenes, 6 director-annotated shots, and a live-action photoreal steampunk western look built around classic western anticipation and a fast mechanical payoff.",
+    description: "Steampunk western starter — a robo sheriff is called out of a brass-and-smoke saloon to face a human gunslinger in a noon-street duel. 3 compact scenes, 8 director-annotated shots, and a live-action photoreal steampunk western look built around classic wide-standoff, eyes, hands, and draw-payoff coverage.",
     tags:        ["3 SCENES","6 SHOTS","STEAMPUNK","WESTERN"],
     make:        makeSteampunkWildWestTemplate,
   },
