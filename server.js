@@ -1737,23 +1737,23 @@ const SITE_HOSTNAME = (() => {
 const PAGE_META = {
   "/": {
     title: "Cartasis - From Script to Storyboard to Video",
-    description: "Cartasis helps AI filmmakers plan scenes, shots, references, and continuity before generation. Turn scripts into structured visual workflows before rendering with AI tools.",
+    description: "Cartasis helps AI filmmakers plan scenes, shots, references, and continuity before AI video generation. Turn scripts into structured workflows for image-to-video, Kling, Veo, and edit-ready production.",
     ogTitle: "Cartasis - From Script to Storyboard to Video",
-    ogDescription: "Plan scenes, shots, references, and continuity before generation. Cartasis is the visual workflow for AI filmmakers.",
+    ogDescription: "Plan scenes, shots, references, and continuity before AI video generation. Cartasis is the visual workflow for image-to-video, Kling, Veo, and edit-ready production.",
     canonical: `${SITE_ORIGIN}/`,
   },
   "/pricing": {
     title: "Cartasis Pricing — Free Plan + AI Credits | From $0 to $99/mo",
-    description: "Start free with 80 AI credits/mo. Scale to Indie ($19/mo, 900 credits), Pro ($49/mo, 2500 credits), or Studio ($99/mo, 6000 credits). Generate videos with Kling AI & Google Veo, create images, add lipsync, and compose music.",
+    description: "Start free with 80 AI credits/mo. Scale to Indie ($19/mo, 900 credits), Pro ($49/mo, 2500 credits), or Studio ($99/mo, 6000 credits). Plan AI video workflows, generate with Kling and Veo, create image-to-video shots, add lipsync, and edit in one canvas.",
     ogTitle: "Cartasis Pricing — Transparent AI Video Plans",
-    ogDescription: "Start free. Generate AI videos with Kling & Veo, create images, compose music. No hidden fees — just credits. Plans from $0 to $99/mo.",
+    ogDescription: "Start free. Plan AI video workflows, generate with Kling and Veo, create image-to-video shots, and edit in one canvas. Plans from $0 to $99/mo.",
     canonical: `${SITE_ORIGIN}/pricing`,
     ldJson: JSON.stringify({
       "@context": "https://schema.org",
       "@type": "Product",
       "name": "Cartasis",
       "url": SITE_ORIGIN,
-      "description": "AI-powered cinematic production canvas — script to finished video in one workflow.",
+      "description": "AI video planning and production workflow for script-to-storyboard, shot design, image-to-video generation, Kling, Veo, lipsync, and editing.",
       "offers": [
         { "@type":"Offer", "name":"Free",   "price":"0",  "priceCurrency":"USD", "description":"80 credits/mo, Kling Standard, watermark, 2 projects" },
         { "@type":"Offer", "name":"Indie",  "price":"19", "priceCurrency":"USD", "description":"900 credits/mo, all Kling + Lipsync, Veo Fast, 10 projects, no watermark" },
@@ -1763,10 +1763,10 @@ const PAGE_META = {
     }),
   },
   "/features": {
-    title: "Cartasis Features — Node-Based AI Video Canvas | All AI Tools in One Place",
-    description: "Explore every Cartasis feature: AI script writing, cinematic shot planning, world bible for character consistency, Kling AI & Google Veo video generation, lipsync, AI music with ElevenLabs, and multi-node video editing.",
-    ogTitle: "Cartasis Features — The Complete AI Filmmaker's Toolkit",
-    ogDescription: "Node-based AI video production: script → scene → shot → image → video → lipsync → music → edit. Everything a director needs, powered by Kling, Veo, and ElevenLabs.",
+    title: "Cartasis Features - AI Storyboard, Shot Planning, Image-to-Video Workflow",
+    description: "Explore Cartasis features for AI storyboard planning, scene and shot breakdowns, world bible continuity, image-to-video workflows, Kling and Veo generation, lipsync, music-driven editing, and production-ready exports.",
+    ogTitle: "Cartasis Features - Planning-First AI Video Workflow",
+    ogDescription: "AI storyboard, shot planning, image-to-video workflow, Kling, Veo, lipsync, Music DNA, and editing in one connected production canvas.",
     canonical: `${SITE_ORIGIN}/features`,
   },
   "/kling-video-generation": {
@@ -1792,9 +1792,9 @@ const PAGE_META = {
   },
   "/workspace": {
     title: "Cartasis - From Script to Storyboard to Video",
-    description: "Your Cartasis production canvas. Write scripts, plan scenes and shots, generate AI images, produce videos with Kling & Veo, add lipsync, compose music, and edit — all in one workflow.",
+    description: "Your Cartasis production canvas for AI storyboard planning, shot design, image-to-video workflows, Kling and Veo generation, lipsync, audio-to-video planning, and editing.",
     ogTitle: "Cartasis Workspace",
-    ogDescription: "Your AI director's canvas. Script to finished video in one place.",
+    ogDescription: "Your AI director's canvas for storyboard planning, shot design, image-to-video workflows, Kling, Veo, and edit-ready production.",
     canonical: `${SITE_ORIGIN}/workspace`,
   },
 };
@@ -1867,3 +1867,8 @@ async function start() {
 }
 
 start().catch(console.error);
+
+
+
+
+
