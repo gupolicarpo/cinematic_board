@@ -4941,6 +4941,26 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onAp
     if (!node.command?.trim() || !editTarget) return;
     setStatus("running"); setError(""); setPreview(null);
     try {
+      const wantsRestructure = /break|split|add more shots|more shots|expand.*shots|restructure|rebuild|reconstruct/i.test(node.command || "");
+      if (wantsRestructure) {
+        const targetScene = targetNodes.find(n => n.type === T.SCENE)
+          || (editTarget?.type === T.SCENE ? editTarget : null)
+          || (editTarget?.type === T.SHOT ? allNodes.find(n => n.id === editTarget.sceneId && n.type === T.SCENE) : null);
+        const targetSceneShots = targetScene
+          ? allNodes.filter(n => n.type === T.SHOT && n.sceneId === targetScene.id).sort((a, b) => (a.index || 0) - (b.index || 0))
+          : [];
+        if (targetScene && targetSceneShots.length) {
+          const restructure = await aiRestructureScene(targetScene, targetSceneShots, node.command);
+          setMultiPrev({
+            [targetScene.id]: {
+              shotCount: Array.isArray(restructure?.restructureShots) ? restructure.restructureShots.length : targetScene.shotCount,
+              restructureShots: restructure?.restructureShots || [],
+            },
+          });
+          setStatus("preview");
+          return;
+        }
+      }
       if (targetNodes.length > 1) {
         const patches = await Promise.all(targetNodes.map(async target => ([
           target.id,
@@ -4976,6 +4996,12 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode, onAp
       return;
     }
     if (!preview || !editTarget) return;
+    if (editTarget.type === T.SCENE && Array.isArray(preview.restructureShots) && preview.restructureShots.length) {
+      onApplySceneRestructure?.(editTarget.id, preview, preview.restructureShots);
+      upd({ lastResult: preview });
+      setStatus("applied"); setPreview(null);
+      return;
+    }
     let finalPatch = preview;
     finalPatch = syncShotPatch(editTarget, preview);
     onUpdateNode(editTarget.id, finalPatch);
