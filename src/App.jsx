@@ -47,6 +47,7 @@ const VISUAL_STYLE_PRESETS = {
   "anime-cel": { label:"Anime Cel", prompt:"Anime cel-shaded stylization, clean line work, graphic shapes, expressive color blocking, polished 2D finish. Preserve character identity, silhouette, costume, and camera composition." },
   "graphic-novel": { label:"Graphic Novel", prompt:"Graphic novel treatment with inked contours, bold contrast, selective color accents, and cinematic panel energy. Preserve identity, staging, wardrobe, and environment geometry." },
   "stylized-3d": { label:"Stylized 3D", prompt:"Stylized 3D animated feature look, polished materials, expressive shapes, soft global illumination, premium animation-art finish. Preserve facial identity, costume design, and shot composition." },
+  "feature-3d-animation": { label:"Feature 3D Animation", prompt:"Cinematic family-friendly 3D animated feature look, expressive faces, appealing silhouettes, richly stylized environments, soft global illumination, painterly color scripting, premium materials, readable heroic poses, and polished theatrical animation finish. Preserve character identity, costume design, scale, and shot composition." },
   "watercolor": { label:"Watercolor", prompt:"Painterly watercolor illustration, layered washes, soft edges, textured paper feel, elegant color bleed. Preserve identity, silhouette, composition, and environment readability." },
   "16mm-doc": { label:"16mm Documentary", prompt:"16mm documentary film look, organic grain, muted palette, light gate weave, observational realism. Preserve identity, action blocking, and location clarity." },
   "vhs-analog": { label:"VHS Analog", prompt:"Analog VHS transfer look, scan noise, chroma bleed, tape softness, nostalgic low-fidelity image. Preserve identity, blocking, and the original framing." },
@@ -9874,6 +9875,167 @@ function makeMedievalFantasyTemplate() {
 // minerals. The radar picks up hundreds of life forms surrounding the ship —
 // but every visual sensor, camera, and viewport shows nothing. Only the radar.
 // Visual style: CGI Cutscene (Unreal Engine 5 / AAA game quality).
+function makeDragonSiegeTemplate() {
+
+  const eQueen = { id:`e_${uid()}`, kind:"character", name:"Queen Elira of Ashvale", tag:"@queen", description:"Young warrior queen in dark steel armour trimmed with crimson cloth, wind-battered black hair braided back from the face, soot on her cheek, carrying a longsword with a lion-head pommel. She commands from the front, never from safety.", notes:"Primary hero. Keep her face, crimson cloth accents, and lion-pommel sword consistent across scenes.", _imgUrl:"", assetId:"" };
+  const eGeneral = { id:`e_${uid()}`, kind:"character", name:"General Corvin", tag:"@general", description:"Veteran battlefield commander in scarred plate armour under a heavy dark cloak, greying beard, one eye marked by an old burn. Calm voice, hard posture, always reading the field before anyone else.", notes:"Secondary lead. His silhouette should feel broad and immovable, a human counterweight to the queen's velocity.", _imgUrl:"", assetId:"" };
+  const eDragon = { id:`e_${uid()}`, kind:"character", name:"The Ember Dragon", tag:"@dragon", description:"A colossal black-red dragon with ember-lit cracks running beneath volcanic scales, horned crown silhouette, furnace breath gathering in the throat before every fire pass. Wings large enough to cast a moving eclipse over the battlefield.", notes:"Primary spectacle element. Keep the ember-crack pattern and wing silhouette consistent. Never make it cute or soft.", _imgUrl:"", assetId:"" };
+  const eArmy = { id:`e_${uid()}`, kind:"object", name:"Ashvale Shield Wall", tag:"@army", description:"Ranks of medieval infantry carrying black-and-crimson shields and long spears, mud-stained surcoats, banners torn by wind, disciplined lines holding under impossible pressure.", notes:"The army should read as disciplined formations, not random crowd chaos. Use shield rhythm and banner motion as visual motifs.", _imgUrl:"", assetId:"" };
+  const eField = { id:`e_${uid()}`, kind:"location", name:"Siege Plain of Ashvale", tag:"@field", description:"A vast muddy battlefield outside a stone fortress at dawn, churned earth, broken wagons, scattered fires, catapults in silhouette, low fog dragged sideways by wind. The scale should feel continental.", notes:"Primary exterior battlefield. Favor wide heroic layouts and readable army geometry.", _imgUrl:"", assetId:"" };
+  const eGate = { id:`e_${uid()}`, kind:"location", name:"Broken Lion Gate", tag:"@gate", description:"The main fortress gate of Ashvale, huge stone arch crowned by a cracked lion crest, timber doors splintered by repeated impact, defenders and ladders stacked in layers around the breach.", notes:"Final battle location. The broken lion crest is the key visual signature.", _imgUrl:"", assetId:"" };
+
+  const sbEntry = (e) => ({ id:`sb_${uid()}`, kind:e.kind, name:e.name, tag:e.tag, notes:e.description, _prev:e._imgUrl||e._prev||"", assetId:e.assetId||"" });
+
+  const sc1id = `sc_${uid()}`;
+  const sc1 = {
+    id:sc1id, type:T.SCENE, cinematicStyle:"epic-fantasy", visualStyle:"feature-3d-animation", shotCount:3,
+    bible:[ sbEntry(eQueen), sbEntry(eGeneral), sbEntry(eArmy), sbEntry(eField) ],
+    dialogueLines:[
+      { speaker:"General Corvin", line:"If the dragon breaks the line, the gate falls with it." },
+      { speaker:"Queen Elira", line:"Then we hold the line before it learns we can bleed." },
+    ],
+    sceneText:`@field before first impact. @army forms a shield wall in long ranks beneath torn crimson banners. @general studies the fog and distant movement beyond the catapults. @queen steps into frame beside him, sword low, reading the same horizon. The whole battlefield is holding its breath before the dragon appears.`,
+    directorCoherence:{ score:97, skippedBeats:[], overlapIssues:[], recommendation:"Open with battlefield geometry and command presence, not immediate chaos. Let the audience understand the line before it is tested." },
+  };
+  const sh1a = { ...mkShot(sc1id,1), id:`sh_${uid()}`, sceneId:sc1id, index:1, visualStyle:"inherit",
+    how:"Extreme wide battlefield tableau with @army stretched across the muddy @field, catapults and banners in silhouette, the fortress far behind, dawn fog moving sideways in the wind", where:"@field - full battlefield width at dawn", when:"before first contact", cameraSize:"extreme-wide", cameraAngle:"high-angle", cameraMovement:"slow-push-in", lens:"24mm", lighting:"golden-hour",
+    visualGoal:"Establish the scale and readable geometry of the siege before the dragon enters the story",
+    entityTags:["@army","@field"], directorNote:"This is the map shot. The line must read clearly. Do not let atmosphere hide the army layout.", directorQuality:"good", directorIssue:"" };
+  const sh1b = { ...mkShot(sc1id,2), id:`sh_${uid()}`, sceneId:sc1id, index:2, visualStyle:"inherit",
+    how:"Medium two-shot of @queen and @general on the front ridge, banner cloth snapping behind them, both facing the horizon instead of each other as they speak", where:"@field - front ridge command position", when:"command decision", cameraSize:"medium", cameraAngle:"eye-level", cameraMovement:"static", lens:"50mm", lighting:"golden-hour",
+    visualGoal:"Give the battle a human center of command without shrinking the scale",
+    dialogue:`GENERAL CORVIN\nIf the dragon breaks the line, the gate falls with it.\n\nQUEEN ELIRA\nThen we hold the line before it learns we can bleed.`,
+    entityTags:["@queen","@general","@field"], directorNote:"Their stillness is the power. The wind and banner movement create the energy, not the actors.", directorQuality:"good", directorIssue:"" };
+  const sh1c = { ...mkShot(sc1id,3), id:`sh_${uid()}`, sceneId:sc1id, index:3, visualStyle:"inherit",
+    how:"Tight close-up on shield-wall soldiers lowering spears in unison, mud on gauntlets, shield edges locking together as a distant shadow sweeps over them", where:"@field - front rank of the shield wall", when:"the line braces", cameraSize:"close-up", cameraAngle:"low-angle", cameraMovement:"tracking", lens:"85mm", lighting:"hard-contrast",
+    visualGoal:"Translate the giant battle into one readable physical action before the dragon reveal",
+    entityTags:["@army","@field"], directorNote:"The shadow crossing the frame is the dragon's announcement. Keep the soldiers disciplined, not panicked.", directorQuality:"good", directorIssue:"" };
+  sh1a.compiledText = compileShotText(sh1a); sh1b.compiledText = compileShotText(sh1b); sh1c.compiledText = compileShotText(sh1c);
+
+  const sc2id = `sc_${uid()}`;
+  const sc2 = {
+    id:sc2id, type:T.SCENE, cinematicStyle:"epic-fantasy", visualStyle:"feature-3d-animation", shotCount:3,
+    bible:[ sbEntry(eQueen), sbEntry(eDragon), sbEntry(eArmy), sbEntry(eField) ],
+    sceneText:`The first pass of @dragon over @field. The shadow arrives before the body. @army holds formation as long as possible. Then @dragon tears through the dawn sky, furnace light gathering in its throat before a stream of fire rakes the line. @queen rides toward the collapse instead of away from it.`,
+    directorCoherence:{ score:96, skippedBeats:[], overlapIssues:[], recommendation:"Play the dragon reveal as shadow, then silhouette, then fire. The line's discipline makes the attack feel more devastating." },
+  };
+  const sh2a = { ...mkShot(sc2id,1), id:`sh_${uid()}`, sceneId:sc2id, index:1, visualStyle:"inherit",
+    how:"Wide side view of the shield wall across @field as the giant shadow of @dragon races over ranks of soldiers and banners before the creature itself enters frame", where:"@field - side profile of the formation", when:"dragon shadow first crosses the army", cameraSize:"wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"35mm", lighting:"hard-contrast",
+    visualGoal:"Make the shadow itself feel like a weapon and a warning",
+    entityTags:["@dragon","@army","@field"], directorNote:"Hold long enough for the audience to understand that the shadow is moving faster than the soldiers can react.", directorQuality:"good", directorIssue:"" };
+  const sh2b = { ...mkShot(sc2id,2), id:`sh_${uid()}`, sceneId:sc2id, index:2, visualStyle:"inherit",
+    how:"Heroic low-angle reveal of @dragon banking over the battlefield, wings spanning the frame, ember cracks igniting under the scales as furnace light builds in its throat", where:"@field - sky above the front line", when:"dragon reveal", cameraSize:"extreme-wide", cameraAngle:"low-angle", cameraMovement:"tracking", lens:"24mm", lighting:"backlit",
+    visualGoal:"Deliver the dragon as mythic scale and immediate threat in one image",
+    entityTags:["@dragon","@field"], directorNote:"This is the money shot. The dragon must feel ancient, heavy, and catastrophic, not agile like a bird.", directorQuality:"good", directorIssue:"" };
+  const sh2c = { ...mkShot(sc2id,3), id:`sh_${uid()}`, sceneId:sc2id, index:3, visualStyle:"inherit",
+    how:"Tracking medium-wide on @queen riding hard toward the burning section of the line while @dragon's fire tears through shields behind her and soldiers break formation in layers of depth", where:"@field - collapse point at the shield wall", when:"the line starts to break", cameraSize:"medium-wide", cameraAngle:"slight-low", cameraMovement:"tracking", lens:"35mm", lighting:"firelit",
+    visualGoal:"Show her leadership as movement toward catastrophe, not away from it",
+    entityTags:["@queen","@dragon","@army","@field"], directorNote:"Keep her moving against the panic. She is the directional anchor in a frame full of collapse.", directorQuality:"good", directorIssue:"" };
+  sh2a.compiledText = compileShotText(sh2a); sh2b.compiledText = compileShotText(sh2b); sh2c.compiledText = compileShotText(sh2c);
+
+  const sc3id = `sc_${uid()}`;
+  const sc3 = {
+    id:sc3id, type:T.SCENE, cinematicStyle:"epic-fantasy", visualStyle:"feature-3d-animation", shotCount:3,
+    bible:[ sbEntry(eQueen), sbEntry(eGeneral), sbEntry(eDragon), sbEntry(eGate) ],
+    dialogueLines:[ { speaker:"Queen Elira", line:"With me. Through the gate before it closes again." } ],
+    sceneText:`At @gate after the dragon strike. The lion crest is shattered, the doors split open, and battle has compressed into one violent bottleneck. @general rallies the infantry into a wedge. Above them, @dragon dives once more across the breach. @queen gives the order and leads the charge through the broken gate as fire and stone rain around the army.`,
+    directorCoherence:{ score:97, skippedBeats:[], overlapIssues:[], recommendation:"Resolve with a readable breach attack: broken gate, rally, dive, charge. Let the queen's order trigger the forward motion of the whole scene." },
+  };
+  const sh3a = { ...mkShot(sc3id,1), id:`sh_${uid()}`, sceneId:sc3id, index:1, visualStyle:"inherit",
+    how:"Wide frontal view of @gate with the shattered lion crest above, infantry compressing into a wedge beneath it while debris and sparks still fall from the earlier strike", where:"@gate - exterior breach line", when:"after the dragon strike", cameraSize:"wide", cameraAngle:"eye-level", cameraMovement:"static", lens:"28mm", lighting:"firelit",
+    visualGoal:"Clarify the breached objective and the army's new shape before the final push",
+    entityTags:["@general","@army","@gate"], directorNote:"This shot must read instantly. Gate, wedge, falling debris. No visual confusion.", directorQuality:"good", directorIssue:"" };
+  const sh3b = { ...mkShot(sc3id,2), id:`sh_${uid()}`, sceneId:sc3id, index:2, visualStyle:"inherit",
+    how:"Medium close on @queen turning in the saddle, sword raised toward the breach as @dragon dives overhead in the deep background and fire lights the edges of her armour", where:"@gate - just outside the breach", when:"the command to charge", cameraSize:"medium-close", cameraAngle:"slight-low", cameraMovement:"static", lens:"50mm", lighting:"firelit",
+    visualGoal:"Make the queen's command the emotional trigger for the final assault",
+    dialogue:`QUEEN ELIRA\nWith me. Through the gate before it closes again.`,
+    entityTags:["@queen","@dragon","@gate"], directorNote:"Her command must own the frame even with the dragon behind her. Keep the timing clean and decisive.", directorQuality:"good", directorIssue:"" };
+  const sh3c = { ...mkShot(sc3id,3), id:`sh_${uid()}`, sceneId:sc3id, index:3, visualStyle:"inherit",
+    how:"Epic rear tracking shot following @queen and the forward wedge of @army surging through the broken @gate while @dragon crosses above the frame and the fortress interior opens beyond in smoke and fire", where:"@gate - entering the fortress through the breach", when:"final charge", cameraSize:"extreme-wide", cameraAngle:"low-angle", cameraMovement:"tracking", lens:"24mm", lighting:"firelit",
+    visualGoal:"End on forward momentum, scale, and victory through impossible force",
+    entityTags:["@queen","@dragon","@army","@gate"], directorNote:"This is the payoff image. The audience should feel the whole army moving through one opening behind her.", directorQuality:"good", directorIssue:"" };
+  sh3a.compiledText = compileShotText(sh3a); sh3b.compiledText = compileShotText(sh3b); sh3c.compiledText = compileShotText(sh3c);
+
+  const p1Kling = mkKling(); const p1Veo = mkVeo(); const p1Audio = mkAudio(); const p1Edit = { ...mkVideoEdit(), audioNodeId:p1Audio.id };
+  const p2Kling = mkKling(); const p2Veo = mkVeo(); const p2Audio = mkAudio(); const p2Edit = { ...mkVideoEdit(), audioNodeId:p2Audio.id };
+  const p3Kling = mkKling(); const p3Veo = mkVeo(); const p3Audio = mkAudio(); const p3Edit = { ...mkVideoEdit(), audioNodeId:p3Audio.id };
+
+  const mkImg = (shot, ar="16:9") => ({
+    ...mkImage(shot.sceneId, shot.id),
+    prompt: shot.compiledText || "",
+    generatedUrl:"",
+    resolution:"1K",
+    aspect_ratio:ar,
+  });
+  const img1 = mkImg(sh1a,"16:9"); const img2 = mkImg(sh1b,"16:9"); const img3 = mkImg(sh1c,"16:9");
+  const img4 = mkImg(sh2a,"16:9"); const img5 = mkImg(sh2b,"16:9"); const img6 = mkImg(sh2c,"16:9");
+  const img7 = mkImg(sh3a,"16:9"); const img8 = mkImg(sh3b,"16:9"); const img9 = mkImg(sh3c,"16:9");
+
+  const nodes = [
+    sc1, sc2, sc3,
+    sh1a, sh1b, sh1c,
+    sh2a, sh2b, sh2c,
+    sh3a, sh3b, sh3c,
+    img1, img2, img3, img4, img5, img6, img7, img8, img9,
+    p1Kling, p1Veo, p1Audio, p1Edit,
+    p2Kling, p2Veo, p2Audio, p2Edit,
+    p3Kling, p3Veo, p3Audio, p3Edit,
+  ];
+
+  const sceneX = 80;
+  const shotStart = sceneX + 310 + 70;
+  const shotGapX = 340;
+  const sceneGapY = 1280;
+  const rowY = (row) => 80 + row * sceneGapY;
+  const imgStart = shotStart + shotGapX * 3 + 90;
+  const pipeA = imgStart + shotGapX * 3 + 90;
+  const pipeB = pipeA + 380;
+  const pipeTopOffset = 30;
+  const pipeRowB = 420;
+  const pipePos = (row) => ({
+    kling: { x:pipeA, y:rowY(row) + pipeTopOffset },
+    veo:   { x:pipeA, y:rowY(row) + pipeTopOffset + pipeRowB },
+    audio: { x:pipeB, y:rowY(row) + pipeTopOffset },
+    edit:  { x:pipeB, y:rowY(row) + pipeTopOffset + pipeRowB },
+  });
+  const pp1 = pipePos(0), pp2 = pipePos(1), pp3 = pipePos(2);
+
+  const pos = {
+    [sc1id]: { x:sceneX, y:rowY(0) },
+    [sc2id]: { x:sceneX, y:rowY(1) },
+    [sc3id]: { x:sceneX, y:rowY(2) },
+    [sh1a.id]: { x:shotStart, y:rowY(0) },
+    [sh1b.id]: { x:shotStart + shotGapX, y:rowY(0) },
+    [sh1c.id]: { x:shotStart + shotGapX * 2, y:rowY(0) },
+    [sh2a.id]: { x:shotStart, y:rowY(1) },
+    [sh2b.id]: { x:shotStart + shotGapX, y:rowY(1) },
+    [sh2c.id]: { x:shotStart + shotGapX * 2, y:rowY(1) },
+    [sh3a.id]: { x:shotStart, y:rowY(2) },
+    [sh3b.id]: { x:shotStart + shotGapX, y:rowY(2) },
+    [sh3c.id]: { x:shotStart + shotGapX * 2, y:rowY(2) },
+    [img1.id]: { x:imgStart, y:rowY(0) },
+    [img2.id]: { x:imgStart + shotGapX, y:rowY(0) },
+    [img3.id]: { x:imgStart + shotGapX * 2, y:rowY(0) },
+    [img4.id]: { x:imgStart, y:rowY(1) },
+    [img5.id]: { x:imgStart + shotGapX, y:rowY(1) },
+    [img6.id]: { x:imgStart + shotGapX * 2, y:rowY(1) },
+    [img7.id]: { x:imgStart, y:rowY(2) },
+    [img8.id]: { x:imgStart + shotGapX, y:rowY(2) },
+    [img9.id]: { x:imgStart + shotGapX * 2, y:rowY(2) },
+    [p1Kling.id]: pp1.kling, [p1Veo.id]: pp1.veo, [p1Audio.id]: pp1.audio, [p1Edit.id]: pp1.edit,
+    [p2Kling.id]: pp2.kling, [p2Veo.id]: pp2.veo, [p2Audio.id]: pp2.audio, [p2Edit.id]: pp2.edit,
+    [p3Kling.id]: pp3.kling, [p3Veo.id]: pp3.veo, [p3Audio.id]: pp3.audio, [p3Edit.id]: pp3.edit,
+  };
+
+  const bible = {
+    characters:[ eQueen, eGeneral, eDragon ],
+    objects:[ eArmy ],
+    locations:[ eField, eGate ],
+  };
+
+  return { nodes, pos, bible };
+}
+
 function makeSciFiThrillerCGITemplate() {
 
   // ── Bible entities ─────────────────────────────────────────────────────────
@@ -10126,6 +10288,14 @@ const TEMPLATES = [
     description: "4-scene Lord of the Rings-style epic — ancient forest departure, mountain pass journey, fortress confrontation, and a dawn return. 14 director-annotated shots. 3 characters, 3 locations, 1 cursed ring. Generate bible refs first for visual consistency across all scenes.",
     tags:        ["4 SCENES","14 SHOTS","WORLD BIBLE","EPIC FANTASY"],
     make:        makeMedievalFantasyTemplate,
+  },
+  {
+    id:          "dragon-siege-feature-3d",
+    label:       "Dragon Siege - Feature 3D",
+    emoji:       "🐉",
+    description: "3-scene medieval dragon siege in Feature 3D Animation style — front-line command, dragon-fire impact, and a final queen-led breach through a shattered fortress gate. 9 director-annotated shots with armies, fortress scale, and heroic battle coverage.",
+    tags:        ["3 SCENES","9 SHOTS","DRAGONS","FEATURE 3D"],
+    make:        makeDragonSiegeTemplate,
   },
   {
     id:          "scifi-thriller-cgi",
