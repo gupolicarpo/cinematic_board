@@ -79,6 +79,26 @@ function normalizeVisualStyle(v) {
   if (!v || v === "inherit") return v || "none";
   return VISUAL_STYLE_PRESETS[v] ? v : "none";
 }
+function formatDialogueLines(lines = []) {
+  return (lines || [])
+    .map(({ speaker = "", line = "" }) => `${speaker}: ${line}`.trim())
+    .join("\n");
+}
+function parseDialogueLines(text = "") {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const idx = line.indexOf(":");
+      if (idx === -1) return { speaker:"", line };
+      return {
+        speaker: line.slice(0, idx).trim(),
+        line: line.slice(idx + 1).trim(),
+      };
+    })
+    .filter(item => item.line);
+}
 function entryStyleVariants(entry) {
   return (entry && typeof entry._styleVariants === "object" && entry._styleVariants) ? entry._styleVariants : {};
 }
@@ -10633,6 +10653,7 @@ export default function App() {
   const [zTop, setZTop] = useState(10);
   const [selId, setSelId] = useState(null);
   const [inspectId, setInspectId] = useState(null);
+  const [workspaceMode, setWorkspaceMode] = useState("canvas");
   // wire dragging: { fromId, fromX, fromY, toX, toY }
   const [wire, setWire] = useState(null);
   const [hoverTarget, setHoverTarget] = useState(null);
@@ -11291,6 +11312,61 @@ export default function App() {
   };
   const patchShotFromInspector = (shot, patch) => {
     updNode(shot.id, syncManualShotPatch(shot, patch));
+  };
+  const writingScripts = nodes
+    .filter(n => n.type === T.SCRIPT)
+    .sort((a, b) => ((pos[a.id]?.y ?? 0) - (pos[b.id]?.y ?? 0)) || ((pos[a.id]?.x ?? 0) - (pos[b.id]?.x ?? 0)));
+  const writingScenes = nodes
+    .filter(n => n.type === T.SCENE)
+    .sort((a, b) => ((pos[a.id]?.y ?? 0) - (pos[b.id]?.y ?? 0)) || ((pos[a.id]?.x ?? 0) - (pos[b.id]?.x ?? 0)));
+  const writingShotsForScene = (sceneId) => nodes
+    .filter(n => n.type === T.SHOT && n.sceneId === sceneId)
+    .sort((a, b) => (a.index || 0) - (b.index || 0));
+  const writingEditableNode = nodes.find(n => n.id === selId && [T.SCRIPT, T.SCENE, T.SHOT].includes(n.type)) || null;
+
+  useEffect(() => {
+    if (workspaceMode !== "writing") return;
+    if (writingEditableNode) return;
+    const fallback = writingScripts[0] || writingScenes[0] || nodes.find(n => n.type === T.SHOT) || null;
+    if (fallback) setSelId(fallback.id);
+  }, [workspaceMode, writingEditableNode, writingScripts, writingScenes, nodes]);
+
+  const createWritingScene = (afterSceneId = null) => {
+    const scene = mkScene();
+    const livePos = posRef.current;
+    const liveScenes = nodesRef.current.filter(n => n.type === T.SCENE);
+    const baseY = afterSceneId ? (livePos[afterSceneId]?.y ?? 80) : Math.max(80, ...liveScenes.map(n => livePos[n.id]?.y ?? 80));
+    const scenePos = { x: 80, y: baseY + (afterSceneId || liveScenes.length ? 980 : 0) };
+    nodesRef.current = [...nodesRef.current, scene];
+    posRef.current = { ...livePos, [scene.id]: scenePos };
+    setNodes(prev => [...prev, scene]);
+    setPos(prev => ({ ...prev, [scene.id]: scenePos }));
+    setSelId(scene.id);
+    front(scene.id);
+  };
+
+  const createWritingShot = (sceneId, afterShotId = null) => {
+    if (!sceneId) return;
+    const liveNodes = nodesRef.current;
+    const livePos = posRef.current;
+    const sceneShots = liveNodes
+      .filter(n => n.type === T.SHOT && n.sceneId === sceneId)
+      .sort((a, b) => (a.index || 0) - (b.index || 0));
+    const afterShot = sceneShots.find(s => s.id === afterShotId) || null;
+    const insertIndex = afterShot ? (afterShot.index || 0) + 1 : sceneShots.length + 1;
+    const shot = { ...mkShot(sceneId, insertIndex), visualStyle:"inherit" };
+    shot.compiledText = compileShotText(shot);
+    const baseScenePos = livePos[sceneId] || { x: 80, y: 80 };
+    const shotPos = { x: baseScenePos.x + 430 + (insertIndex - 1) * 340, y: baseScenePos.y + 220 };
+    const nextNodes = liveNodes
+      .map(n => (n.type === T.SHOT && n.sceneId === sceneId && (n.index || 0) >= insertIndex ? { ...n, index: (n.index || 0) + 1 } : n))
+      .concat(shot);
+    nodesRef.current = nextNodes;
+    posRef.current = { ...livePos, [shot.id]: shotPos };
+    setNodes(nextNodes);
+    setPos(prev => ({ ...prev, [shot.id]: shotPos }));
+    setSelId(shot.id);
+    front(shot.id);
   };
   const renderInspectorContent = (n) => {
     if (!n) return null;
@@ -12226,6 +12302,256 @@ export default function App() {
     { type:T.CLIP,     icon:Upload,      label:"CLIP",   color:"#3b82f6", desc:"Video Clip — upload a local video file onto the canvas" },
   ];
 
+  const renderWritingMode = () => {
+    const wmPaneTitle = { fontSize:10, color:th.t3, letterSpacing:"0.16em", fontFamily:"'Inter',system-ui,sans-serif" };
+    const wmFieldLabel = { fontSize:10, color:th.t3, letterSpacing:"0.12em", marginBottom:6, textTransform:"uppercase", fontFamily:"'Inter',system-ui,sans-serif" };
+    const wmInput = {
+      width:"100%", background:th.card2, border:`1px solid ${th.b0}`, borderRadius:10, color:th.t0,
+      padding:"10px 12px", fontSize:13, outline:"none", boxSizing:"border-box", fontFamily:"'Inter',system-ui,sans-serif",
+    };
+    const wmSelect = { ...wmInput, cursor:"pointer" };
+    const wmTextArea = {
+      ...wmInput,
+      minHeight:140,
+      lineHeight:1.7,
+      resize:"vertical",
+    };
+    const wmGhostBtn = {
+      background:"transparent", border:`1px solid ${th.b0}`, color:th.t2, borderRadius:8, padding:"8px 12px",
+      cursor:"pointer", fontSize:11, letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif",
+    };
+    const wmPrimaryBtn = {
+      background:th.t0, border:"none", color:"#fff", borderRadius:8, padding:"8px 12px",
+      cursor:"pointer", fontSize:11, letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif", fontWeight:700,
+    };
+
+    return (
+      <div style={{ flex:1, display:"flex", overflow:"hidden", position:"relative" }}>
+        <LeftDrawer open={sidebarOpen} onToggle={()=>setSidebarOpen(v=>!v)} bible={bible}/>
+        <div style={{ flex:1, display:"grid", gridTemplateColumns:"320px minmax(0,1fr)", overflow:"hidden" }}>
+          <div style={{ borderRight:`1px solid ${th.b0}`, background:th.card, display:"flex", flexDirection:"column", minWidth:0 }}>
+            <div style={{ padding:"16px 16px 12px", borderBottom:`1px solid ${th.b0}`, display:"flex", flexDirection:"column", gap:10 }}>
+              <div style={wmPaneTitle}>WRITING OUTLINE</div>
+              <div style={{ fontSize:12, color:th.t2, lineHeight:1.6 }}>A more comfortable way to write `SCRIPT`, `SCENE`, and `SHOT` nodes without leaving the same project.</div>
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={()=>createWritingScene(writingScenes[writingScenes.length - 1]?.id || null)} style={wmPrimaryBtn}>+ SCENE</button>
+                {writingScenes[0] && <button onClick={()=>createWritingShot(writingScenes[0].id, null)} style={wmGhostBtn}>+ SHOT</button>}
+              </div>
+            </div>
+            <div style={{ flex:1, overflowY:"auto", padding:12, display:"flex", flexDirection:"column", gap:14 }}>
+              {!!writingScripts.length && (
+                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                  <div style={wmPaneTitle}>SCRIPT</div>
+                  {writingScripts.map(script => {
+                    const active = selId === script.id;
+                    return (
+                      <button key={script.id} onClick={()=>setSelId(script.id)}
+                        style={{ textAlign:"left", background:active ? th.card2 : "transparent", border:`1px solid ${active ? th.t2 : th.b0}`, borderRadius:10, padding:"10px 12px", cursor:"pointer" }}>
+                        <div style={{ fontSize:11, color:th.t3, letterSpacing:"0.12em" }}>SCRIPT NODE</div>
+                        <div style={{ fontSize:13, color:th.t0, fontWeight:700, marginTop:3 }}>{script.title || "Untitled Script"}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                <div style={wmPaneTitle}>SCENES</div>
+                {writingScenes.map((scene, sceneIdx) => {
+                  const sceneActive = selId === scene.id;
+                  const sceneShots = writingShotsForScene(scene.id);
+                  return (
+                    <div key={scene.id} style={{ border:`1px solid ${sceneActive ? (styleColor[scene.cinematicStyle] || th.t2) : th.b0}`, borderRadius:12, overflow:"hidden", background:th.card2 }}>
+                      <div style={{ padding:"10px 12px", display:"flex", alignItems:"center", gap:8, background:sceneActive ? `${styleColor[scene.cinematicStyle] || "#94a3b8"}12` : "transparent" }}>
+                        <button onClick={()=>setSelId(scene.id)} style={{ flex:1, textAlign:"left", background:"transparent", border:"none", cursor:"pointer", padding:0 }}>
+                          <div style={{ fontSize:10, color:styleColor[scene.cinematicStyle] || th.t3, letterSpacing:"0.12em" }}>SCENE {sceneIdx + 1}</div>
+                          <div style={{ fontSize:13, color:th.t0, fontWeight:700, marginTop:3, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{scene.sceneHeading || scene.sceneText?.slice(0, 48) || "Untitled scene"}</div>
+                        </button>
+                        <button onClick={()=>createWritingShot(scene.id, sceneShots[sceneShots.length - 1]?.id || null)} style={wmGhostBtn}>+ SHOT</button>
+                      </div>
+                      <div style={{ padding:"8px 10px 10px", display:"flex", flexDirection:"column", gap:6 }}>
+                        {sceneShots.map(shot => {
+                          const active = selId === shot.id;
+                          return (
+                            <button key={shot.id} onClick={()=>setSelId(shot.id)}
+                              style={{ textAlign:"left", background:active ? "#ffffff12" : th.card, border:`1px solid ${active ? "#38bdf8" : th.b0}`, borderRadius:8, padding:"8px 10px", cursor:"pointer" }}>
+                              <div style={{ fontSize:10, color:"#38bdf8", letterSpacing:"0.12em" }}>SHOT {shot.index}</div>
+                              <div style={{ fontSize:12, color:th.t1, marginTop:3, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{shot.how || shot.visualGoal || shot.where || "Empty shot"}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background:th.bg, overflowY:"auto", minWidth:0 }}>
+            <div style={{ maxWidth:980, margin:"0 auto", padding:"24px 28px 80px", display:"flex", flexDirection:"column", gap:20 }}>
+              {!writingEditableNode && (
+                <div style={{ border:`1px solid ${th.b0}`, borderRadius:14, background:th.card, padding:"24px 22px", color:th.t2, lineHeight:1.7 }}>
+                  Select a `SCRIPT`, `SCENE`, or `SHOT` from the outline to edit it here.
+                </div>
+              )}
+
+              {writingEditableNode?.type === T.SCRIPT && (
+                <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
+                  <div>
+                    <div style={wmPaneTitle}>SCRIPT NODE</div>
+                    <div style={{ fontSize:24, color:th.t0, fontWeight:800, marginTop:6 }}>{writingEditableNode.title || "Untitled Script"}</div>
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                    <div>
+                      <div style={wmFieldLabel}>Title</div>
+                      <input value={writingEditableNode.title || ""} onChange={e=>updNode(writingEditableNode.id, { title:e.target.value })} style={wmInput} />
+                    </div>
+                    <div>
+                      <div style={wmFieldLabel}>Mode</div>
+                      <select value={writingEditableNode.scriptMode || "write"} onChange={e=>updNode(writingEditableNode.id, { scriptMode:e.target.value })} style={wmSelect}>
+                        <option value="write">write</option>
+                        <option value="upload">upload</option>
+                        <option value="generate">generate</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={wmFieldLabel}>Script</div>
+                    <textarea value={writingEditableNode.script || ""} onChange={e=>updNode(writingEditableNode.id, { script:e.target.value })} style={{ ...wmTextArea, minHeight:520, fontFamily:"'Courier New', monospace" }} />
+                  </div>
+                </div>
+              )}
+
+              {writingEditableNode?.type === T.SCENE && (
+                <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                    <div>
+                      <div style={wmPaneTitle}>SCENE</div>
+                      <div style={{ fontSize:24, color:th.t0, fontWeight:800, marginTop:6 }}>{writingEditableNode.sceneHeading || writingEditableNode.sceneText?.slice(0, 64) || "Untitled Scene"}</div>
+                    </div>
+                    <div style={{ display:"flex", gap:8 }}>
+                      <button onClick={()=>createWritingShot(writingEditableNode.id, writingShotsForScene(writingEditableNode.id).slice(-1)[0]?.id || null)} style={wmGhostBtn}>+ SHOT</button>
+                      <button onClick={()=>onGenShots(writingEditableNode)} style={wmPrimaryBtn}>GENERATE SHOTS</button>
+                    </div>
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:14 }}>
+                    <div>
+                      <div style={wmFieldLabel}>Heading</div>
+                      <input value={writingEditableNode.sceneHeading || ""} onChange={e=>updNode(writingEditableNode.id, { sceneHeading:e.target.value })} style={wmInput} />
+                    </div>
+                    <div>
+                      <div style={wmFieldLabel}>Cinematic Style</div>
+                      <select value={writingEditableNode.cinematicStyle || "thriller"} onChange={e=>updNode(writingEditableNode.id, { cinematicStyle:e.target.value })} style={wmSelect}>
+                        {CINEMATIC_STYLES.map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={wmFieldLabel}>Visual Style</div>
+                      <select value={writingEditableNode.visualStyle || "none"} onChange={e=>updNode(writingEditableNode.id, { visualStyle:e.target.value })} style={wmSelect}>
+                        {VISUAL_STYLES.map(v => <option key={v} value={v}>{VISUAL_STYLE_PRESETS[v]?.label || v}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={wmFieldLabel}>Scene Text</div>
+                    <textarea value={writingEditableNode.sceneText || ""} onChange={e=>updNode(writingEditableNode.id, { sceneText:e.target.value })} style={{ ...wmTextArea, minHeight:260 }} />
+                  </div>
+                  <div>
+                    <div style={wmFieldLabel}>Dialogue Lines</div>
+                    <textarea
+                      value={formatDialogueLines(writingEditableNode.dialogueLines || [])}
+                      onChange={e=>updNode(writingEditableNode.id, { dialogueLines: parseDialogueLines(e.target.value) })}
+                      placeholder={"Queen Elira: Hold the line.\nGeneral Corvin: The gate will not last."}
+                      style={{ ...wmTextArea, minHeight:180 }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {writingEditableNode?.type === T.SHOT && (
+                <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                    <div>
+                      <div style={wmPaneTitle}>SHOT {writingEditableNode.index}</div>
+                      <div style={{ fontSize:24, color:th.t0, fontWeight:800, marginTop:6 }}>{writingEditableNode.how || writingEditableNode.visualGoal || "Untitled Shot"}</div>
+                    </div>
+                    <button onClick={()=>createWritingShot(writingEditableNode.sceneId, writingEditableNode.id)} style={wmGhostBtn}>SPLIT / ADD BELOW</button>
+                  </div>
+                  <div>
+                    <div style={wmFieldLabel}>Action</div>
+                    <textarea value={writingEditableNode.how || ""} onChange={e=>patchShotFromInspector(writingEditableNode, { how:e.target.value })} style={{ ...wmTextArea, minHeight:180 }} />
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                    <div>
+                      <div style={wmFieldLabel}>Where</div>
+                      <textarea value={writingEditableNode.where || ""} onChange={e=>patchShotFromInspector(writingEditableNode, { where:e.target.value })} style={{ ...wmTextArea, minHeight:130 }} />
+                    </div>
+                    <div>
+                      <div style={wmFieldLabel}>When</div>
+                      <textarea value={writingEditableNode.when || ""} onChange={e=>patchShotFromInspector(writingEditableNode, { when:e.target.value })} style={{ ...wmTextArea, minHeight:130 }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={wmFieldLabel}>Visual Goal</div>
+                    <textarea value={writingEditableNode.visualGoal || ""} onChange={e=>patchShotFromInspector(writingEditableNode, { visualGoal:e.target.value })} style={{ ...wmTextArea, minHeight:130 }} />
+                  </div>
+                  <div>
+                    <div style={wmFieldLabel}>Dialogue</div>
+                    <textarea value={writingEditableNode.dialogue || ""} onChange={e=>patchShotFromInspector(writingEditableNode, { dialogue:e.target.value })} style={{ ...wmTextArea, minHeight:150 }} />
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(4, minmax(0, 1fr))", gap:14 }}>
+                    <div>
+                      <div style={wmFieldLabel}>Duration</div>
+                      <input type="number" min="1" max="15" value={writingEditableNode.durationSec || 1} onChange={e=>patchShotFromInspector(writingEditableNode, { durationSec: Math.max(1, Math.min(15, Number(e.target.value) || 1)) })} style={wmInput} />
+                    </div>
+                    <div>
+                      <div style={wmFieldLabel}>Lens</div>
+                      <input value={writingEditableNode.lens || ""} onChange={e=>patchShotFromInspector(writingEditableNode, { lens:e.target.value })} style={wmInput} />
+                    </div>
+                    <div>
+                      <div style={wmFieldLabel}>Camera Size</div>
+                      <select value={writingEditableNode.cameraSize || "medium"} onChange={e=>patchShotFromInspector(writingEditableNode, { cameraSize:e.target.value })} style={wmSelect}>
+                        {CAMERA_SIZES.map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={wmFieldLabel}>Angle</div>
+                      <select value={writingEditableNode.cameraAngle || "eye-level"} onChange={e=>patchShotFromInspector(writingEditableNode, { cameraAngle:e.target.value })} style={wmSelect}>
+                        {CAMERA_ANGLES.map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={wmFieldLabel}>Movement</div>
+                      <select value={writingEditableNode.cameraMovement || "static"} onChange={e=>patchShotFromInspector(writingEditableNode, { cameraMovement:e.target.value })} style={wmSelect}>
+                        {CAMERA_MOVEMENTS.map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={wmFieldLabel}>Lighting</div>
+                      <select value={writingEditableNode.lighting || "natural-soft"} onChange={e=>patchShotFromInspector(writingEditableNode, { lighting:e.target.value })} style={wmSelect}>
+                        {LIGHTING_STYLES.map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={wmFieldLabel}>Visual Style</div>
+                      <select value={writingEditableNode.visualStyle || "inherit"} onChange={e=>patchShotFromInspector(writingEditableNode, { visualStyle:e.target.value })} style={wmSelect}>
+                        {["inherit", ...VISUAL_STYLES].map(v => <option key={v} value={v}>{v === "inherit" ? "inherit scene style" : (VISUAL_STYLE_PRESETS[v]?.label || v)}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={wmFieldLabel}>Source Anchor</div>
+                      <input value={writingEditableNode.sourceAnchor || ""} onChange={e=>patchShotFromInspector(writingEditableNode, { sourceAnchor:e.target.value })} style={wmInput} />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const totalDur = nodes.filter(n=>n.type===T.SHOT).reduce((s,n)=>s+(n.durationSec||0),0);
   const shotCount = nodes.filter(n=>n.type===T.SHOT).length;
 
@@ -12513,6 +12839,37 @@ export default function App() {
         </button>
         {/* Project controls */}
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <div style={{ display:"flex", alignItems:"center", background:th.card, border:`1px solid ${th.b0}`, borderRadius:6, padding:2 }}>
+            {[
+              { key:"canvas", label:"CANVAS" },
+              { key:"writing", label:"WRITING" },
+            ].map(mode => {
+              const active = workspaceMode === mode.key;
+              return (
+                <button
+                  key={mode.key}
+                  onClick={() => {
+                    setWorkspaceMode(mode.key);
+                    if (mode.key === "writing") setInspectId(null);
+                  }}
+                  style={{
+                    background: active ? th.t0 : "transparent",
+                    border:"none",
+                    color: active ? "#fff" : th.t2,
+                    padding:"5px 10px",
+                    borderRadius:4,
+                    cursor:"pointer",
+                    fontSize:10,
+                    letterSpacing:"0.12em",
+                    fontFamily:"'Inter',system-ui,sans-serif",
+                    fontWeight: active ? 700 : 500,
+                  }}
+                >
+                  {mode.label}
+                </button>
+              );
+            })}
+          </div>
           <button onClick={()=>setProjectPickerOpen(true)}
             title="Open or switch project"
             style={{ display:"flex", alignItems:"center", gap:6, background:th.card, border:`1px solid ${th.b0}`,
@@ -12640,6 +12997,7 @@ export default function App() {
         </div>
       </div>
 
+      {workspaceMode === "writing" ? renderWritingMode() : (
       <div style={{ flex:1,display:"flex",overflow:"hidden",position:"relative" }}>
 
         {/* LEFT DRAWER */}
@@ -12938,6 +13296,7 @@ export default function App() {
           <BiblePopup bible={bible} setBible={setBible} onClose={()=>setBibleOpen(false)}/>
         )}
       </div>
+      )}
     </div>
     </ThemeCtx.Provider>
   );
