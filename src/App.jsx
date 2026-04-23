@@ -11274,6 +11274,128 @@ export default function App() {
     if(selId===id)setSelId(null);
     if(inspectId===id)setInspectId(null);
   };
+  const deleteWritingNode = useCallback((nodeId) => {
+    const liveNodes = nodesRef.current;
+    const livePos = posRef.current;
+    const target = liveNodes.find(n => n.id === nodeId);
+    if (!target) return;
+
+    const deletedIds = new Set([nodeId]);
+    const deletedShotIds = new Set();
+
+    if (target.type === T.SCENE) {
+      liveNodes
+        .filter(n => n.type === T.SHOT && n.sceneId === nodeId)
+        .forEach(shot => {
+          deletedIds.add(shot.id);
+          deletedShotIds.add(shot.id);
+        });
+      liveNodes
+        .filter(n => n.type === T.IMAGE && (n.sceneId === nodeId || deletedShotIds.has(n.shotId)))
+        .forEach(img => deletedIds.add(img.id));
+    } else if (target.type === T.SHOT) {
+      deletedShotIds.add(nodeId);
+      liveNodes
+        .filter(n => n.type === T.IMAGE && n.shotId === nodeId)
+        .forEach(img => deletedIds.add(img.id));
+    }
+
+    const scrubRefs = (node) => {
+      if (deletedIds.has(node.id)) return null;
+      let next = node;
+
+      if (node.type === T.KLING) {
+        next = {
+          ...next,
+          shotIds: (next.shotIds || []).filter(id => !deletedIds.has(id)),
+          imageRefIds: (next.imageRefIds || []).filter(id => !deletedIds.has(id)),
+          prevKlingId: deletedIds.has(next.prevKlingId) ? null : next.prevKlingId,
+        };
+      }
+      if (node.type === T.VEO) {
+        next = {
+          ...next,
+          shotId: deletedIds.has(next.shotId) ? null : next.shotId,
+          startFrameNodeId: deletedIds.has(next.startFrameNodeId) ? null : next.startFrameNodeId,
+          endFrameNodeId: deletedIds.has(next.endFrameNodeId) ? null : next.endFrameNodeId,
+          refNodeIds: (next.refNodeIds || []).filter(id => !deletedIds.has(id)),
+        };
+      }
+      if (node.type === T.LLM) {
+        next = {
+          ...next,
+          targetNodeId: deletedIds.has(next.targetNodeId) ? null : next.targetNodeId,
+          targetNodeIds: (next.targetNodeIds || []).filter(id => !deletedIds.has(id)),
+        };
+      }
+      if (node.type === T.VIDEOEDIT) {
+        const nextVideoNodeIds = (next.videoNodeIds || []).filter(id => !deletedIds.has(id));
+        next = {
+          ...next,
+          videoNodeIds: nextVideoNodeIds,
+          audioNodeId: deletedIds.has(next.audioNodeId) ? null : next.audioNodeId,
+          clipOrder: (next.clipOrder || []).filter(id => !deletedIds.has(id)),
+          trims: Object.fromEntries(Object.entries(next.trims || {}).filter(([id]) => !deletedIds.has(id))),
+        };
+      }
+      if (node.type === T.AUDIO) {
+        next = { ...next, videoNodeId: deletedIds.has(next.videoNodeId) ? null : next.videoNodeId };
+      }
+      if (node.type === T.MUSICDNA) {
+        next = { ...next, audioNodeId: deletedIds.has(next.audioNodeId) ? null : next.audioNodeId };
+      }
+      if (node.type === T.IMAGE) {
+        next = {
+          ...next,
+          sceneId: deletedIds.has(next.sceneId) ? null : next.sceneId,
+          shotId: deletedIds.has(next.shotId) ? null : next.shotId,
+        };
+      }
+      return next;
+    };
+
+    let nextNodes = liveNodes.map(scrubRefs).filter(Boolean);
+
+    const affectedSceneIds = new Set();
+    if (target.type === T.SHOT && target.sceneId) affectedSceneIds.add(target.sceneId);
+
+    if (affectedSceneIds.size) {
+      const nextIndexByShotId = {};
+      [...affectedSceneIds].forEach(sceneId => {
+        nextNodes
+          .filter(n => n.type === T.SHOT && n.sceneId === sceneId)
+          .sort((a, b) => (a.index || 0) - (b.index || 0))
+          .forEach((shot, idx) => {
+            nextIndexByShotId[shot.id] = idx + 1;
+          });
+      });
+      nextNodes = nextNodes.map(n => (
+        n.type === T.SHOT && nextIndexByShotId[n.id] && n.index !== nextIndexByShotId[n.id]
+          ? { ...n, index: nextIndexByShotId[n.id] }
+          : n
+      ));
+    }
+
+    const shotCountBySceneId = nextNodes.reduce((acc, node) => {
+      if (node.type === T.SHOT && node.sceneId) acc[node.sceneId] = (acc[node.sceneId] || 0) + 1;
+      return acc;
+    }, {});
+    nextNodes = nextNodes.map(n => (
+      n.type === T.SCENE
+        ? { ...n, shotCount: shotCountBySceneId[n.id] || 0 }
+        : n
+    ));
+
+    const nextPos = { ...livePos };
+    deletedIds.forEach(id => { delete nextPos[id]; });
+
+    nodesRef.current = nextNodes;
+    posRef.current = nextPos;
+    setNodes(nextNodes);
+    setPos(nextPos);
+    setSelId(prev => (deletedIds.has(prev) ? null : prev));
+    setInspectId(prev => (deletedIds.has(prev) ? null : prev));
+  }, []);
   const openInspector = useCallback((id) => {
     setInspectId(id);
     setSelId(id);
@@ -12320,10 +12442,14 @@ export default function App() {
       background:"transparent", border:`1px solid ${th.b0}`, color:th.t2, borderRadius:8, padding:"8px 12px",
       cursor:"pointer", fontSize:11, letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif",
     };
-    const wmPrimaryBtn = {
-      background:th.t0, border:"none", color:"#fff", borderRadius:8, padding:"8px 12px",
-      cursor:"pointer", fontSize:11, letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif", fontWeight:700,
-    };
+      const wmPrimaryBtn = {
+        background:th.t0, border:"none", color:"#fff", borderRadius:8, padding:"8px 12px",
+        cursor:"pointer", fontSize:11, letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif", fontWeight:700,
+      };
+      const wmDangerBtn = {
+        background:"transparent", border:"1px solid #ef444455", color:"#ef4444", borderRadius:8, padding:"8px 12px",
+        cursor:"pointer", fontSize:11, letterSpacing:"0.08em", fontFamily:"'Inter',system-ui,sans-serif", fontWeight:700,
+      };
 
     return (
       <div style={{ flex:1, display:"flex", overflow:"hidden", position:"relative" }}>
@@ -12424,16 +12550,17 @@ export default function App() {
 
               {writingEditableNode?.type === T.SCENE && (
                 <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
-                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
-                    <div>
-                      <div style={wmPaneTitle}>SCENE</div>
-                      <div style={{ fontSize:24, color:th.t0, fontWeight:800, marginTop:6 }}>{writingEditableNode.sceneHeading || writingEditableNode.sceneText?.slice(0, 64) || "Untitled Scene"}</div>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                      <div>
+                        <div style={wmPaneTitle}>SCENE</div>
+                        <div style={{ fontSize:24, color:th.t0, fontWeight:800, marginTop:6 }}>{writingEditableNode.sceneHeading || writingEditableNode.sceneText?.slice(0, 64) || "Untitled Scene"}</div>
+                      </div>
+                      <div style={{ display:"flex", gap:8 }}>
+                        <button onClick={()=>deleteWritingNode(writingEditableNode.id)} style={wmDangerBtn}>DELETE SCENE</button>
+                        <button onClick={()=>createWritingShot(writingEditableNode.id, writingShotsForScene(writingEditableNode.id).slice(-1)[0]?.id || null)} style={wmGhostBtn}>+ SHOT</button>
+                        <button onClick={()=>onGenShots(writingEditableNode)} style={wmPrimaryBtn}>GENERATE SHOTS</button>
+                      </div>
                     </div>
-                    <div style={{ display:"flex", gap:8 }}>
-                      <button onClick={()=>createWritingShot(writingEditableNode.id, writingShotsForScene(writingEditableNode.id).slice(-1)[0]?.id || null)} style={wmGhostBtn}>+ SHOT</button>
-                      <button onClick={()=>onGenShots(writingEditableNode)} style={wmPrimaryBtn}>GENERATE SHOTS</button>
-                    </div>
-                  </div>
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:14 }}>
                     <div>
                       <div style={wmFieldLabel}>Heading</div>
@@ -12470,13 +12597,16 @@ export default function App() {
 
               {writingEditableNode?.type === T.SHOT && (
                 <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
-                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
-                    <div>
-                      <div style={wmPaneTitle}>SHOT {writingEditableNode.index}</div>
-                      <div style={{ fontSize:24, color:th.t0, fontWeight:800, marginTop:6 }}>{writingEditableNode.how || writingEditableNode.visualGoal || "Untitled Shot"}</div>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                      <div>
+                        <div style={wmPaneTitle}>SHOT {writingEditableNode.index}</div>
+                        <div style={{ fontSize:24, color:th.t0, fontWeight:800, marginTop:6 }}>{writingEditableNode.how || writingEditableNode.visualGoal || "Untitled Shot"}</div>
+                      </div>
+                      <div style={{ display:"flex", gap:8 }}>
+                        <button onClick={()=>deleteWritingNode(writingEditableNode.id)} style={wmDangerBtn}>DELETE SHOT</button>
+                        <button onClick={()=>createWritingShot(writingEditableNode.sceneId, writingEditableNode.id)} style={wmGhostBtn}>SPLIT / ADD BELOW</button>
+                      </div>
                     </div>
-                    <button onClick={()=>createWritingShot(writingEditableNode.sceneId, writingEditableNode.id)} style={wmGhostBtn}>SPLIT / ADD BELOW</button>
-                  </div>
                   <div>
                     <div style={wmFieldLabel}>Action</div>
                     <textarea value={writingEditableNode.how || ""} onChange={e=>patchShotFromInspector(writingEditableNode, { how:e.target.value })} style={{ ...wmTextArea, minHeight:180 }} />
