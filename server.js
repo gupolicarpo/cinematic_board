@@ -759,20 +759,24 @@ app.post("/api/veo/video", async (req, res) => {
       error: "insufficient_credits", credits_balance: result.balance, credits_needed: totalCost,
     });
   }
-  try {
-    const { _veoModel, ...payload } = req.body;
-    const hasFrameGuidance = !!payload?.instances?.[0]?.image || !!payload?.instances?.[0]?.lastFrame;
-    if (hasFrameGuidance) {
-      const vertex = vertexVeoConfig(_veoModel);
-      if (!vertex.project) {
-        return res.status(400).send(JSON.stringify({ error: { code: 400, message: "Veo start/end frame requires Vertex AI project configuration. Set VERTEX_AI_PROJECT or GOOGLE_CLOUD_PROJECT.", status: "INVALID_ARGUMENT" } }));
+    try {
+      const { _veoModel, ...payload } = req.body;
+      const hasFrameGuidance = !!payload?.instances?.[0]?.image || !!payload?.instances?.[0]?.lastFrame;
+      const hasReferenceImages = Array.isArray(payload?.parameters?.referenceImages) && payload.parameters.referenceImages.length > 0;
+      if (hasFrameGuidance || hasReferenceImages) {
+        const vertex = vertexVeoConfig(_veoModel);
+        if (!vertex.project) {
+          const msg = hasReferenceImages
+            ? "Veo reference images require Vertex AI project configuration. Set VERTEX_AI_PROJECT or GOOGLE_CLOUD_PROJECT."
+            : "Veo start/end frame requires Vertex AI project configuration. Set VERTEX_AI_PROJECT or GOOGLE_CLOUD_PROJECT.";
+          return res.status(400).send(JSON.stringify({ error: { code: 400, message: msg, status: "INVALID_ARGUMENT" } }));
+        }
+        const accessToken = await googleAccessToken();
+        const r = await post(`${vertex.location}-aiplatform.googleapis.com`,
+          `/v1/projects/${vertex.project}/locations/${vertex.location}/publishers/google/models/${hasReferenceImages ? vertex.model : vertex.frameModel}:predictLongRunning`,
+          { "Authorization": `Bearer ${accessToken}` }, payload);
+        return res.status(r.status).send(r.data);
       }
-      const accessToken = await googleAccessToken();
-      const r = await post(`${vertex.location}-aiplatform.googleapis.com`,
-        `/v1/projects/${vertex.project}/locations/${vertex.location}/publishers/google/models/${vertex.frameModel}:predictLongRunning`,
-        { "Authorization": `Bearer ${accessToken}` }, payload);
-      return res.status(r.status).send(r.data);
-    }
 
     const key = process.env.GEMINI_API_KEY;
     if (!key) return res.status(500).send("GEMINI_API_KEY not set");
