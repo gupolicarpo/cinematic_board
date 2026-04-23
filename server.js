@@ -304,17 +304,6 @@ function vertexVeoConfig(modelHint = "") {
   };
 }
 
-function parseGoogleJson(data) {
-  try { return JSON.parse(String(data || "{}")); } catch { return null; }
-}
-
-function isVertexModelAccessError(status, data) {
-  if (status !== 404 && status !== 403) return false;
-  const parsed = parseGoogleJson(data);
-  const msg = String(parsed?.error?.message || data || "").toLowerCase();
-  return msg.includes("publisher model") || msg.includes("does not have access") || msg.includes("not found");
-}
-
 async function googleAccessToken() {
   if (process.env.VERTEX_ACCESS_TOKEN) return process.env.VERTEX_ACCESS_TOKEN;
   const now = Math.floor(Date.now() / 1000);
@@ -774,28 +763,17 @@ app.post("/api/veo/video", async (req, res) => {
       const { _veoModel, ...payload } = req.body;
       const hasFrameGuidance = !!payload?.instances?.[0]?.image || !!payload?.instances?.[0]?.lastFrame;
       const hasReferenceImages = Array.isArray(payload?.parameters?.referenceImages) && payload.parameters.referenceImages.length > 0;
-      if (hasFrameGuidance || hasReferenceImages) {
+      if (hasFrameGuidance) {
         const vertex = vertexVeoConfig(_veoModel);
         if (!vertex.project) {
-          const msg = hasReferenceImages
-            ? "Veo reference images require Vertex AI project configuration. Set VERTEX_AI_PROJECT or GOOGLE_CLOUD_PROJECT."
-            : "Veo start/end frame requires Vertex AI project configuration. Set VERTEX_AI_PROJECT or GOOGLE_CLOUD_PROJECT.";
+          const msg = "Veo start/end frame requires Vertex AI project configuration. Set VERTEX_AI_PROJECT or GOOGLE_CLOUD_PROJECT.";
           return res.status(400).send(JSON.stringify({ error: { code: 400, message: msg, status: "INVALID_ARGUMENT" } }));
         }
         const accessToken = await googleAccessToken();
-        const targetModel = hasReferenceImages ? "veo-3.1-generate-preview" : vertex.frameModel;
+        const targetModel = vertex.frameModel;
         const r = await post(`${vertex.location}-aiplatform.googleapis.com`,
           `/v1/projects/${vertex.project}/locations/${vertex.location}/publishers/google/models/${targetModel}:predictLongRunning`,
           { "Authorization": `Bearer ${accessToken}` }, payload);
-        if (hasReferenceImages && isVertexModelAccessError(r.status, r.data)) {
-          return res.status(400).send(JSON.stringify({
-            error: {
-              code: 400,
-              message: `Your Vertex AI project "${vertex.project}" in ${vertex.location} does not currently have access to the Veo 3.1 reference-image preview model (veo-3.1-generate-preview). Plain Veo generation can still work, but reference image to video requires that preview model on Vertex AI.`,
-              status: "FAILED_PRECONDITION",
-            },
-          }));
-        }
         return res.status(r.status).send(r.data);
       }
 
