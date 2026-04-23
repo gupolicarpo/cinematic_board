@@ -2109,8 +2109,9 @@ function dataUrlToVeo(dataUrl) {
 //   referenceImages  — [{ dataUrl, referenceType }] from IMAGE nodes with role "ref" OR shot bible
 //
 // NOTE: reference mode and frame mode are MUTUALLY EXCLUSIVE. If referenceImages is non-empty,
-// startFrame/endFrame are ignored. Gemini API frame-guided generation uses veo-3.1-generate-preview
-// with both image and lastFrame on the same instance payload.
+// startFrame/endFrame are ignored.
+// - Gemini API v1beta uses veo-3.1-generate-preview for text/reference-guided generation.
+// - Vertex AI uses veo-3.1-generate-001 for frame-guided generation.
 async function aiVeoCreate(shot, options = {}) {
   const { aspect_ratio = "16:9", duration = 8, resolution = "720p", startFrame = null, endFrame = null, referenceImages = [] } = options;
 
@@ -2118,9 +2119,9 @@ async function aiVeoCreate(shot, options = {}) {
   // When both are wired (refs + start frame), REFERENCE mode wins.
   const refs = referenceImages.filter(r => r.dataUrl?.startsWith("data:")).slice(0, 3);
   const hasRefs = refs.length > 0;
-  // veo-3.1-generate-001  → T2V, I2V, first+last frame interpolation (default for all modes)
-  // veo-3.1-generate-preview → video EXTENSION only; does NOT support lastFrame
-  const veoModel = options.extend ? "veo-3.1-generate-preview" : "veo-3.1-generate-001";
+  const hasFrameGuidance = !hasRefs && !!startFrame?.startsWith("data:");
+  // Gemini requests should stay on preview; Vertex frame guidance ignores this hint server-side.
+  const veoModel = "veo-3.1-generate-preview";
 
   const styledPrompt = applyVisualStylePrompt(
     (shot.compiledText || `${shot.how || ""} in ${shot.where || ""}`).trim() || "Cinematic shot",
@@ -2137,18 +2138,18 @@ async function aiVeoCreate(shot, options = {}) {
     resolution,
   };
 
-  if (hasRefs) {
-    // MODE B — reference-guided: refs go in parameters, no frame fields
-    parameters.referenceImages = refs.map(r => ({
-      image: dataUrlToVeo(r.dataUrl),
-      referenceType: r.referenceType || "asset",
-    }));
-  } else {
-    // MODE A — frame-guided: start frame in instances[0].image, end frame in parameters.lastFrame
-    if (startFrame?.startsWith("data:")) {
-      instance.image = dataUrlToVeo(startFrame);
-      if (endFrame?.startsWith("data:")) {
-        instance.lastFrame = dataUrlToVeo(endFrame);
+    if (hasRefs) {
+      // MODE B — reference-guided: refs go in parameters, no frame fields
+      parameters.referenceImages = refs.map(r => ({
+        image: dataUrlToVeo(r.dataUrl),
+        referenceType: r.referenceType || "asset",
+      }));
+    } else if (hasFrameGuidance) {
+      // MODE A — frame-guided: start frame in instances[0].image, end frame in parameters.lastFrame
+      if (startFrame?.startsWith("data:")) {
+        instance.image = dataUrlToVeo(startFrame);
+        if (endFrame?.startsWith("data:")) {
+          instance.lastFrame = dataUrlToVeo(endFrame);
       }
     }
   }

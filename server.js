@@ -776,7 +776,9 @@ app.post("/api/veo/video", async (req, res) => {
 
     const key = process.env.GEMINI_API_KEY;
     if (!key) return res.status(500).send("GEMINI_API_KEY not set");
-    const model = _veoModel || "veo-3.1-generate-preview";
+    const model = (_veoModel && _veoModel !== "veo-3.1-generate-001")
+      ? _veoModel
+      : "veo-3.1-generate-preview";
     const r = await post("generativelanguage.googleapis.com",
       `/v1beta/models/${model}:predictLongRunning?key=${key}`,
       {}, payload);
