@@ -283,6 +283,14 @@ function compileShotText(s) {
   return dialogueBlock ? `${withDirector}\nDialogue block:\n${dialogueBlock}` : withDirector;
 }
 
+function videoPromptFromShot(s) {
+  const raw = (s.compiledText || `${s.how || ""} in ${s.where || ""}`).trim() || "Cinematic shot";
+  const visualOnly = raw.split(/\nDialogue block:\n/i)[0].trim() || raw;
+  const spokenText = stripSpeakerNames(s.dialogue || "").trim();
+  if (!spokenText) return visualOnly;
+  return `${visualOnly} The subject is visibly speaking with natural facial performance and conversational timing. Do not include subtitles, captions, or on-screen text.`;
+}
+
 function getSceneShots(nodes, sceneId) {
   return nodes.filter(n => n.type === T.SHOT && n.sceneId === sceneId);
 }
@@ -2124,7 +2132,7 @@ async function aiVeoCreate(shot, options = {}) {
   const veoModel = "veo-3.1-generate-preview";
 
   const styledPrompt = applyVisualStylePrompt(
-    (shot.compiledText || `${shot.how || ""} in ${shot.where || ""}`).trim() || "Cinematic shot",
+    videoPromptFromShot(shot),
     shot.visualStyle,
     "video"
   );
