@@ -12840,9 +12840,9 @@ export default function App() {
                 );
               })()}
 
-                </div>{/* maxWidth wrapper */}
-              </div>{/* scrollable surface */}
-            )}{/* end script+shot block */}
+                </div>
+              </div>
+            )}
 
             {/* ── SCENE: two-zone layout ──────────────────────────────────── */}
             {writingEditableNode?.type === T.SCENE && (() => {
