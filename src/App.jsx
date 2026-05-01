@@ -12761,13 +12761,59 @@ export default function App() {
                       </div>
                     )}
 
+                    {/* shots strip */}
+                    <div>
+                      <div style={{ fontSize:9, color:th.t3, letterSpacing:"0.14em", fontFamily:"'Inter',system-ui,sans-serif", marginBottom:10 }}>
+                        SHOTS — {sceneShots.length} · {sceneShots.reduce((s,sh)=>s+(sh.durationSec||0),0)}s
+                      </div>
+                      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                        {sceneShots.map(sh => {
+                          const dq = sh.directorQuality;
+                          const dqC = dq==="good"?"#4ade80":dq==="warn"?"#fbbf24":dq==="flag"?"#f87171":null;
+                          return (
+                            <button key={sh.id} onClick={()=>setSelId(sh.id)} style={{
+                              textAlign:"left", background:th.card2, border:`1px solid ${th.b0}`,
+                              borderRadius:8, padding:"10px 14px", cursor:"pointer", width:"100%",
+                              transition:"border-color 0.12s",
+                            }}
+                            onMouseEnter={e=>e.currentTarget.style.borderColor=th.t3}
+                            onMouseLeave={e=>e.currentTarget.style.borderColor=th.b0}
+                            >
+                              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5 }}>
+                                <span style={{ fontSize:9, color:"#38bdf8", letterSpacing:"0.14em", fontWeight:700, fontFamily:"'Inter',system-ui,sans-serif" }}>
+                                  SHOT {sh.index}
+                                </span>
+                                {dqC && <span style={{ width:6, height:6, borderRadius:"50%", background:dqC, flexShrink:0 }} />}
+                                <span style={{ marginLeft:"auto", fontSize:9, color:th.t4, fontFamily:"'Inter',system-ui,sans-serif" }}>
+                                  {sh.cameraSize} · {sh.cameraMovement} · {sh.durationSec}s
+                                </span>
+                              </div>
+                              <div style={{ fontSize:12, color:th.t1, lineHeight:1.5,
+                                display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>
+                                {sh.how || sh.visualGoal || sh.where || "Empty shot"}
+                              </div>
+                              {sh.directorNote && (
+                                <div style={{ fontSize:11, color:th.t3, marginTop:5, lineHeight:1.4,
+                                  whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                                  {sh.directorNote}
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                        <button onClick={()=>createWritingShot(sc.id, sceneShots.slice(-1)[0]?.id || null)}
+                          style={{ textAlign:"center", background:"transparent", border:`1px dashed ${th.b0}`,
+                            borderRadius:8, padding:"9px 14px", cursor:"pointer", color:th.t4, width:"100%",
+                            fontSize:11, fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em" }}>
+                          + ADD SHOT
+                        </button>
+                      </div>
+                    </div>
+
                     {/* action row */}
                     <div style={{ display:"flex", alignItems:"center", gap:8, paddingTop:4 }}>
                       <button onClick={()=>onGenShots(sc)} style={{ ...wmPrimaryBtn, padding:"9px 20px", fontSize:12 }}>
                         GENERATE SHOTS
-                      </button>
-                      <button onClick={()=>createWritingShot(sc.id, sceneShots.slice(-1)[0]?.id || null)} style={wmGhostBtn}>
-                        + SHOT
                       </button>
                       {!coherence && (
                         <button onClick={()=>runSceneDirectorReview(sc)} disabled={reviewingSceneId===sc.id}
