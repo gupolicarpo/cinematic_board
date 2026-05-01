@@ -12620,15 +12620,19 @@ export default function App() {
           </div>
 
           {/* ══ RIGHT: editor ══════════════════════════════════════════════════ */}
-          <div style={{ background:th.bg, overflowY:"auto", minWidth:0 }}>
-            <div style={{ maxWidth:760, margin:"0 auto", padding:"32px 36px 100px" }}>
+          <div style={{ background:th.bg, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
 
-              {/* empty state */}
-              {!writingEditableNode && (
-                <div style={{ color:th.t3, fontSize:13, lineHeight:1.7, paddingTop:40, textAlign:"center" }}>
-                  Select a scene or shot from the outline.
-                </div>
-              )}
+            {/* empty state */}
+            {!writingEditableNode && (
+              <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <div style={{ color:th.t3, fontSize:13, lineHeight:1.7 }}>Select a scene or shot from the outline.</div>
+              </div>
+            )}
+
+            {/* script + shot share a simple scrollable surface */}
+            {writingEditableNode && writingEditableNode.type !== T.SCENE && (
+              <div style={{ flex:1, overflowY:"auto" }}>
+                <div style={{ maxWidth:760, margin:"0 auto", padding:"32px 36px 100px" }}>
 
               {/* ── SCRIPT ──────────────────────────────────────────────────── */}
               {writingEditableNode?.type === T.SCRIPT && (
@@ -12660,175 +12664,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* ── SCENE ───────────────────────────────────────────────────── */}
-              {writingEditableNode?.type === T.SCENE && (() => {
-                const sc = writingEditableNode;
-                const ac = styleColor[sc.cinematicStyle] || "#94a3b8";
-                const coherence = sc.directorCoherence || null;
-                const cscore = coherence?.score ?? null;
-                const sceneShots = writingShotsForScene(sc.id);
-                return (
-                  <div style={{ display:"flex", flexDirection:"column", gap:28 }}>
-
-                    {/* scene header */}
-                    <div>
-                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-                        <span style={{ fontSize:9, color:ac, letterSpacing:"0.18em", fontWeight:700,
-                          fontFamily:"'Inter',system-ui,sans-serif" }}>
-                          SCENE {(writingScenes.findIndex(s=>s.id===sc.id)+1).toString().padStart(2,"0")}
-                        </span>
-                        <span style={{ fontSize:9, color:ac, opacity:0.6, fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.1em" }}>
-                          {sc.cinematicStyle?.toUpperCase()}
-                        </span>
-                        {cscore != null && (
-                          <span style={{ marginLeft:"auto", fontSize:9, fontWeight:700, fontFamily:"'Inter',system-ui,sans-serif",
-                            color: cscore>=85?"#4ade80":cscore>=60?"#fbbf24":"#f87171" }}>
-                            CONTINUITY {cscore}/100
-                          </span>
-                        )}
-                      </div>
-                      <input
-                        value={sc.sceneHeading || ""}
-                        onChange={e=>updNode(sc.id, { sceneHeading:e.target.value })}
-                        placeholder="INT. LOCATION — DAY"
-                        style={{ ...wmInput, fontSize:20, fontWeight:700, letterSpacing:"0.01em", padding:"0",
-                          background:"transparent", border:"none", borderBottom:`2px solid ${ac}44`,
-                          borderRadius:0, paddingBottom:10, marginBottom:0 }}
-                      />
-                    </div>
-
-                    {/* style strip */}
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-                      <div>
-                        <label style={wmLabel}>Cinematic Style</label>
-                        <select value={sc.cinematicStyle || "thriller"} onChange={e=>updNode(sc.id, { cinematicStyle:e.target.value })} style={wmSelect}>
-                          {CINEMATIC_STYLES.map(v => <option key={v} value={v}>{v}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={wmLabel}>Visual Style</label>
-                        <select value={sc.visualStyle || "none"} onChange={e=>updNode(sc.id, { visualStyle:e.target.value })} style={wmSelect}>
-                          {VISUAL_STYLES.map(v => <option key={v} value={v}>{VISUAL_STYLE_PRESETS[v]?.label || v}</option>)}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* scene text — primary surface */}
-                    <div style={wmSection}>
-                      <label style={wmLabel}>Scene</label>
-                      <textarea
-                        value={sc.sceneText || ""}
-                        onChange={e=>updNode(sc.id, { sceneText:e.target.value })}
-                        placeholder="Describe what happens in this scene. Use @tags to reference characters, locations, and objects from your World Bible."
-                        style={{ ...wmTextArea, minHeight:280, fontSize:14, lineHeight:1.85 }}
-                      />
-                    </div>
-
-                    {/* dialogue */}
-                    <div style={wmSection}>
-                      <label style={wmLabel}>Dialogue</label>
-                      <textarea
-                        value={formatDialogueLines(sc.dialogueLines || [])}
-                        onChange={e=>updNode(sc.id, { dialogueLines: parseDialogueLines(e.target.value) })}
-                        placeholder={"Character Name: Line of dialogue.\nOther Character: Response."}
-                        style={{ ...wmTextArea, minHeight:160, fontFamily:"'Courier New', monospace", fontSize:13, lineHeight:1.85 }}
-                      />
-                    </div>
-
-                    {/* continuity status */}
-                    {coherence && (
-                      <div style={{ ...wmCard, borderColor: cscore>=85?"#4ade8033":cscore>=60?"#fbbf2433":"#f8717133" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom: coherence.recommendation ? 10 : 0 }}>
-                          <div style={{ fontSize:28, fontWeight:800, color: cscore>=85?"#4ade80":cscore>=60?"#fbbf24":"#f87171", fontFamily:"'Inter',system-ui,sans-serif", lineHeight:1 }}>
-                            {cscore}
-                          </div>
-                          <div>
-                            <div style={{ fontSize:9, color:th.t3, letterSpacing:"0.14em", fontFamily:"'Inter',system-ui,sans-serif" }}>CONTINUITY SCORE</div>
-                            <div style={{ fontSize:11, color:th.t2, marginTop:2 }}>
-                              {sceneShots.length} shot{sceneShots.length!==1?"s":""} · {sceneShots.reduce((s,sh)=>s+(sh.durationSec||0),0)}s total
-                            </div>
-                          </div>
-                          <button onClick={()=>runSceneDirectorReview(sc)} disabled={reviewingSceneId===sc.id}
-                            style={{ ...wmGhostBtn, marginLeft:"auto", fontSize:10, opacity:reviewingSceneId===sc.id?0.5:1 }}>
-                            {reviewingSceneId===sc.id?"REVIEWING…":"RE-REVIEW"}
-                          </button>
-                        </div>
-                        {coherence.recommendation && (
-                          <div style={{ fontSize:12, color:th.t2, lineHeight:1.65, borderTop:`1px solid ${th.b0}`, paddingTop:10 }}>
-                            {coherence.recommendation}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* shots strip */}
-                    <div>
-                      <div style={{ fontSize:9, color:th.t3, letterSpacing:"0.14em", fontFamily:"'Inter',system-ui,sans-serif", marginBottom:10 }}>
-                        SHOTS — {sceneShots.length} · {sceneShots.reduce((s,sh)=>s+(sh.durationSec||0),0)}s
-                      </div>
-                      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                        {sceneShots.map(sh => {
-                          const dq = sh.directorQuality;
-                          const dqC = dq==="good"?"#4ade80":dq==="warn"?"#fbbf24":dq==="flag"?"#f87171":null;
-                          return (
-                            <button key={sh.id} onClick={()=>setSelId(sh.id)} style={{
-                              textAlign:"left", background:th.card2, border:`1px solid ${th.b0}`,
-                              borderRadius:8, padding:"10px 14px", cursor:"pointer", width:"100%",
-                              transition:"border-color 0.12s",
-                            }}
-                            onMouseEnter={e=>e.currentTarget.style.borderColor=th.t3}
-                            onMouseLeave={e=>e.currentTarget.style.borderColor=th.b0}
-                            >
-                              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5 }}>
-                                <span style={{ fontSize:9, color:"#38bdf8", letterSpacing:"0.14em", fontWeight:700, fontFamily:"'Inter',system-ui,sans-serif" }}>
-                                  SHOT {sh.index}
-                                </span>
-                                {dqC && <span style={{ width:6, height:6, borderRadius:"50%", background:dqC, flexShrink:0 }} />}
-                                <span style={{ marginLeft:"auto", fontSize:9, color:th.t4, fontFamily:"'Inter',system-ui,sans-serif" }}>
-                                  {sh.cameraSize} · {sh.cameraMovement} · {sh.durationSec}s
-                                </span>
-                              </div>
-                              <div style={{ fontSize:12, color:th.t1, lineHeight:1.5,
-                                display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>
-                                {sh.how || sh.visualGoal || sh.where || "Empty shot"}
-                              </div>
-                              {sh.directorNote && (
-                                <div style={{ fontSize:11, color:th.t3, marginTop:5, lineHeight:1.4,
-                                  whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                                  {sh.directorNote}
-                                </div>
-                              )}
-                            </button>
-                          );
-                        })}
-                        <button onClick={()=>createWritingShot(sc.id, sceneShots.slice(-1)[0]?.id || null)}
-                          style={{ textAlign:"center", background:"transparent", border:`1px dashed ${th.b0}`,
-                            borderRadius:8, padding:"9px 14px", cursor:"pointer", color:th.t4, width:"100%",
-                            fontSize:11, fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.08em" }}>
-                          + ADD SHOT
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* action row */}
-                    <div style={{ display:"flex", alignItems:"center", gap:8, paddingTop:4 }}>
-                      <button onClick={()=>onGenShots(sc)} style={{ ...wmPrimaryBtn, padding:"9px 20px", fontSize:12 }}>
-                        GENERATE SHOTS
-                      </button>
-                      {!coherence && (
-                        <button onClick={()=>runSceneDirectorReview(sc)} disabled={reviewingSceneId===sc.id}
-                          style={{ ...wmGhostBtn, opacity:reviewingSceneId===sc.id?0.5:1 }}>
-                          {reviewingSceneId===sc.id?"REVIEWING…":"REVIEW CONTINUITY"}
-                        </button>
-                      )}
-                      <button onClick={()=>deleteWritingNode(sc.id)} style={{ ...wmDangerLink, marginLeft:"auto" }}>
-                        DELETE SCENE
-                      </button>
-                    </div>
-
-                  </div>
-                );
-              })()}
 
               {/* ── SHOT ────────────────────────────────────────────────────── */}
               {writingEditableNode?.type === T.SHOT && (() => {
@@ -13005,10 +12840,179 @@ export default function App() {
                 );
               })()}
 
-            </div>
-          </div>
-        </div>
-      </div>
+                </div>{/* maxWidth wrapper */}
+              </div>{/* scrollable surface */}
+            )}{/* end script+shot block */}
+
+            {/* ── SCENE: two-zone layout ──────────────────────────────────── */}
+            {writingEditableNode?.type === T.SCENE && (() => {
+              const sc = writingEditableNode;
+              const ac = styleColor[sc.cinematicStyle] || "#94a3b8";
+              const coherence = sc.directorCoherence || null;
+              const cscore = coherence?.score ?? null;
+              const sceneShots = writingShotsForScene(sc.id);
+              const sceneIdx = writingScenes.findIndex(s=>s.id===sc.id);
+
+              return (
+                <>
+                  {/* ── zone 1: writing surface (scrolls) ─────────────────── */}
+                  <div style={{ flex:1, overflowY:"auto" }}>
+                    <div style={{ maxWidth:760, margin:"0 auto", padding:"28px 36px 40px", display:"flex", flexDirection:"column", gap:24 }}>
+
+                      {/* scene identity header */}
+                      <div style={{ borderBottom:`2px solid ${ac}33`, paddingBottom:14 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                          <span style={{ fontSize:9, color:ac, letterSpacing:"0.18em", fontWeight:700, fontFamily:"'Inter',system-ui,sans-serif" }}>
+                            SCENE {(sceneIdx+1).toString().padStart(2,"0")}
+                          </span>
+                          <span style={{ fontSize:9, color:ac, opacity:0.6, fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.1em" }}>
+                            {sc.cinematicStyle?.toUpperCase()}
+                          </span>
+                          {cscore != null && (
+                            <span style={{ marginLeft:"auto", fontSize:10, fontWeight:700, fontFamily:"'Inter',system-ui,sans-serif",
+                              color: cscore>=85?"#4ade80":cscore>=60?"#fbbf24":"#f87171", letterSpacing:"0.06em" }}>
+                              CONTINUITY {cscore}/100
+                            </span>
+                          )}
+                        </div>
+                        <input
+                          value={sc.sceneHeading || ""}
+                          onChange={e=>updNode(sc.id, { sceneHeading:e.target.value })}
+                          placeholder="INT. LOCATION — DAY"
+                          style={{ ...wmInput, fontSize:22, fontWeight:700, letterSpacing:"0.01em",
+                            background:"transparent", border:"none", borderRadius:0, padding:"0",
+                            color: sc.sceneHeading ? th.t0 : th.t3 }}
+                        />
+                      </div>
+
+                      {/* style strip */}
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                        <div>
+                          <label style={wmLabel}>Cinematic Style</label>
+                          <select value={sc.cinematicStyle || "thriller"} onChange={e=>updNode(sc.id, { cinematicStyle:e.target.value })} style={wmSelect}>
+                            {CINEMATIC_STYLES.map(v => <option key={v} value={v}>{v}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={wmLabel}>Visual Style</label>
+                          <select value={sc.visualStyle || "none"} onChange={e=>updNode(sc.id, { visualStyle:e.target.value })} style={wmSelect}>
+                            {VISUAL_STYLES.map(v => <option key={v} value={v}>{VISUAL_STYLE_PRESETS[v]?.label || v}</option>)}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* scene text */}
+                      <div style={wmSection}>
+                        <label style={wmLabel}>Scene</label>
+                        <textarea
+                          value={sc.sceneText || ""}
+                          onChange={e=>updNode(sc.id, { sceneText:e.target.value })}
+                          placeholder="Describe what happens. Use @tags to reference characters, locations, and objects from your World Bible."
+                          style={{ ...wmTextArea, minHeight:240, fontSize:14, lineHeight:1.85 }}
+                        />
+                      </div>
+
+                      {/* dialogue */}
+                      <div style={wmSection}>
+                        <label style={wmLabel}>Dialogue</label>
+                        <textarea
+                          value={formatDialogueLines(sc.dialogueLines || [])}
+                          onChange={e=>updNode(sc.id, { dialogueLines: parseDialogueLines(e.target.value) })}
+                          placeholder={"Character Name: Line of dialogue.\nOther Character: Response."}
+                          style={{ ...wmTextArea, minHeight:130, fontFamily:"'Courier New', monospace", fontSize:13, lineHeight:1.85 }}
+                        />
+                      </div>
+
+                      {/* continuity recommendation when available */}
+                      {coherence?.recommendation && (
+                        <div style={{ ...wmCard, borderColor: cscore>=85?"#4ade8033":cscore>=60?"#fbbf2433":"#f8717133",
+                          display:"flex", alignItems:"flex-start", gap:14 }}>
+                          <div style={{ fontSize:32, fontWeight:800, lineHeight:1, flexShrink:0,
+                            color: cscore>=85?"#4ade80":cscore>=60?"#fbbf24":"#f87171",
+                            fontFamily:"'Inter',system-ui,sans-serif" }}>
+                            {cscore}
+                          </div>
+                          <div style={{ flex:1 }}>
+                            <div style={{ fontSize:9, color:th.t3, letterSpacing:"0.14em", fontFamily:"'Inter',system-ui,sans-serif", marginBottom:6 }}>DIRECTOR NOTE</div>
+                            <div style={{ fontSize:12, color:th.t2, lineHeight:1.7 }}>{coherence.recommendation}</div>
+                          </div>
+                          <button onClick={()=>runSceneDirectorReview(sc)} disabled={reviewingSceneId===sc.id}
+                            style={{ ...wmGhostBtn, fontSize:10, flexShrink:0, opacity:reviewingSceneId===sc.id?0.5:1 }}>
+                            {reviewingSceneId===sc.id?"…":"RE-REVIEW"}
+                          </button>
+                        </div>
+                      )}
+
+                    </div>
+                  </div>
+
+                  {/* ── zone 2: shots footer (always visible) ─────────────── */}
+                  <div style={{ borderTop:`1px solid ${th.b0}`, background:th.card, flexShrink:0 }}>
+                    {/* shots row */}
+                    <div style={{ overflowX:"auto", padding:"12px 20px 0" }}>
+                      <div style={{ display:"flex", gap:8, alignItems:"stretch", minWidth:"max-content", paddingBottom:12 }}>
+                        {sceneShots.map(sh => {
+                          const dq = sh.directorQuality;
+                          const dqC = dq==="good"?"#4ade80":dq==="warn"?"#fbbf24":dq==="flag"?"#f87171":null;
+                          return (
+                            <button key={sh.id} onClick={()=>setSelId(sh.id)} style={{
+                              textAlign:"left", background:th.card2, border:`1px solid ${th.b0}`,
+                              borderRadius:8, padding:"10px 12px", cursor:"pointer", width:220, flexShrink:0,
+                              transition:"border-color 0.12s",
+                            }}
+                            onMouseEnter={e=>e.currentTarget.style.borderColor="#38bdf8"}
+                            onMouseLeave={e=>e.currentTarget.style.borderColor=th.b0}
+                            >
+                              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
+                                <span style={{ fontSize:9, color:"#38bdf8", letterSpacing:"0.12em", fontWeight:700, fontFamily:"'Inter',system-ui,sans-serif" }}>
+                                  SHOT {sh.index}
+                                </span>
+                                {dqC && <span style={{ width:5, height:5, borderRadius:"50%", background:dqC }} />}
+                                <span style={{ marginLeft:"auto", fontSize:9, color:th.t4, fontFamily:"'Inter',system-ui,sans-serif" }}>
+                                  {sh.cameraSize} · {sh.durationSec}s
+                                </span>
+                              </div>
+                              <div style={{ fontSize:11, color:th.t1, lineHeight:1.45,
+                                display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>
+                                {sh.how || sh.visualGoal || sh.where || "Empty shot"}
+                              </div>
+                            </button>
+                          );
+                        })}
+                        {/* add shot */}
+                        <button onClick={()=>createWritingShot(sc.id, sceneShots.slice(-1)[0]?.id||null)} style={{
+                          background:"transparent", border:`1px dashed ${th.b0}`, borderRadius:8,
+                          padding:"10px 16px", cursor:"pointer", color:th.t4, flexShrink:0, width:120,
+                          fontSize:11, fontFamily:"'Inter',system-ui,sans-serif", letterSpacing:"0.06em",
+                        }}>
+                          + SHOT
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* action bar */}
+                    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 20px 14px", borderTop:`1px solid ${th.b0}` }}>
+                      <button onClick={()=>onGenShots(sc)} style={{ ...wmPrimaryBtn, padding:"8px 18px" }}>
+                        GENERATE SHOTS
+                      </button>
+                      {!coherence && (
+                        <button onClick={()=>runSceneDirectorReview(sc)} disabled={reviewingSceneId===sc.id}
+                          style={{ ...wmGhostBtn, opacity:reviewingSceneId===sc.id?0.5:1 }}>
+                          {reviewingSceneId===sc.id?"REVIEWING…":"REVIEW CONTINUITY"}
+                        </button>
+                      )}
+                      <button onClick={()=>deleteWritingNode(sc.id)} style={{ ...wmDangerLink, marginLeft:"auto" }}>
+                        DELETE SCENE
+                      </button>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+
+          </div>{/* right panel */}
+        </div>{/* grid */}
+      </div>{/* outer flex */}
     );
   };
 
