@@ -13010,9 +13010,9 @@ export default function App() {
               );
             })()}
 
-          </div>{/* right panel */}
-        </div>{/* grid */}
-      </div>{/* outer flex */}
+          </div>
+        </div>
+      </div>
     );
   };
 
