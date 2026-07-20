@@ -11,6 +11,13 @@ async function authHeaders() {
   return { Authorization: `Bearer ${session.access_token}` };
 }
 
+// Every /api route that spends provider credits requires a signed-in session.
+// apiFetch attaches the bearer token so no call site can forget it.
+async function apiFetch(url, options = {}) {
+  const auth = await authHeaders();
+  return fetch(url, { ...options, headers: { ...(options.headers || {}), ...auth } });
+}
+
 // ─── ICON HELPER ──────────────────────────────────────────────────────────────
 const Ico = ({ icon: Icon, size=10, color, style, sw=1.5 }) =>
   <Icon size={size} color={color} strokeWidth={sw} style={{ display:"inline-block", verticalAlign:"middle", flexShrink:0, ...style }} />;
@@ -44,7 +51,7 @@ const CAMERA_MOVEMENTS = ["static","slow-push-in","pull-back","pan","tilt","trac
 const LIGHTING_STYLES = ["natural-soft","hard-contrast","low-key","high-key","practical-night","backlit","silhouetted"];
 const styleColor = { drama:"#c084fc",thriller:"#f87171",action:"#fb923c",noir:"#94a3b8","sci-fi":"#38bdf8","epic-fantasy":"#a3e635",documentary:"#fbbf24",comedy:"#f472b6" };
 const styleEmoji = { drama:"🎭",thriller:"🔪",action:"💥",noir:"🌑","sci-fi":"🚀","epic-fantasy":"🐉",documentary:"🎥",comedy:"😂" };
-const T = { SCENE:"scene", SHOT:"shot", IMAGE:"image", KLING:"kling", VEO:"veo", LLM:"llm", VIDEOEDIT:"videoedit", SCRIPT:"script", AUDIO:"audio", CLIP:"clip" };
+const T = { SCENE:"scene", SHOT:"shot", IMAGE:"image", KLING:"kling", VEO:"veo", SEEDANCE:"seedance", LLM:"llm", VIDEOEDIT:"videoedit", SCRIPT:"script", AUDIO:"audio", CLIP:"clip" };
 const uid = () => Math.random().toString(36).slice(2,9);
 
 // ─── KLING CONSTRAINTS ────────────────────────────────────────────────────────
@@ -64,6 +71,121 @@ function compileShotText(s) {
   const tags = s.entityTags?.length ? s.entityTags.join(" ") : "";
   const base = `${capitalize(s.cameraSize)} cinematic shot at ${s.when}, ${s.cameraAngle}, ${humanizeMove(s.cameraMovement)}, lens ${s.lens}, ${humanizeLighting(s.lighting)}.${tags ? " "+tags : ""} ${s.how} in ${s.where}. Visual goal: ${s.visualGoal}.`;
   return s.directorNote ? `${base} Director's intent: ${s.directorNote}` : base;
+}
+
+function promptSentence(label, value) {
+  const text = String(value || "").trim().replace(/[.\s]+$/, "");
+  return text ? `${label}${text}.` : "";
+}
+
+// Reference images are this app's identity anchor, but every generator filters the
+// bible down to entries that HAVE an image — an entry without one is dropped and
+// the model is left with an opaque tag like "@c3a2". Expanding those tags into
+// "@c3a2 (Name — description)" keeps a textual identity for them. Entries whose
+// image was actually sent are skipped: the image already identifies them.
+function expandTagsInPrompt(prompt, bibleEntries, tagsWithImages = new Set()) {
+  let out = prompt || "";
+  for (const e of bibleEntries || []) {
+    if (!e?.tag || tagsWithImages.has(e.tag)) continue;
+    const desc = [e.name, e.description || e.notes].filter(Boolean).join(" — ");
+    if (!desc || out.includes(`${e.tag} (`)) continue;
+    // Negative lookahead so "@c3" never matches inside "@c3a2".
+    const escaped = e.tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    out = out.replace(new RegExp(`${escaped}(?![A-Za-z0-9_-])`, "g"), `${e.tag} (${desc})`);
+  }
+  return out;
+}
+
+// Keeps provider limits from cutting a prompt halfway through an instruction.
+function fitPromptAtSentenceBoundary(prompt, maxChars) {
+  const text = String(prompt || "").replace(/\s+/g, " ").trim();
+  if (!maxChars || text.length <= maxChars) return text;
+
+  const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
+  let result = "";
+  for (const sentence of sentences) {
+    const clean = sentence.trim();
+    const candidate = result ? `${result} ${clean}` : clean;
+    if (candidate.length <= maxChars) {
+      result = candidate;
+      continue;
+    }
+    if (result) break;
+
+    const available = Math.max(1, maxChars - 1);
+    const partial = clean.slice(0, available);
+    const phraseEnd = Math.max(partial.lastIndexOf(","), partial.lastIndexOf(";"), partial.lastIndexOf(" — "));
+    const wordEnd = partial.lastIndexOf(" ");
+    const cutAt = phraseEnd > available * 0.55 ? phraseEnd : wordEnd;
+    return `${partial.slice(0, cutAt > 0 ? cutAt : available).trim()}.`;
+  }
+  return result;
+}
+
+// styleLine (see sceneLookLine) leads every prompt so all shots of a scene share
+// the same photography instead of each being rendered in isolation.
+function compileShotForImage(s, styleLine = "") {
+  const tags = s.entityTags?.length ? `${s.entityTags.join(" ")} ` : "";
+  return [
+    styleLine,
+    "Single decisive cinematic still frame.",
+    promptSentence("Composition: ", `${s.cameraSize} shot, ${s.cameraAngle}, ${s.lens} lens, ${humanizeLighting(s.lighting)}`),
+    promptSentence("Visible moment: ", `${tags}${s.how} in ${s.where}`),
+    promptSentence("Temporal context: ", s.when),
+    promptSentence("Visual priority: ", s.visualGoal),
+  ].filter(Boolean).join(" ");
+}
+
+function compileShotForKling(s, styleLine = "") {
+  const tags = s.entityTags?.length ? `${s.entityTags.join(" ")} ` : "";
+  return [
+    styleLine,
+    promptSentence("Visible action: ", `${tags}${s.how} in ${s.where}`),
+    promptSentence("Camera: ", `${s.cameraSize} shot, ${s.cameraAngle}, ${humanizeMove(s.cameraMovement)}`),
+    promptSentence("Look: ", `${s.lens} lens, ${humanizeLighting(s.lighting)}`),
+    promptSentence("Timing: ", s.when),
+    promptSentence("Visual priority: ", s.visualGoal),
+    promptSentence("Direction: ", s.directorNote),
+  ].filter(Boolean).join(" ");
+}
+
+function compileShotForVeo(s, maxChars = 2000, styleLine = "") {
+  const tags = s.entityTags?.length ? `${s.entityTags.join(" ")} ` : "";
+  const prompt = [
+    styleLine,
+    promptSentence("Scene and action: ", `${tags}${s.how} in ${s.where}`),
+    promptSentence("Temporal context: ", s.when),
+    promptSentence("Cinematography: ", `${s.cameraSize} shot, ${s.cameraAngle}, ${humanizeMove(s.cameraMovement)}, ${s.lens} lens`),
+    promptSentence("Lighting: ", humanizeLighting(s.lighting)),
+    promptSentence("Visual priority: ", s.visualGoal),
+    promptSentence("Director's execution priority: ", s.directorNote),
+  ].filter(Boolean).join(" ");
+  return fitPromptAtSentenceBoundary(prompt, maxChars);
+}
+
+function compileShotForSeedance(s, referenceLabels = [], styleLine = "") {
+  const tags = s.entityTags?.length ? `${s.entityTags.join(" ")} ` : "";
+  const prompt = [
+    styleLine,
+    promptSentence("Action and blocking: ", `${tags}${s.how} in ${s.where}`),
+    promptSentence("Timing and progression: ", s.when),
+    promptSentence("Cinematography: ", `${s.cameraSize} shot, ${s.cameraAngle}, ${humanizeMove(s.cameraMovement)}, ${s.lens} lens`),
+    promptSentence("Lighting and look: ", humanizeLighting(s.lighting)),
+    promptSentence("Visual priority: ", s.visualGoal),
+    promptSentence("Director's execution priority: ", s.directorNote),
+    referenceLabels.length ? promptSentence("Reference mapping: ", referenceLabels.map((label, i) => `Image ${i + 1} = ${label}`).join("; ")) : "",
+  ].filter(Boolean).join(" ");
+  return fitPromptAtSentenceBoundary(prompt, 6000);
+}
+
+function bibleEntriesForShot(shot, ...sources) {
+  const merged = sources.flat().filter((entry, index, all) =>
+    entry?.tag && all.findIndex(other => other?.tag === entry.tag) === index
+  );
+  if (!shot) return merged;
+  const tags = shot?.entityTags || [];
+  if (tags.length === 0) return [];
+  return tags.map(tag => merged.find(entry => entry.tag === tag)).filter(Boolean);
 }
 
 function getSceneShots(nodes, sceneId) {
@@ -194,6 +316,7 @@ function mkShot(sceneId,index=1) { return { id:`sh_${uid()}`, type:T.SHOT, scene
 function mkImage(sceneId=null, shotId=null) { return { id:`im_${uid()}`, type:T.IMAGE, sceneId, shotId, prompt:"", generatedUrl:null, entityTag:"", aspect_ratio:"1:1", resolution:"1K", refImageUrl:null }; }
 function mkKling() { return { id:`kl_${uid()}`, type:T.KLING, shotIds:[], imageRefIds:[], videoUrl:null, aspect_ratio:"16:9", mode:"pro", sound:"off", prevKlingId:null }; }
 function mkVeo()   { return { id:`veo_${uid()}`, type:T.VEO, shotId:null, videoUrl:null, aspect_ratio:"16:9", duration:8, startFrameNodeId:null, endFrameNodeId:null, refNodeIds:[], useRefs:true, refType:"asset", manualPrompt:"" }; }
+function mkSeedance() { return { id:`sed_${uid()}`, type:T.SEEDANCE, shotId:null, refNodeIds:[], videoUrl:null, manualPrompt:"", ratio:"16:9", duration:5, resolution:"720p", generateAudio:true, imageMode:"reference" }; }
 function mkLlm()   { return { id:`llm_${uid()}`, type:T.LLM, targetNodeId:null, command:"", model:"claude-sonnet-4-20250514", lastResult:null }; }
 function mkVideoEdit() { return { id:`ved_${uid()}`, type:T.VIDEOEDIT, videoNodeIds:[], localClips:[], clipOrder:[], trims:{}, exportFormat:"1080p" }; }
 function mkScript()   { return { id:`scr_${uid()}`, type:T.SCRIPT, title:"Untitled Script", script:"", idea:"", format:"screenplay", scriptMode:"write" }; }
@@ -202,11 +325,75 @@ function mkClip()     { return { id:`clp_${uid()}`, type:T.CLIP,  videoUrl:null,
 
 // ─── AI ───────────────────────────────────────────────────────────────────────
 const SHOT_MODELS = [
-  { id:"claude-sonnet-4-20250514", label:"Claude Sonnet 4.6", provider:"anthropic", color:"#f87171" },
+  { id:"claude-sonnet-4-20250514", label:"Claude Sonnet 4",   provider:"anthropic", color:"#f87171" },
   { id:"gpt-5.4",                  label:"GPT-5.4",           provider:"openai",    color:"#10b981" },
   { id:"gpt-5.4-mini",             label:"GPT-5.4 mini",      provider:"openai",    color:"#34d399" },
   { id:"gpt-5.4-nano",             label:"GPT-5.4 nano",      provider:"openai",    color:"#6ee7b7" },
 ];
+
+// Pull the first JSON array or object out of a model response.
+function extractJson(text, shape) {
+  const clean = String(text || "").replace(/```json|```/g, "").trim();
+  const [open, close] = shape === "array" ? ["[", "]"] : ["{", "}"];
+  const start = clean.indexOf(open);
+  const end   = clean.lastIndexOf(close);
+  if (start === -1 || end === -1 || end < start) return null;
+  try { return JSON.parse(clean.slice(start, end + 1)); } catch (_) { return null; }
+}
+
+// Single entry point for every shot-model call. Replaces five copy-pasted
+// fetch/parse blocks, adds an explicit temperature (the default of 1.0 is far too
+// loose for a technical breakdown), and retries once when the model returns
+// something that is not valid JSON instead of throwing at the user.
+async function callShotModel({
+  model, system, user, maxTokens = 4000, temperature = 0.4,
+  expect = "json", shape = "array",
+}) {
+  const m = SHOT_MODELS.find(x => x.id === model) || SHOT_MODELS[0];
+
+  const once = async (userContent) => {
+    let txt = "";
+    if (m.provider === "anthropic") {
+      const r = await apiFetch("/api/messages", {
+        method:"POST", headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ model:m.id, max_tokens:maxTokens, temperature, system, messages:[{ role:"user", content:userContent }] }),
+      });
+      const raw = await r.text();
+      if (!r.ok) throw new Error(`Anthropic ${r.status}: ${raw.slice(0, 300)}`);
+      txt = JSON.parse(raw).content?.map(b => b.text || "").join("") || "";
+    } else {
+      const r = await apiFetch("/api/oai/messages", {
+        method:"POST", headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ model:m.id, max_tokens:maxTokens, temperature, messages:[{ role:"system", content:system }, { role:"user", content:userContent }] }),
+      });
+      const raw = await r.text();
+      if (!r.ok) throw new Error(`OpenAI ${r.status}: ${raw.slice(0, 300)}`);
+      const d = JSON.parse(raw);
+      txt = d.output?.find(o => o.type === "message")?.content?.find(c => c.type === "output_text")?.text
+        || d.choices?.[0]?.message?.content || "";
+    }
+    if (!txt) throw new Error("Empty response from model");
+    return txt;
+  };
+
+  const txt = await once(user);
+  if (expect === "text") return txt.trim();
+
+  const parsed = extractJson(txt, shape);
+  if (parsed !== null) return parsed;
+
+  // One retry with the failure stated plainly — models usually comply.
+  // The part type differs per provider: Anthropic uses "text", the OpenAI
+  // Responses API uses "input_text".
+  const retryNote = "Your previous response was not valid JSON. Return ONLY the JSON.";
+  const retryUser = typeof user === "string"
+    ? `${user}\n\n${retryNote}`
+    : [...user, m.provider === "anthropic" ? { type:"text", text:retryNote } : { type:"input_text", text:retryNote }];
+  const retryTxt = await once(retryUser);
+  const retryParsed = extractJson(retryTxt, shape);
+  if (retryParsed === null) throw new Error(`No valid JSON in response:\n${String(retryTxt).slice(0, 300)}`);
+  return retryParsed;
+}
 
 // ─── AI VERSION B — shot breakdown with Director critique injected ─────────────
 // Same as aiShots but prepends the Director's findings so the model knows what
@@ -248,32 +435,7 @@ STYLE: ${scene.cinematicStyle.toUpperCase()}: ${styleGuide}`;
 
   const usr = `Scene: "${scene.sceneText}"\nBible: ${bible}\n\nOriginal shot ${shot.index}: ${shot.how} in ${shot.where}. Camera: ${shot.cameraSize}, ${shot.cameraAngle}. Visual goal: ${shot.visualGoal}.\n\nDirector critique: ${issue}\n\nGenerate an improved replacement.`;
 
-  const m = SHOT_MODELS.find(x=>x.id===model) || SHOT_MODELS[0];
-  let txt = "";
-  if (m.provider === "anthropic") {
-    const r = await fetch("/api/messages", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ model:m.id, max_tokens:800, system:sys, messages:[{role:"user",content:usr}] })
-    });
-    const raw = await r.text();
-    if (!r.ok) throw new Error(`Anthropic ${r.status}: ${raw.slice(0,200)}`);
-    const d = JSON.parse(raw);
-    txt = d.content?.map(b=>b.text||"").join("")||"";
-  } else {
-    const r = await fetch("/api/oai/messages", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ model:m.id, max_tokens:800, messages:[{role:"system",content:sys},{role:"user",content:usr}] })
-    });
-    const raw = await r.text();
-    if (!r.ok) throw new Error(`OpenAI ${r.status}: ${raw.slice(0,200)}`);
-    const d = JSON.parse(raw);
-    const outputBlock = d.output?.find(o=>o.type==="message");
-    txt = outputBlock?.content?.find(ct=>ct.type==="output_text")?.text || d.choices?.[0]?.message?.content || "";
-  }
-  const clean = txt.replace(/```json|```/g,"").trim();
-  const start = clean.indexOf("{"); const end = clean.lastIndexOf("}");
-  if (start===-1||end===-1) throw new Error("No JSON in retry response");
-  return JSON.parse(clean.slice(start,end+1));
+  return callShotModel({ model, system:sys, user:usr, maxTokens:800, temperature:0.4, shape:"object" });
 }
 
 async function aiShots(scene, model, versionBCritique = "") {
@@ -305,7 +467,7 @@ Return only a JSON array. ALL field values must be in English.
 
 Each shot must contain exactly these fields:
 - index
-- durationSec (integer between 1 and 5)
+- durationSec (integer between 2 and 8) — the real duration this beat needs on screen
 - sourceAnchor
 - where
 - entityTags
@@ -401,39 +563,13 @@ Return only JSON.`;
   }
 
   const m = SHOT_MODELS.find(x=>x.id===model) || SHOT_MODELS[0];
-  let txt = "";
-  if (m.provider === "anthropic") {
-    const userContent = bibleImgs.length > 0 ? buildAnthropicContent() : usrText;
-    const r = await fetch("/api/messages", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ model:m.id, max_tokens:4000, system:sys, messages:[{role:"user", content: userContent}] })
-    });
-    const raw = await r.text();
-    if (!r.ok) throw new Error(`Anthropic ${r.status}: ${raw.slice(0,300)}`);
-    const d = JSON.parse(raw);
-    txt = d.content?.map(b=>b.text||"").join("")||"";
-  } else {
-    const userContent = bibleImgs.length > 0 ? buildOAIContent() : usrText;
-    const r = await fetch("/api/oai/messages", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ model:m.id, max_tokens:4000, messages:[{role:"system",content:sys},{role:"user", content: userContent}] })
-    });
-    const raw = await r.text();
-    console.log("OpenAI raw response:", raw.slice(0, 500));
-    if (!r.ok) throw new Error(`OpenAI ${r.status}: ${raw.slice(0,500)}`);
-    const d = JSON.parse(raw);
-    // Responses API returns output array
-    const outputBlock = d.output?.find(o => o.type === "message");
-    txt = outputBlock?.content?.find(ct => ct.type === "output_text")?.text
-      || d.choices?.[0]?.message?.content  // fallback for chat completions
-      || "";
-  }
-  if (!txt) throw new Error("Empty response from model");
-  const clean = txt.replace(/```json|```/g,"").trim();
-  const start = clean.indexOf("[");
-  const end = clean.lastIndexOf("]");
-  if (start === -1 || end === -1) throw new Error("No JSON array in response:\n" + clean.slice(0,400));
-  return JSON.parse(clean.slice(start, end+1));
+  const userContent = bibleImgs.length === 0
+    ? usrText
+    : (m.provider === "anthropic" ? buildAnthropicContent() : buildOAIContent());
+
+  return callShotModel({
+    model, system:sys, user:userContent, maxTokens:4000, temperature:0.4, shape:"array",
+  });
 }
 // ─── AI DIRECTOR PASS ────────────────────────────────────────────────────────
 // Second-pass LLM call that reads finished shots and annotates each with a
@@ -441,7 +577,7 @@ Return only JSON.`;
 // Runs AFTER aiShots so it can never corrupt the story-fidelity of the breakdown.
 async function aiDirectorPass(scene, shots, model) {
   const shotsDesc = shots.map(s =>
-    `Shot ${s.index}: ${s.how} in ${s.where}. Camera: ${s.cameraSize}, ${s.cameraAngle}, ${s.cameraMovement}. Visual goal: ${s.visualGoal}.`
+    `Shot ${s.index} (${s.durationSec}s): ${s.how} in ${s.where}, ${s.when}. Entities: ${(s.entityTags||[]).join(", ") || "none"}. Camera: ${s.cameraSize}, ${s.cameraAngle}, ${s.cameraMovement}, ${s.lens}, ${s.lighting}. Visual goal: ${s.visualGoal}.`
   ).join("\n");
 
   const sys = `You are an experienced film director reviewing a shot breakdown. Your job is two things:
@@ -477,34 +613,13 @@ Rules:
 }`;
 
   const usr = `Scene: "${scene.sceneText}"\nStyle: ${scene.cinematicStyle}\n\nShots:\n${shotsDesc}`;
-  const m = SHOT_MODELS.find(x=>x.id===model) || SHOT_MODELS[0];
-  let txt = "";
   try {
-    if (m.provider === "anthropic") {
-      const r = await fetch("/api/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ model:m.id, max_tokens:2000, system:sys, messages:[{role:"user",content:usr}] })
-      });
-      const raw = await r.text();
-      if (!r.ok) throw new Error(`Anthropic ${r.status}: ${raw.slice(0,200)}`);
-      const d = JSON.parse(raw);
-      txt = d.content?.map(b=>b.text||"").join("")||"";
-    } else {
-      const r = await fetch("/api/oai/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ model:m.id, max_tokens:2000, messages:[{role:"system",content:sys},{role:"user",content:usr}] })
-      });
-      const raw = await r.text();
-      if (!r.ok) throw new Error(`OpenAI ${r.status}: ${raw.slice(0,200)}`);
-      const d = JSON.parse(raw);
-      const outputBlock = d.output?.find(o=>o.type==="message");
-      txt = outputBlock?.content?.find(ct=>ct.type==="output_text")?.text || d.choices?.[0]?.message?.content || "";
-    }
-    const clean = txt.replace(/```json|```/g,"").trim();
-    const start = clean.indexOf("{"); const end = clean.lastIndexOf("}");
-    if (start === -1 || end === -1) return null;
-    return JSON.parse(clean.slice(start, end+1));
+    return await callShotModel({
+      model, system:sys, user:usr, maxTokens:2000, temperature:0.4, shape:"object",
+    });
   } catch(e) {
+    // Non-blocking by design: the breakdown is still usable without notes.
+    // The caller surfaces the failure so it is not silently invisible.
     console.warn("Director pass failed (non-blocking):", e.message);
     return null;
   }
@@ -524,23 +639,11 @@ RULES:
 3. Do NOT change anything else in the text.
 4. Return ONLY the updated scene text. No commentary, no quotes, no markdown.`;
   const usr = `Current scene text:\n"${sceneText}"\n\nExisting bible entities:\n${bibleDesc}\n\nNEW entity to inject: ${entry.tag} = ${entry.kind} "${entry.name}"\n\nReturn the scene text with ${entry.tag} properly referenced.`;
-  const m = SHOT_MODELS.find(x=>x.id===model) || SHOT_MODELS[0];
-  let txt = "";
-  if (m.provider === "anthropic") {
-    const r = await fetch("/api/messages", { method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ model:m.id, max_tokens:500, system:sys, messages:[{role:"user",content:usr}] }) });
-    const raw = await r.text();
-    if (!r.ok) throw new Error(`Anthropic ${r.status}: ${raw.slice(0,200)}`);
-    txt = JSON.parse(raw).content?.map(b=>b.text||"").join("")||"";
-  } else {
-    const r = await fetch("/api/oai/messages", { method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ model:m.id, max_tokens:500, messages:[{role:"system",content:sys},{role:"user",content:usr}] }) });
-    const raw = await r.text();
-    if (!r.ok) throw new Error(`OpenAI ${r.status}: ${raw.slice(0,200)}`);
-    const d = JSON.parse(raw);
-    txt = d.output?.find(o=>o.type==="message")?.content?.find(c=>c.type==="output_text")?.text || d.choices?.[0]?.message?.content || "";
-  }
-  return txt.trim() || sceneText;
+  // Low temperature: this is a surgical edit, not a creative rewrite.
+  const txt = await callShotModel({
+    model, system:sys, user:usr, maxTokens:500, temperature:0.2, expect:"text",
+  });
+  return txt || sceneText;
 }
 
 // ─── AI LLM NODE — targeted edit command on any connected node ────────────────
@@ -551,6 +654,7 @@ async function aiLlm(command, nodeType, nodeContent) {
     [T.IMAGE]: `Editable fields: prompt (image generation prompt).`,
     [T.KLING]: `Editable fields: manualPrompt (the Kling video generation prompt).`,
     [T.VEO]:   `Editable fields: manualPrompt (the Veo video generation prompt).`,
+    [T.SEEDANCE]: `Editable fields: manualPrompt (the Seedance video generation prompt).`,
   }[nodeType] || "Editable fields: any text fields.";
 
   const sys = `You are a cinematic AI assistant built into a storyboard tool. The user will give you a command and the current content of a ${nodeType.toUpperCase()} node.
@@ -565,18 +669,32 @@ RULES:
 
   const usr = `Command: "${command}"\n\nCurrent node:\n${JSON.stringify(nodeContent, null, 2)}`;
 
-  const r = await fetch("/api/messages", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: sys, messages: [{ role: "user", content: usr }] })
+  return callShotModel({
+    model: SHOT_MODELS[0].id, system: sys, user: usr,
+    maxTokens: 1000, temperature: 0.4, shape: "object",
   });
-  const raw = await r.text();
-  if (!r.ok) throw new Error(`Claude ${r.status}: ${raw.slice(0, 200)}`);
-  const d = JSON.parse(raw);
-  const txt = d.content?.map(b => b.text || "").join("") || "";
-  const clean = txt.replace(/```json|```/g, "").trim();
-  const start = clean.indexOf("{"); const end = clean.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("No JSON in response: " + clean.slice(0, 200));
-  return JSON.parse(clean.slice(start, end + 1));
+}
+
+// STYLE_GUIDE steers how the breakdown is written; this steers how the frame
+// LOOKS. Without it every shot of a scene is rendered in isolation and the
+// photography drifts between them. Prefixed to every image/video prompt.
+const VISUAL_STYLE_PROMPT = {
+  drama:          "Cinematic drama look: naturalistic color grade, soft contrast, shallow depth of field.",
+  thriller:       "Cinematic thriller look: cool desaturated grade, hard shadows, tense atmosphere.",
+  action:         "Cinematic action look: high contrast, crisp motion, dynamic energy, punchy color.",
+  noir:           "Film noir look: high-contrast black-and-white tonality, deep shadows, venetian-blind light, wet streets.",
+  "sci-fi":       "Sci-fi cinematic look: clean lines, cyan-and-steel palette, volumetric light, precise composition.",
+  "epic-fantasy": "Epic fantasy look: rich golden-hour warmth, grand scale, painterly light, atmospheric haze.",
+  documentary:    "Documentary look: handheld realism, available light, muted natural palette.",
+  comedy:         "Bright comedic look: even high-key lighting, warm saturated palette, clean framing.",
+};
+
+// A scene's lookOverride (free text) beats the style preset when set.
+function sceneLookLine(scene) {
+  if (!scene) return "";
+  const override = (scene.lookOverride || "").trim();
+  if (override) return override.replace(/\s*\.?\s*$/, ".");
+  return VISUAL_STYLE_PROMPT[scene.cinematicStyle] || "";
 }
 
 const STYLE_GUIDE = {
@@ -611,34 +729,15 @@ CRITICAL RULES:
 9. Prioritize present, visible, cinematic action over exposition.
 10. Return ONLY the rewritten scene text. No commentary, no markdown, no quotes.`;
   const usr = `Rewrite this user input into a cinematic scene in prose.\n\nUser input:\n"${scene.sceneText}"\n\nENTITY BIBLE:\n${bible}\n\nCinematic style:\n${scene.cinematicStyle}\n\nGoal:\nProduce a scene that can later be broken into coherent shots.`;
-  const m = SHOT_MODELS.find(x=>x.id===model) || SHOT_MODELS[0];
-  let txt = "";
-  if (m.provider === "anthropic") {
-    const r = await fetch("/api/messages", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ model:m.id, max_tokens:2000, system:sys, messages:[{role:"user",content:usr}] })
-    });
-    const raw = await r.text();
-    if (!r.ok) throw new Error(`Anthropic ${r.status}: ${raw.slice(0,300)}`);
-    const d = JSON.parse(raw);
-    txt = d.content?.map(b=>b.text||"").join("")||"";
-  } else {
-    const r = await fetch("/api/oai/messages", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ model:m.id, max_tokens:2000, messages:[{role:"system",content:sys},{role:"user",content:usr}] })
-    });
-    const raw = await r.text();
-    if (!r.ok) throw new Error(`OpenAI ${r.status}: ${raw.slice(0,300)}`);
-    const d = JSON.parse(raw);
-    const outputBlock = d.output?.find(o=>o.type==="message");
-    txt = outputBlock?.content?.find(ct=>ct.type==="output_text")?.text || d.choices?.[0]?.message?.content || "";
-  }
-  if (!txt) throw new Error("Empty response from model");
-  return txt.trim();
+  // Higher temperature than the breakdown calls: this one is meant to be creative.
+  return callShotModel({
+    model, system:sys, user:usr, maxTokens:2000, temperature:0.8, expect:"text",
+  });
 }
 
 async function aiImage(prompt, references=[], aspect_ratio="1:1", resolution="1K") {
-  const r = await fetch("/api/gemini/image",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ prompt, references, aspect_ratio, resolution }) });
+  const r = await apiFetch("/api/gemini/image",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ prompt, references, aspect_ratio, resolution }) });
+  if (!r.ok) throw new Error(`Image ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const d = await r.json();
   const p = d.candidates?.[0]?.content?.parts?.find(x=>x.inlineData);
   if(!p) throw new Error(d.error?.message||"No image returned");
@@ -664,7 +763,7 @@ function dataUrlToBase64(dataUrl) {
 // Create a video generation task — single-shot or multi-shot
 // options: { multiShot, sceneShots, aspect_ratio, mode, sound }
 async function aiKlingCreate(shot, sceneBible = [], options = {}) {
-  const { multiShot = false, sceneShots = [], aspect_ratio = "16:9", mode = "pro", sound = "off", prevVideoUrl = null, imageRefUrls = [] } = options;
+  const { multiShot = false, sceneShots = [], aspect_ratio = "16:9", mode = "pro", sound = "off", prevVideoUrl = null, imageRefUrls = [], styleLine = "" } = options;
 
   // When a previous video is used as reference, Kling limits total images+elements to 4
   const maxImages = prevVideoUrl ? 4 : 7;
@@ -707,11 +806,16 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
     return result;
   }
 
+  // Tags backed by an image get <<<image_N>>>; the rest get a textual identity
+  // so they are not sent to Kling as meaningless "@c3a2" tokens.
+  const tagsWithImages = new Set(Object.keys(tagToRef));
+  const dressPrompt = (p) => expandTagsInPrompt(injectRefs(p), sceneBible, tagsWithImages);
+
   let body;
 
   if (multiShot && sceneShots.length > 0) {
     // ── MULTI-SHOT MODE ─────────────────────────────────────────────────────
-    const shots = sceneShots.filter(s => (s.compiledText || s.how)?.trim()).slice(0, 6);
+    const shots = sceneShots.filter(s => s.how?.trim()).slice(0, 6);
     if (shots.length === 0) throw new Error("No shots with prompts found for multi-shot.");
 
     // Compute individual durations (min 1s each)
@@ -721,10 +825,19 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
     // Scale down if total exceeds 15s
     if (total > 15) {
       durs = durs.map(d => Math.max(1, Math.round((d / total) * 15)));
-      // Fix rounding: adjust last element so sum is exactly 15
-      const newTotal = durs.reduce((a, b) => a + b, 0);
-      durs[durs.length - 1] += 15 - newTotal;
-      total = 15;
+      // Rebalance to exactly 15s. Dumping the whole rounding error on the last
+      // element used to drive it to 0 or negative (e.g. six 1s shots), which then
+      // went to the API as duration:"0". Take the excess from the tail instead,
+      // never letting any shot drop below 1s.
+      let excess = durs.reduce((a, b) => a + b, 0) - 15;
+      for (let i = durs.length - 1; i >= 0 && excess > 0; i--) {
+        const take = Math.min(excess, durs[i] - 1);
+        durs[i] -= take; excess -= take;
+      }
+      for (let i = durs.length - 1; i >= 0 && excess < 0; i--) {
+        durs[i] -= excess; excess = 0;
+      }
+      total = durs.reduce((a, b) => a + b, 0);
     }
     // Pad up to minimum 3s total
     if (total < 3) {
@@ -733,13 +846,12 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
     }
 
     const multi_prompt = shots.map((sh, i) => {
-      const raw = (sh.compiledText || `${sh.how || ""} in ${sh.where || ""}`).trim();
-      let text = injectRefs(raw || `Shot ${i + 1}`);
+      let text = dressPrompt(compileShotForKling(sh, styleLine) || `Shot ${i + 1}.`);
       // On the first shot, anchor visual continuity to the previous video
       if (i === 0 && prevVideoUrl) text = `<<<video_1>>> ${text}`;
       // Prepend image ref tags on the first shot so Kling uses them as visual references
       if (i === 0 && refTagStr) text = `${refTagStr} ${text}`;
-      return { index: i + 1, prompt: text.slice(0, 512), duration: String(durs[i]) };
+      return { index: i + 1, prompt: fitPromptAtSentenceBoundary(text, 512), duration: String(durs[i]) };
     });
 
     body = {
@@ -755,8 +867,7 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
     };
   } else {
     // ── SINGLE-SHOT MODE ────────────────────────────────────────────────────
-    const rawPrompt = shot.compiledText || `${shot.how} in ${shot.where}`;
-    const promptWithRefs = injectRefs(rawPrompt);
+    const promptWithRefs = dressPrompt(compileShotForKling(shot, styleLine));
     // Prepend explicit image ref tags so Kling uses wired images as visual references
     const promptFinal = refTagStr ? `${refTagStr} ${promptWithRefs}` : promptWithRefs;
     body = {
@@ -777,7 +888,7 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
     body.video_list = [{ video_url: prevVideoUrl, refer_type: "feature", keep_original_sound: "no" }];
   }
 
-  const r = await fetch("/api/kling/video", {
+  const r = await apiFetch("/api/kling/video", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -792,7 +903,7 @@ async function aiKlingCreate(shot, sceneBible = [], options = {}) {
 async function aiKlingPoll(taskId, onStatus) {
   for (let i = 0; i < 180; i++) {   // max ~6 min polling
     await new Promise(r => setTimeout(r, 2000));
-    const res = await fetch(`/api/kling/video/${taskId}`);
+    const res = await apiFetch(`/api/kling/video/${taskId}`);
     const raw = await res.text();
     if (!res.ok) throw new Error(`Poll ${res.status}: ${raw.slice(0, 200)}`);
     const d = JSON.parse(raw);
@@ -819,14 +930,15 @@ function dataUrlToVeo(dataUrl) {
 }
 
 // Start a Veo 3.1 generation — returns the operation name for polling
-// options: { aspect_ratio, duration, startFrame, endFrame, referenceImages }
+// options: { aspect_ratio, startFrame, endFrame, referenceImages, duration }
 //   startFrame / endFrame — data URLs resolved from wired IMAGE nodes in VeoCard
 //   referenceImages — [{ dataUrl, referenceType }] from Shot bible
+//   duration — fallback when no shot is wired (shot.durationSec wins)
 async function aiVeoCreate(shot, options = {}) {
-  const { aspect_ratio = "16:9", duration = 8, startFrame = null, endFrame = null, referenceImages = [] } = options;
+  const { aspect_ratio = "16:9", startFrame = null, endFrame = null, referenceImages = [], duration = 8 } = options;
 
   const instance = {
-    prompt: (shot.compiledText || `${shot.how || ""} in ${shot.where || ""}`).trim().slice(0, 2000) || "Cinematic shot",
+    prompt: shot.providerPrompt || compileShotForVeo(shot) || "Cinematic shot",
   };
 
   // Start frame (first frame)
@@ -851,12 +963,14 @@ async function aiVeoCreate(shot, options = {}) {
   const body = {
     instances: [instance],
     parameters: {
-      aspectRatio:     aspect_ratio,
-      durationSeconds: Number(duration),
+      aspectRatio: aspect_ratio,
+      // Honour the duration planned for this beat instead of a flat 8s.
+      // Veo 3.1 accepts 4–8s.
+      durationSeconds: Math.max(4, Math.min(8, Math.round(shot?.durationSec || duration || 8))),
     },
   };
 
-  const r = await fetch("/api/veo/video", {
+  const r = await apiFetch("/api/veo/video", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -871,7 +985,7 @@ async function aiVeoCreate(shot, options = {}) {
 async function aiVeoPoll(operationName, onStatus) {
   for (let i = 0; i < 120; i++) {   // max ~10 min
     await new Promise(r => setTimeout(r, 5000));
-    const res = await fetch(`/api/veo/video?op=${encodeURIComponent(operationName)}`);
+    const res = await apiFetch(`/api/veo/video?op=${encodeURIComponent(operationName)}`);
     const raw = await res.text();
     if (!res.ok) throw new Error(`Veo poll ${res.status}: ${raw.slice(0, 200)}`);
     const d = JSON.parse(raw);
@@ -890,13 +1004,85 @@ async function aiVeoPoll(operationName, onStatus) {
         d.response?.videos?.[0]?.uri;
       if (!uri) throw new Error("Veo succeeded but no video URI in response");
       // Download via server proxy → stores in Supabase and returns public URL
-      const dlRes = await fetch(`/api/veo/download?uri=${encodeURIComponent(uri)}`);
+      const dlRes = await apiFetch(`/api/veo/download?uri=${encodeURIComponent(uri)}`);
       if (!dlRes.ok) throw new Error("Veo download failed: " + await dlRes.text());
       const dlJson = await dlRes.json();
       return dlJson.url;
     }
   }
   throw new Error("Veo task timed out after 10 minutes");
+}
+
+// Seedance 2.0 video generation via the server-side BytePlus ModelArk proxy.
+async function aiSeedanceCreate(shot, options = {}) {
+  const {
+    manualPrompt = "", images = [], imageMode = "reference", ratio = "16:9",
+    duration = 5, resolution = "720p", generateAudio = true,
+    bibleAll = [], sentTags = new Set(), styleLine = "",
+  } = options;
+
+  const usedImages = imageMode === "first_last" ? images.slice(0, 2)
+    : imageMode === "first" ? images.slice(0, 1)
+    : images.slice(0, 9);
+  const labels = imageMode === "reference" ? usedImages.map(img => img.label || "visual reference") : [];
+  const mapping = labels.length
+    ? promptSentence("Reference mapping: ", labels.map((label, i) => `Image ${i + 1} = ${label}`).join("; "))
+    : "";
+  const rawPrompt = manualPrompt.trim()
+    ? `${styleLine ? `${styleLine} ` : ""}${manualPrompt.trim()}${mapping ? ` ${mapping}` : ""}`
+    : compileShotForSeedance(shot, labels, styleLine);
+  // Tags whose image is in usedImages are identified by that image; the rest
+  // would reach Seedance as bare "@c3a2" tokens without a textual identity.
+  const prompt = expandTagsInPrompt(rawPrompt, bibleAll, sentTags);
+
+  const content = [{ type:"text", text:prompt }];
+  usedImages.forEach((img, index) => {
+    const role = imageMode === "first_last" ? (index === 0 ? "first_frame" : "last_frame")
+      : imageMode === "first" ? "first_frame" : "reference_image";
+    content.push({ type:"image_url", image_url:{ url:img.url }, role });
+  });
+
+  const body = {
+    model: "dreamina-seedance-2-0-260128",
+    content,
+    resolution,
+    ratio,
+    duration: Math.max(4, Math.min(15, Math.round(duration))),
+    generate_audio: !!generateAudio,
+    camera_fixed: shot?.cameraMovement === "static",
+    return_last_frame: true,
+  };
+
+  const r = await apiFetch("/api/seedance/video", {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body),
+  });
+  const raw = await r.text();
+  if (!r.ok) throw new Error(`Seedance ${r.status}: ${raw.slice(0, 400)}`);
+  const data = JSON.parse(raw);
+  if (!data.id) throw new Error(data.error?.message || "Seedance did not return a task ID");
+  return data.id;
+}
+
+async function aiSeedancePoll(taskId, onStatus) {
+  for (let i = 0; i < 180; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    const res = await apiFetch(`/api/seedance/video/${encodeURIComponent(taskId)}`);
+    const raw = await res.text();
+    if (!res.ok) throw new Error(`Seedance poll ${res.status}: ${raw.slice(0, 300)}`);
+    const data = JSON.parse(raw);
+    if (onStatus) onStatus(data.status || "processing");
+    if (data.status === "succeeded") {
+      const videoUrl = data.content?.video_url;
+      if (!videoUrl) throw new Error("Seedance succeeded but returned no video URL");
+      const saved = await apiFetch(`/api/seedance/download?url=${encodeURIComponent(videoUrl)}`);
+      if (!saved.ok) throw new Error(`Seedance save failed: ${await saved.text()}`);
+      return (await saved.json()).url;
+    }
+    if (["failed", "expired", "cancelled"].includes(data.status)) {
+      throw new Error(data.error?.message || `Seedance task ${data.status}`);
+    }
+  }
+  throw new Error("Seedance task timed out after 15 minutes");
 }
 
 // ─── THEMED FIELD STYLES ──────────────────────────────────────────────────────
@@ -914,7 +1100,7 @@ function F({ label, children, th }) {
 }
 
 // ─── SCENE NODE ───────────────────────────────────────────────────────────────
-function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected, onStartWire, nodePos, model, sceneStats, onExport }) {
+function SceneCard({ node, upd, onGenShots, onGenVersionB, onRetryDirector, onDel, sel: selected, onStartWire, nodePos, model, sceneStats, onExport }) {
   const th = useTheme();
   const ac = th.dark ? (styleColor[node.cinematicStyle]||"#c084fc") : th.t2;
   const uac = th.dark ? ac : th.t0;
@@ -1082,6 +1268,18 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
       <div style={{ padding:10, display:"flex", flexDirection:"column", gap:8 }}>
         {/* Scene text */}
         <div>
+          {node.sceneHeading && (
+            <div style={{ fontSize:8, color:uac, fontWeight:700, letterSpacing:"0.08em", marginBottom:2 }}>
+              {node.sceneHeading}
+            </div>
+          )}
+          {node.sceneSummary && (
+            <div title={node.sceneSummary}
+              style={{ fontSize:8, color:th.t2, lineHeight:1.5, marginBottom:4, fontStyle:"italic",
+                overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>
+              {node.sceneSummary}
+            </div>
+          )}
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:2 }}>
             <span style={lbl}>SCENE TEXT {node.bible.length > 0 && <span style={{ color:th.t2, fontWeight:"normal" }}>· type @ to insert character</span>}</span>
             {injecting && <span style={{ fontSize:6, color:uac, letterSpacing:"0.1em", animation:"blink 1s infinite" }}>✦ UPDATING TAGS…</span>}
@@ -1143,6 +1341,16 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
             <div style={{ display:"flex",justifyContent:"space-between",fontSize:7,color:th.t2,marginTop:1 }}><span>1</span><span>6</span></div>
           </F>
         </div>
+
+        {/* Scene look — prefixed to every image/video prompt of this scene */}
+        <F label="SCENE LOOK">
+          <input onMouseDown={e=>e.stopPropagation()} type="text"
+            style={{ ...inp, fontSize:8 }}
+            placeholder={VISUAL_STYLE_PROMPT[node.cinematicStyle] || "Visual look for every shot of this scene"}
+            title="Prefixed to every image and video prompt of this scene. Leave empty to use the style preset."
+            value={node.lookOverride || ""}
+            onChange={e=>upd({ lookOverride: e.target.value })} />
+        </F>
 
         {/* Bible */}
         <div style={{ borderTop:`1px solid ${th.b0}`, paddingTop:8 }}>
@@ -1260,7 +1468,20 @@ function SceneCard({ node, upd, onGenShots, onGenVersionB, onDel, sel: selected,
         })()}
 
         {/* ── DIRECTOR COHERENCE REPORT ── */}
-        {node.directorCoherence && (() => {
+        {node.directorCoherence?.failed && (
+          <div style={{ background:th.card2, border:"1px solid #fbbf2444", borderRadius:3, padding:"6px 8px", display:"flex", flexDirection:"column", gap:4 }}>
+            <div style={{ fontSize:7, color:"#fbbf24", lineHeight:1.5 }}>
+              ⚠ Director pass falhou — shots gerados sem revisão
+            </div>
+            <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation(); if(onRetryDirector) onRetryDirector(node);}}
+              disabled={busy}
+              style={{ background:"transparent", border:"1px solid #fbbf2488", color:"#fbbf24", fontFamily:"'Inter',system-ui,sans-serif", fontWeight:700, fontSize:7, padding:"4px 8px", borderRadius:3, cursor:busy?"not-allowed":"pointer", letterSpacing:"0.12em", opacity:busy?0.5:1, textAlign:"left" }}
+              title="Re-run only the director review on the existing shots">
+              ↻ Retry director pass
+            </button>
+          </div>
+        )}
+        {node.directorCoherence && !node.directorCoherence.failed && (() => {
           const c = node.directorCoherence;
           const hasIssues = c.skippedBeats?.length || c.overlapIssues?.length;
           const scoreColor = c.score >= 85 ? "#4ade80" : c.score >= 60 ? "#fbbf24" : "#f87171";
@@ -1692,8 +1913,8 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
   const inp = mkInp(th); const sel = mkSel(th); const lbl = mkLbl(th);
   const ac = th.dark ? "#a855f7" : th.t2;
   const selColor = selected ? ac : th.dark ? `${ac}44` : th.b0;
-  const [savingAsset, setSavingAsset] = React.useState(false);
-  const [savedAsset,  setSavedAsset]  = React.useState(false);
+  const [savingAsset, setSavingAsset] = useState(false);
+  const [savedAsset,  setSavedAsset]  = useState(false);
 
   const saveToAssets = async () => {
     if (!node.videoUrl || savingAsset) return;
@@ -1717,15 +1938,26 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
   const startFrameNode = node.startFrameNodeId ? allNodes.find(n => n.id === node.startFrameNodeId) : null;
   const endFrameNode   = node.endFrameNodeId   ? allNodes.find(n => n.id === node.endFrameNodeId)   : null;
   const refNodes = (node.refNodeIds||[]).map(id=>allNodes.find(n=>n.id===id)).filter(Boolean);
-  // Merge shot → scene → global project bible (lowest priority), then filter to entries with images
+  // Merge shot → scene → global project bible (lowest priority).
+  // bibleAll keeps every entry (used for textual tag expansion); bibleMsgs is the
+  // subset that actually has an image to send as a visual reference.
   const _shotB  = shotNode?.bible||[];
   const _sceneB = shotNode ? (allNodes.find(n=>n.id===shotNode.sceneId)?.bible||[]) : [];
   const _gb     = globalBible||[];
-  const bibleMsgs = [
-    ..._shotB,
-    ..._sceneB.filter(s=>!_shotB.find(b=>b.tag===s.tag)),
-    ..._gb.filter(g=>!_shotB.find(b=>b.tag===g.tag)&&!_sceneB.find(s=>s.tag===g.tag)),
-  ].filter(e => e._prev?.startsWith("data:"));
+  const bibleAll  = shotNode ? bibleEntriesForShot(shotNode, _shotB, _sceneB, _gb) : [];
+  const bibleMsgs = bibleAll.filter(e => e._prev?.startsWith("data:"));
+  // Unfiltered merge (ignores entityTags) — used only to detect the silent case
+  // where a shot has no tags, so bibleEntriesForShot returns nothing and the
+  // video is generated with zero references without telling anyone.
+  const bibleNoTagFilter = shotNode ? bibleEntriesForShot(null, _shotB, _sceneB, _gb) : [];
+  const untaggedShotHasRefs = !!shotNode
+    && (shotNode.entityTags||[]).length === 0
+    && bibleNoTagFilter.some(e => e._prev?.startsWith("data:"));
+  // Veo accepts at most 3 reference images — warn instead of dropping silently.
+  const veoRefCount   = (node.refNodeIds||[]).length > 0
+    ? refNodes.filter(n => n.generatedUrl).length
+    : bibleMsgs.length;
+  const veoRefDropped = Math.max(0, veoRefCount - 3);
 
   const [veoStatus, setVeoStatus]   = useState("idle");
   const [veoOpName, setVeoOpName]   = useState(null);
@@ -1733,8 +1965,10 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
   const [veoError, setVeoError]     = useState("");
 
   // The prompt can come from a wired Shot OR a manual text field in the node
+  const veoScene   = shotNode ? allNodes.find(n => n.id === shotNode.sceneId) : null;
+  const veoStyle   = sceneLookLine(veoScene);
   const effectivePrompt = shotNode
-    ? (shotNode.compiledText || `${shotNode.how||""} in ${shotNode.where||""}`).trim()
+    ? compileShotForVeo(shotNode, 2000, veoStyle)
     : (node.manualPrompt || "").trim();
 
   // Generation is allowed if there's a prompt OR at least a start frame image ready
@@ -1750,9 +1984,19 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
       // Each ref node may have its own type stored in node.refTypes[id]
       const wiredRefs = refNodes
         .filter(n => n.generatedUrl)
-        .map(n => ({ dataUrl: n.generatedUrl, referenceType: (node.refTypes||{})[n.id] || "asset" }));
+        .map((n, i) => ({
+          dataUrl: n.generatedUrl,
+          referenceType: (node.refTypes||{})[n.id] || "asset",
+          label: n.entityTag || `visual reference ${i + 1}`,
+          tag: n.entityTag || "",
+        }));
       const bibleRefs = (bibleMsgs.length > 0 && wiredRefs.length === 0)
-        ? bibleMsgs.map(e => ({ dataUrl: e._prev, referenceType: "asset" }))
+        ? bibleMsgs.map(e => ({
+            dataUrl: e._prev,
+            referenceType: "asset",
+            label: `${e.tag}${e.name ? ` (${e.name})` : ""}`,
+            tag: e.tag || "",
+          }))
         : [];
       const referenceImages = [...wiredRefs, ...bibleRefs].slice(0, 3);
 
@@ -1760,17 +2004,25 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
       const startFrame = startFrameNode?.generatedUrl || null;
       const endFrame   = (endFrameNode?.generatedUrl && startFrame) ? endFrameNode.generatedUrl : null;
 
-      // Build a synthetic shot-like object when no shot is wired
-      // Falls back to "Cinematic shot" when no prompt is given (frame-only generation)
-      const finalPrompt = effectivePrompt || "Cinematic shot";
-      const shotLike = shotNode || { compiledText: finalPrompt, how: finalPrompt, where: "" };
+      // Unlike Kling (<<<image_N>>>) and Seedance ("Reference mapping"), Veo had no
+      // link between the images it receives and the tags in the prompt — it saw
+      // loose pictures next to opaque tokens. Name the mapping explicitly, and give
+      // a textual identity to every tag whose image did not make the 3-image cut.
+      const sentTags = new Set(referenceImages.map(r => r.tag).filter(Boolean));
+      let finalPrompt = expandTagsInPrompt(effectivePrompt || "Cinematic shot", bibleAll, sentTags);
+      if (referenceImages.length) {
+        finalPrompt += ` Reference images: ${referenceImages.map((r, i) => `image ${i + 1} = ${r.label}`).join("; ")}.`;
+      }
+      const shotLike = shotNode
+        ? { ...shotNode, providerPrompt: finalPrompt }
+        : { providerPrompt: finalPrompt };
 
       const opName = await aiVeoCreate(shotLike, {
         aspect_ratio: node.aspect_ratio || "16:9",
-        duration:     node.duration     || 8,
         startFrame,
         endFrame,
         referenceImages,
+        duration: node.duration || 8,
       });
       setVeoOpName(opName);
       setVeoStatus("polling"); setVeoPollMsg("Generating…");
@@ -1877,7 +2129,7 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:6, color:"#38bdf8", letterSpacing:"0.06em", marginBottom:2 }}>SHOT #{shotNode.index} · {shotNode.durationSec||5}s</div>
                   <div style={{ fontSize:6, color:th.t2, lineHeight:1.5, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>
-                    {shotNode.compiledText || shotNode.how || "—"}
+                    {effectivePrompt || "—"}
                   </div>
                 </div>
                 <button onMouseDown={e=>e.stopPropagation()} onClick={()=>upd({shotId:null})}
@@ -1901,9 +2153,18 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
             </div>
             <div style={{ flex:1 }}>
               <span style={{ fontSize:6, color:"#3a4a5a", letterSpacing:"0.1em", display:"block", marginBottom:2 }}>DURATION</span>
-              <select onMouseDown={e=>e.stopPropagation()} value={node.duration||8} onChange={e=>upd({duration:Number(e.target.value)})} style={fSel}>
-                <option value={4}>4s</option><option value={6}>6s</option><option value={8}>8s</option>
-              </select>
+              {shotNode ? (
+                // A wired shot owns the duration — edit it on the Shot node.
+                <div title="Defined by the wired Shot — edit it there"
+                  style={{ ...fSel, display:"flex", alignItems:"center", opacity:0.7 }}>
+                  {Math.max(4, Math.min(8, Math.round(shotNode.durationSec || 8)))}s · from shot
+                </div>
+              ) : (
+                <select onMouseDown={e=>e.stopPropagation()} value={node.duration || 8}
+                  onChange={e=>upd({ duration: parseInt(e.target.value) })} style={fSel}>
+                  {[4,5,6,7,8].map(d => <option key={d} value={d}>{d}s</option>)}
+                </select>
+              )}
             </div>
           </div>
 
@@ -1988,6 +2249,17 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
                 </div>
               </div>
             )}
+
+            {veoRefDropped > 0 && (
+              <div style={{ marginTop:5, fontSize:7, color:"#fbbf24", lineHeight:1.4 }}>
+                ⚠ Veo aceita no máx. 3 referências — {veoRefDropped} descartada{veoRefDropped > 1 ? "s" : ""}.
+              </div>
+            )}
+            {untaggedShotHasRefs && (
+              <div style={{ marginTop:5, fontSize:7, color:"#fbbf24", lineHeight:1.4 }}>
+                ⚠ Shot sem entity tags — nenhuma referência será usada. Adicione @tags ao shot.
+              </div>
+            )}
           </div>
 
           {/* Video player */}
@@ -2047,13 +2319,176 @@ function VeoCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodeP
 }
 
 // ─── KLING NODE ───────────────────────────────────────────────────────────────
+function SeedanceCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodePos, globalBible }) {
+  const th = useTheme();
+  const ac = th.dark ? "#22d3ee" : th.t2;
+  const selColor = selected ? ac : th.dark ? `${ac}44` : th.b0;
+  const fSel = mkSel(th);
+  const shotNode = node.shotId ? allNodes.find(n => n.id === node.shotId) : null;
+  const wiredRefNodes = (node.refNodeIds||[]).map(id => allNodes.find(n => n.id === id)).filter(Boolean);
+
+  const shotBible = shotNode?.bible || [];
+  const sceneBible = shotNode ? (allNodes.find(n => n.id === shotNode.sceneId)?.bible || []) : [];
+  const bibleAll = shotNode
+    ? bibleEntriesForShot(shotNode, shotBible, sceneBible, globalBible||[])
+    : [];
+  const bibleRefs = bibleAll
+    .filter(e => e._prev?.startsWith("data:"))
+    .map(e => ({ url:e._prev, label:`${e.tag}${e.name ? ` (${e.name})` : ""}`, id:`bible-${e.tag}`, tag:e.tag }));
+  // Unfiltered merge — only to detect a shot with no entityTags, where
+  // bibleEntriesForShot returns nothing and refs vanish without warning.
+  const bibleNoTagFilter = shotNode
+    ? bibleEntriesForShot(null, shotBible, sceneBible, globalBible||[])
+    : [];
+  const untaggedShotHasRefs = !!shotNode
+    && (shotNode.entityTags||[]).length === 0
+    && bibleNoTagFilter.some(e => e._prev?.startsWith("data:"));
+  const wiredRefs = wiredRefNodes
+    .filter(n => n.generatedUrl)
+    .map((n, i) => ({ url:n.generatedUrl, label:n.entityTag || `wired visual reference ${i + 1}`, id:n.id }));
+  const generationRefs = node.imageMode === "reference" && wiredRefNodes.length === 0 ? bibleRefs.slice(0, 9) : wiredRefs.slice(0, 9);
+  const referenceLabels = node.imageMode === "reference" ? generationRefs.map(r => r.label) : [];
+  const seedScene    = shotNode ? allNodes.find(n => n.id === shotNode.sceneId) : null;
+  const seedStyle    = sceneLookLine(seedScene);
+  const compiledPrompt = shotNode ? compileShotForSeedance(shotNode, referenceLabels, seedStyle) : "";
+  // Tags whose image is actually being sent are already identified by the image;
+  // the rest need their name/description spelled out in the prompt.
+  const sentTags = new Set(generationRefs.map(r => r.tag).filter(Boolean));
+  const effectivePrompt = expandTagsInPrompt(
+    (node.manualPrompt || "").trim() || compiledPrompt, bibleAll, sentTags);
+  const requiredImages = node.imageMode === "first_last" ? 2 : node.imageMode === "first" ? 1 : 0;
+  const wiredRefsReady = wiredRefNodes.length === 0 || wiredRefs.length === wiredRefNodes.length;
+  const canGenerate = !!effectivePrompt && generationRefs.length >= requiredImages && wiredRefsReady;
+
+  // Honour the duration the breakdown planned for this beat instead of a flat 5s,
+  // and surface the model's 4–15s clamp rather than applying it silently.
+  const requestedDuration = node.duration ?? shotNode?.durationSec ?? 5;
+  const effectiveDuration = Math.max(4, Math.min(15, Math.round(requestedDuration)));
+  const durationClamped   = effectiveDuration !== Math.round(requestedDuration);
+
+  const [status, setStatus] = useState("idle");
+  const [statusMsg, setStatusMsg] = useState("");
+  const [error, setError] = useState("");
+  const busy = status === "creating" || status === "polling";
+
+  const generate = async () => {
+    if (!canGenerate || busy) return;
+    setStatus("creating"); setStatusMsg("Submitting task…"); setError("");
+    try {
+      const taskId = await aiSeedanceCreate(shotNode, {
+        manualPrompt: node.manualPrompt || "",
+        images: generationRefs,
+        imageMode: node.imageMode || "reference",
+        ratio: node.ratio || "16:9",
+        duration: effectiveDuration,
+        resolution: node.resolution || "720p",
+        generateAudio: node.generateAudio !== false,
+        bibleAll,
+        sentTags,
+        styleLine: seedStyle,
+      });
+      setStatus("polling"); setStatusMsg("queued");
+      const url = await aiSeedancePoll(taskId, s => setStatusMsg(s));
+      upd({ videoUrl:url });
+      setStatus("done"); setStatusMsg("");
+    } catch (e) {
+      setStatus("failed"); setStatusMsg(""); setError(e.message);
+    }
+  };
+
+  return (
+    <div data-nodeid={node.id} data-nodetype={T.SEEDANCE} style={{ position:"relative", width:300 }}>
+      <div style={{ position:"absolute", left:-4, top:44, width:8, height:8, borderRadius:"50%", background:th.card, border:`1.5px solid ${shotNode?ac:th.b0}`, zIndex:10 }}/>
+      <div onMouseDown={e=>{e.preventDefault();e.stopPropagation();if(onStartWire&&nodePos)onStartWire(node.id,T.SEEDANCE,nodePos.x+300,nodePos.y+44);}}
+        title="Drag to Video Edit or Audio"
+        style={{ position:"absolute", right:-4, top:44, width:8, height:8, borderRadius:"50%", background:node.videoUrl?ac:th.t3, zIndex:10, cursor:"crosshair" }}/>
+
+      <div style={{ background:th.card, border:`1px solid ${selColor}`, borderRadius:9, boxShadow:selected?`0 0 0 1px ${ac}22,0 12px 36px ${th.sh}`:`0 8px 24px ${th.sh}`, overflow:"hidden" }}>
+        <div style={{ height:5, background:ac }}/>
+        <div style={{ padding:"9px 11px", display:"flex", alignItems:"center", borderBottom:`1px solid ${th.b0}` }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:7, color:ac, fontWeight:800, letterSpacing:"0.18em" }}>SEEDANCE 2.0</div>
+            <div style={{ fontSize:6, color:th.t3, marginTop:2 }}>BytePlus ModelArk · 4–15 seconds</div>
+          </div>
+          <button onMouseDown={e=>e.stopPropagation()} onClick={onDel} style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer", fontSize:12 }}>×</button>
+        </div>
+
+        <div style={{ padding:10, display:"flex", flexDirection:"column", gap:8 }}>
+          {shotNode ? (
+            <div style={{ background:th.card2, border:`1px solid ${ac}22`, borderRadius:5, padding:"6px 8px", display:"flex", gap:6 }}>
+              <div style={{ flex:1, minWidth:0, fontSize:7, color:th.t2, lineHeight:1.5 }}>{effectivePrompt}</div>
+              <button onMouseDown={e=>e.stopPropagation()} onClick={()=>upd({shotId:null})} style={{ background:"transparent", border:"none", color:th.t3, cursor:"pointer" }}>×</button>
+            </div>
+          ) : <div style={{ border:`1px dashed ${th.b0}`, borderRadius:5, padding:8, textAlign:"center", fontSize:7, color:th.t3 }}>Wire a Shot node, or write a manual prompt below</div>}
+
+          <textarea onMouseDown={e=>e.stopPropagation()} value={node.manualPrompt||""} onChange={e=>upd({manualPrompt:e.target.value})}
+            placeholder="Optional prompt override — leave empty to use the compiled Shot"
+            rows={3} style={{ ...mkInp(th), resize:"vertical", lineHeight:1.5, fontSize:8 }}/>
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:5 }}>
+            <select onMouseDown={e=>e.stopPropagation()} value={node.imageMode||"reference"} onChange={e=>upd({imageMode:e.target.value})} style={fSel}>
+              <option value="reference">Reference images</option>
+              <option value="first">First frame</option>
+              <option value="first_last">First + last frames</option>
+            </select>
+            <select onMouseDown={e=>e.stopPropagation()} value={node.resolution||"720p"} onChange={e=>upd({resolution:e.target.value})} style={fSel}>
+              <option>480p</option><option>720p</option><option>1080p</option><option>4k</option>
+            </select>
+            <select onMouseDown={e=>e.stopPropagation()} value={node.ratio||"16:9"} onChange={e=>upd({ratio:e.target.value})} style={fSel}>
+              {['16:9','4:3','1:1','3:4','9:16','21:9','adaptive'].map(v=><option key={v}>{v}</option>)}
+            </select>
+            <select onMouseDown={e=>e.stopPropagation()} value={node.duration||5} onChange={e=>upd({duration:Number(e.target.value)})} style={fSel}>
+              {Array.from({length:12},(_,i)=>i+4).map(v=><option key={v} value={v}>{v}s</option>)}
+            </select>
+            <select onMouseDown={e=>e.stopPropagation()} value={node.generateAudio===false?"off":"on"} onChange={e=>upd({generateAudio:e.target.value==="on"})} style={{...fSel,gridColumn:"1 / -1"}}>
+              <option value="on">Synchronized audio ON</option><option value="off">Audio OFF</option>
+            </select>
+          </div>
+
+          <div style={{ borderTop:`1px solid ${th.b0}`, paddingTop:7 }}>
+            <div style={{ fontSize:6, color:th.t3, letterSpacing:"0.1em", marginBottom:5 }}>IMAGE INPUTS · {generationRefs.length}/9</div>
+            {wiredRefNodes.length > 0 ? wiredRefNodes.map(ref=>(
+              <div key={ref.id} style={{ display:"flex", alignItems:"center", gap:5, marginBottom:3, fontSize:7, color:ref.generatedUrl?th.t2:"#f59e0b" }}>
+                <span style={{ flex:1 }}>{ref.generatedUrl?"✓":"○"} {ref.entityTag||"wired image"}</span>
+                <button onMouseDown={e=>e.stopPropagation()} onClick={()=>upd({refNodeIds:(node.refNodeIds||[]).filter(id=>id!==ref.id)})} style={{ background:"transparent",border:"none",color:th.t3,cursor:"pointer" }}>×</button>
+              </div>
+            )) : <div style={{ fontSize:7, color:th.t4 }}>{bibleRefs.length && node.imageMode==="reference" ? `${bibleRefs.length} tagged Bible reference(s) ready` : "Wire Image nodes for visual control"}</div>}
+            {requiredImages > generationRefs.length && <div style={{ fontSize:7, color:"#f59e0b", marginTop:4 }}>This mode needs {requiredImages} generated image{requiredImages>1?"s":""}.</div>}
+            {!wiredRefsReady && <div style={{ fontSize:7, color:"#f59e0b", marginTop:4 }}>Wait for every wired image to finish before generating.</div>}
+            {untaggedShotHasRefs && (
+              <div style={{ fontSize:7, color:"#f59e0b", marginTop:4, lineHeight:1.4 }}>
+                ⚠ Shot sem entity tags — nenhuma referência será usada. Adicione @tags ao shot.
+              </div>
+            )}
+            {durationClamped && (
+              <div style={{ fontSize:7, color:"#f59e0b", marginTop:4, lineHeight:1.4 }}>
+                duração ajustada para {effectiveDuration}s (limite do modelo)
+              </div>
+            )}
+          </div>
+
+          <div style={{ fontSize:6, color:th.t4, lineHeight:1.5 }}>Real-person face references may require an authorized ModelArk asset.</div>
+
+          <button onMouseDown={e=>e.stopPropagation()} onClick={generate} disabled={!canGenerate||busy}
+            style={{ background:canGenerate&&!busy?ac:th.b0, border:"none", borderRadius:5, color:canGenerate&&!busy?"#05252b":th.t3, padding:"8px", fontSize:8, fontWeight:800, letterSpacing:"0.12em", cursor:canGenerate&&!busy?"pointer":"not-allowed" }}>
+            {busy ? `GENERATING · ${statusMsg}` : "GENERATE SEEDANCE VIDEO"}
+          </button>
+
+          {error && <div style={{ fontSize:7, color:"#f87171", lineHeight:1.5, wordBreak:"break-word" }}>{error}</div>}
+          {node.videoUrl && <video src={node.videoUrl} controls style={{ width:"100%", borderRadius:5, background:"#000" }}/>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nodePos, globalBible }) {
   const th = useTheme();
   const inp = mkInp(th); const sel = mkSel(th); const lbl = mkLbl(th);
   const ac = th.dark ? "#f97316" : th.t2;
   const selColor = selected ? ac : th.dark ? `${ac}44` : th.b0;
-  const [savingAsset, setSavingAsset] = React.useState(false);
-  const [savedAsset,  setSavedAsset]  = React.useState(false);
+  const [savingAsset, setSavingAsset] = useState(false);
+  const [savedAsset,  setSavedAsset]  = useState(false);
 
   const saveToAssets = async () => {
     if (!node.videoUrl || savingAsset) return;
@@ -2093,6 +2528,15 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
   const [klingPollMsg, setKlingPollMsg] = useState("");
   const [klingError, setKlingError]     = useState("");
 
+  // A shot with no entityTags makes bibleEntriesForShot return nothing, so the
+  // video is generated with zero references and nothing tells the user why.
+  const untaggedShots = shotNodes.filter(sh => (sh.entityTags||[]).length === 0);
+  const untaggedShotHasRefs = untaggedShots.length > 0 && shotNodes.some(sh =>
+    bibleEntriesForShot(null, sh.bible || [],
+      allNodes.find(n => n.id === sh.sceneId)?.bible || [], globalBible || [])
+      .some(e => e._prev?.startsWith("data:"))
+  );
+
   const removeShot = (shotId) => upd({ shotIds: (node.shotIds||[]).filter(id=>id!==shotId) });
 
   const generateVideo = async () => {
@@ -2104,19 +2548,18 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
       // For each shot: take its local bible entries PLUS any scene bible entries whose
       // tag appears in the shot's entityTags. Using entityTags as the filter prevents
       // characters from other shots leaking into the image_list.
+      // The global bible is included so a character defined only there behaves the
+      // same here as it already does in the Veo and Seedance cards.
+      // Entries WITHOUT an image are kept: aiKlingCreate filters image_list itself,
+      // and the imageless ones still need their tags expanded in the prompt.
       const allBible = shotNodes
-        .flatMap(sh => {
-          const sceneBible = allNodes.find(n => n.id === sh.sceneId)?.bible || [];
-          const localBible = sh.bible || [];
-          const localTags  = new Set(localBible.map(e => e.tag));
-          // For each entityTag, prefer local bible entry, then fall back to scene bible
-          const taggedSceneEntries = (sh.entityTags || [])
-            .filter(tag => !localTags.has(tag))
-            .map(tag => sceneBible.find(e => e.tag === tag))
-            .filter(Boolean);
-          return [...localBible, ...taggedSceneEntries];
-        })
-        .filter((e,i,a) => e._prev && a.findIndex(x => x._prev === e._prev) === i);
+        .flatMap(sh => bibleEntriesForShot(
+          sh,
+          sh.bible || [],
+          allNodes.find(n => n.id === sh.sceneId)?.bible || [],
+          globalBible || []
+        ))
+        .filter((e,i,a) => e.tag && a.findIndex(x => x.tag === e.tag) === i);
 
       // Collect generated image URLs from wired Image reference nodes
       const imageRefUrls = imageRefNodes
@@ -2129,6 +2572,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
         aspect_ratio: node.aspect_ratio || "16:9",
         mode:         node.mode         || "pro",
         sound:        node.sound        || "off",
+        styleLine:    sceneLookLine(allNodes.find(n => n.id === shotNodes[0]?.sceneId)),
         prevVideoUrl,
         imageRefUrls,
       });
@@ -2216,7 +2660,7 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
                     SHOT #{sh.index} · {sh.durationSec||5}s
                   </div>
                   <div style={{ fontSize:6, color:th.t2, lineHeight:1.5, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>
-                    {sh.compiledText || sh.how || "—"}
+                    {compileShotForKling(sh) || "—"}
                   </div>
                 </div>
                 <button onMouseDown={e=>e.stopPropagation()} onClick={()=>removeShot(sh.id)}
@@ -2330,6 +2774,12 @@ function KlingCard({ node, upd, onDel, sel: selected, allNodes, onStartWire, nod
             {klingStatus==="failed"  && <><span>↺</span> RETRY</>}
           </button>
 
+          {untaggedShotHasRefs && (
+            <div style={{ fontSize:7, color:"#fbbf24", lineHeight:1.4 }}>
+              ⚠ Shot #{untaggedShots.map(s=>s.index).join(", #")} sem entity tags — nenhuma referência será usada. Adicione @tags ao shot.
+            </div>
+          )}
+
           {(klingStatus==="creating"||klingStatus==="polling") && (
             <div style={{ fontSize:6, color:th.t3, letterSpacing:"0.08em", textAlign:"center" }}>
               {klingTaskId ? `task: ${klingTaskId.slice(0,16)}…` : "waiting for task ID…"}
@@ -2356,20 +2806,23 @@ function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, o
   const arCss = { "1:1":"1/1", "16:9":"16/9", "9:16":"9/16", "4:3":"4/3", "3:2":"3/2" };
   const currentAr = node.aspect_ratio || "1:1";
 
-  // Merge entity bible: shot (highest) → scene only.
-  // Global bible is NOT auto-injected — it pollutes unconnected nodes.
-  // Entries appear only when inherited from a wired shot or scene.
+  // Merge entity bible: shot (highest) → scene → global project bible, matching
+  // what the Veo/Seedance cards do. A character defined only in the global bible
+  // used to be a reference in Veo/Seedance but silently missing here.
+  // Entries still appear only when inherited from a wired shot or scene:
+  // bibleEntriesForShot(null, …) is only reached when a scene/shot is linked.
   const sceneBible = linkedScene?.bible || [];
   const shotBible  = linkedShot?.bible  || [];
-  const allBible = [
-    ...shotBible,
-    ...sceneBible.filter(s=>!shotBible.find(b=>b.tag===s.tag)),
-  ];
+  const allBible = (linkedShot || linkedScene)
+    ? bibleEntriesForShot(linkedShot, shotBible, sceneBible, globalBible||[])
+    : [];
+
+  const imgStyle = sceneLookLine(linkedScene);
 
   // When first linked to a shot, auto-seed the prompt with the compiled shot text
   useEffect(() => {
-    if (linkedShot && !node.prompt?.trim() && linkedShot.compiledText) {
-      upd({ prompt: linkedShot.compiledText });
+    if (linkedShot && !node.prompt?.trim()) {
+      upd({ prompt: compileShotForImage(linkedShot, imgStyle) });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedShot?.id]);
@@ -2379,10 +2832,14 @@ function ImageCard({ node, upd, onDel, sel: selected, linkedShot, linkedScene, o
     setBusy(true);
     try{
       const refs = allBible.map(bibleToRef).filter(Boolean);
-      let fullPrompt = node.prompt;
+      const seededFromGenericShot = linkedShot && node.prompt === linkedShot.compiledText;
+      let fullPrompt = seededFromGenericShot ? compileShotForImage(linkedShot, imgStyle) : node.prompt;
+      // Entries without an image never reach bibleToRef — give their tags a
+      // textual identity so they aren't sent as bare "@c3a2".
+      fullPrompt = expandTagsInPrompt(fullPrompt, allBible, new Set(refs.map(r => r.tag)));
       if (refs.length > 0) {
         const refDesc = refs.map(r=>`${r.tag} (${r.kind}: ${r.name})`).join(", ");
-        fullPrompt = `VISUAL REFERENCE IMAGES PROVIDED — maintain exact appearance of: ${refDesc}.\n\n${node.prompt}`;
+        fullPrompt = `VISUAL REFERENCE IMAGES PROVIDED — maintain exact appearance of: ${refDesc}.\n\n${fullPrompt}`;
       }
       const u = await aiImage(fullPrompt, refs, node.aspect_ratio||"1:1", node.resolution||"1K");
       upd({generatedUrl:u});
@@ -2644,7 +3101,7 @@ function LlmCard({ node, upd, onDel, sel: selected, allNodes, onUpdateNode }) {
     if (n.type === T.SHOT)  return { how: n.how, where: n.where, when: n.when, cameraSize: n.cameraSize, cameraAngle: n.cameraAngle, cameraMovement: n.cameraMovement, lighting: n.lighting, lens: n.lens, visualGoal: n.visualGoal, durationSec: n.durationSec };
     if (n.type === T.SCENE) return { sceneText: n.sceneText, cinematicStyle: n.cinematicStyle };
     if (n.type === T.IMAGE) return { prompt: n.prompt };
-    if (n.type === T.KLING || n.type === T.VEO) return { manualPrompt: n.manualPrompt };
+    if (n.type === T.KLING || n.type === T.VEO || n.type === T.SEEDANCE) return { manualPrompt: n.manualPrompt };
     return {};
   };
 
@@ -3033,7 +3490,7 @@ function AudioTrackCard({ node, upd, onDel, sel: selected, onStartWire, nodePos,
     setErr(null);
     setGenerating(true);
     try {
-      const res = await fetch("/api/elevenlabs/music", {
+      const res = await apiFetch("/api/elevenlabs/music", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: genPrompt.trim(), tags: genTags, duration: genDuration }),
@@ -3073,7 +3530,7 @@ function AudioTrackCard({ node, upd, onDel, sel: selected, onStartWire, nodePos,
     if (genFromVid || !videoUrl) return;
     setErr(null); setGenFromVid(true);
     try {
-      const res = await fetch("/api/elevenlabs/video-to-music", {
+      const res = await apiFetch("/api/elevenlabs/video-to-music", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ videoUrl, description: vidDesc.trim(), tags: vidTags }),
@@ -3258,10 +3715,10 @@ function AudioTrackCard({ node, upd, onDel, sel: selected, onStartWire, nodePos,
               {/* Wired video status */}
               {videoNode ? (
                 <div style={{ background:th.card2, border:`1px solid ${ac}33`, borderRadius:6, padding:"7px 9px", display:"flex", alignItems:"center", gap:7 }}>
-                  <span style={{ fontSize:9 }}>{videoNode.type === T.KLING ? "🎬" : "🎥"}</span>
+                  <span style={{ fontSize:9 }}>{videoNode.type === T.KLING ? "🎬" : videoNode.type === T.SEEDANCE ? "🌱" : "🎥"}</span>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:6, color:ac, letterSpacing:"0.1em", marginBottom:1 }}>
-                    {videoNode.type === T.KLING ? "KLING" : videoNode.type === T.CLIP ? "CLIP" : "VEO"} NODE WIRED
+                    {videoNode.type === T.KLING ? "KLING" : videoNode.type === T.SEEDANCE ? "SEEDANCE" : videoNode.type === T.CLIP ? "CLIP" : "VEO"} NODE WIRED
                   </div>
                     <div style={{ fontSize:6, color: videoUrl ? th.t2 : videoNode.uploading ? "#f59e0b" : "#f87171" }}>
                       {videoNode.uploading
@@ -3276,7 +3733,7 @@ function AudioTrackCard({ node, upd, onDel, sel: selected, onStartWire, nodePos,
                 </div>
               ) : (
                 <div style={{ border:`1.5px dashed ${th.b0}`, borderRadius:6, padding:"12px 8px", textAlign:"center" }}>
-                  <div style={{ fontSize:8, color:th.t3, letterSpacing:"0.08em", marginBottom:3 }}>🎬 Wire a Kling, Veo, or Clip node here</div>
+                  <div style={{ fontSize:8, color:th.t3, letterSpacing:"0.08em", marginBottom:3 }}>🎬 Wire a Kling, Veo, Seedance, or Clip node here</div>
                   <div style={{ fontSize:7, color:th.t4 }}>drag from video node output port → Audio left input port</div>
                 </div>
               )}
@@ -3503,7 +3960,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode })
     upd({ trims: newTrims });
   };
 
-  const CLIP_COL = { [T.VEO]: "#a855f7", [T.KLING]: "#f97316", [T.CLIP]: "#3b82f6", upload: "#3b82f6" };
+  const CLIP_COL = { [T.VEO]: "#a855f7", [T.KLING]: "#f97316", [T.SEEDANCE]: "#22d3ee", [T.CLIP]: "#3b82f6", upload: "#3b82f6" };
   const clipCol  = (n) => CLIP_COL[n?.type] || "#64748b";
 
   // Merge wired clips + locally-uploaded clips, respecting clipOrder if set
@@ -3518,7 +3975,8 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode })
   const getBaseDur = (n) => {
     if (!n) return 0;
     if (n.type === "upload" || n.type === T.CLIP) return n.duration || 5;
-    if (n.type === T.VEO) return n.duration || 8;
+    if (n.type === T.VEO) return 8;
+    if (n.type === T.SEEDANCE) return n.duration || 5;
     if (n.type === T.KLING) {
       const total = (n.shotIds||[]).reduce((s, sid) => {
         const sh = allNodes.find(x => x.id === sid);
@@ -3807,7 +4265,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode })
         duration:  getBaseDur(c),
         nodeId:    c.id,
       }));
-      const r = await fetch("/api/videoedit/export", {
+      const r = await apiFetch("/api/videoedit/export", {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ clips: clipData, format: fmt }),
       });
@@ -3913,7 +4371,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode })
         <span style={{ position:"absolute", left:9, top:"50%", transform:"translateY(-50%)",
           fontSize:6.5, color:col, letterSpacing:"0.06em", fontWeight:700, zIndex:2,
           whiteSpace:"nowrap", overflow:"hidden", pointerEvents:"none" }}>
-          {c.type==="upload"?(c.name||"CLIP").replace(/\.[^.]+$/,"").slice(0,8).toUpperCase():c.type===T.VEO?`VEO ${i+1}`:`KLING ${i+1}`}
+          {c.type==="upload"?(c.name||"CLIP").replace(/\.[^.]+$/,"").slice(0,8).toUpperCase():c.type===T.VEO?`VEO ${i+1}`:c.type===T.SEEDANCE?`SEEDANCE ${i+1}`:`KLING ${i+1}`}
         </span>
         {/* Start trim handle — drag to trim clip start */}
         <div onMouseDown={e => startTrim(e, c.id, 'start')}
@@ -4127,7 +4585,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode })
                 <span style={{ fontSize:6, color:col, fontWeight:700, letterSpacing:"0.06em",
                   maxWidth:80, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                   {c.type==="upload" ? (c.name||"UPLOAD").replace(/\.[^.]+$/,"").toUpperCase().slice(0,12)
-                    : c.type===T.VEO ? `VEO ${i+1}` : `KLING ${i+1}`}
+                    : c.type===T.VEO ? `VEO ${i+1}` : c.type===T.SEEDANCE ? `SEEDANCE ${i+1}` : `KLING ${i+1}`}
                 </span>
                 <button onMouseDown={e => e.stopPropagation()}
                   onClick={e => { e.stopPropagation(); removeClip(c.id); }}
@@ -4143,7 +4601,7 @@ function VideoEditCard({ node, upd, onDel, sel: selected, allNodes, audioNode })
   const emptySlate = (
     <div style={{ background:th.card2, border:`1px dashed ${th.b0}`, borderRadius:6, padding:"18px 0", textAlign:"center" }}>
       <Ico icon={Scissors} size={16} color={th.t3}/>
-      <div style={{ fontSize:7, color:th.t3, letterSpacing:"0.1em", marginTop:6 }}>Wire VEO or KLING nodes here</div>
+      <div style={{ fontSize:7, color:th.t3, letterSpacing:"0.1em", marginTop:6 }}>Wire VEO, KLING, or SEEDANCE nodes here</div>
       <div style={{ fontSize:6, color:th.t4, letterSpacing:"0.08em", marginTop:3 }}>or upload a video below</div>
     </div>
   );
@@ -4637,7 +5095,7 @@ function ScriptCard({ node, sel, upd, onDel, onSplitScenes }) {
     if (!idea.trim()) return;
     setError(""); setLoading(true);
     try {
-      const r = await fetch("/api/script/generate", {
+      const r = await apiFetch("/api/script/generate", {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ idea, format, cinematicStyle: cinematicStyle || undefined }),
       });
@@ -4657,7 +5115,7 @@ function ScriptCard({ node, sel, upd, onDel, onSplitScenes }) {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const r = await fetch("/api/script/extract", { method:"POST", body: fd });
+      const r = await apiFetch("/api/script/extract", { method:"POST", body: fd });
       const d = await r.json();
       if (d.error) throw new Error(d.error);
       setScript(d.text || "");
@@ -4670,7 +5128,7 @@ function ScriptCard({ node, sel, upd, onDel, onSplitScenes }) {
     if (!script.trim()) return;
     setError(""); setSplitting(true);
     try {
-      const r = await fetch("/api/script/split", {
+      const r = await apiFetch("/api/script/split", {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ script }),
       });
@@ -5676,7 +6134,7 @@ function makeHipHopCampaignTemplate() {
     id:`img_${uid()}`, type:T.IMAGE, shotId:shot.id,
     sceneId:shot.sceneId, generatedUrl:"", resolution:"1K",
     aspect_ratio: ar,
-    prompt: shot.compiledText || "",
+    prompt: compileShotForImage(shot),
   });
   const img1a = mkImg(sh1a, "16:9");
   const img1b = mkImg(sh1b, "9:16");
@@ -5845,7 +6303,7 @@ function makeJewelleryCampaignTemplate() {
     id:`img_${uid()}`, type:T.IMAGE, shotId:shot.id,
     sceneId:shot.sceneId, generatedUrl:"", resolution:"1K",
     aspect_ratio: ar,
-    prompt: shot.compiledText || "",
+    prompt: compileShotForImage(shot),
   });
 
   const img1a = mkImg(sh1a, "1:1");
@@ -6057,7 +6515,7 @@ function makeTrapMusicVideoTemplate() {
   const mkImg = (shot, ar) => ({
     id:`img_${uid()}`, type:T.IMAGE, shotId:shot.id,
     sceneId:shot.sceneId, generatedUrl:"", resolution:"1K",
-    aspect_ratio: ar, prompt: shot.compiledText || "",
+    aspect_ratio: ar, prompt: compileShotForImage(shot),
   });
   const img1a = mkImg(sh1a,"9:16"); const img1b = mkImg(sh1b,"1:1");  const img1c = mkImg(sh1c,"9:16");
   const img2a = mkImg(sh2a,"16:9"); const img2b = mkImg(sh2b,"9:16"); const img2c = mkImg(sh2c,"16:9");
@@ -6276,7 +6734,7 @@ function makeMedievalFantasyTemplate() {
   // ── Image nodes ────────────────────────────────────────────────────────────
   const mkImg = (shot, ar) => ({
     id:`img_${uid()}`, type:T.IMAGE, shotId:shot.id, sceneId:shot.sceneId,
-    generatedUrl:"", resolution:"1K", aspect_ratio:ar, prompt: shot.compiledText || "",
+    generatedUrl:"", resolution:"1K", aspect_ratio:ar, prompt: compileShotForImage(shot),
   });
   const img1a = mkImg(sh1a,"16:9"); const img1b = mkImg(sh1b,"1:1");
   const img1c = mkImg(sh1c,"16:9"); const img1d = mkImg(sh1d,"16:9");
@@ -6444,6 +6902,7 @@ export default function App() {
   const [currentProject,  setCurrentProject]  = useState(null); // { id, name }
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [saving,          setSaving]          = useState(false);
+  const [saveError,       setSaveError]       = useState("");
   const saveTimer = useRef(null);
 
   // Check for existing session on mount
@@ -6531,6 +6990,15 @@ export default function App() {
     if (!user || !projectId) return;
     setSaving(true);
 
+    // Every step below reports failure instead of swallowing it — the UI used to
+    // show "Auto-saved" even when nothing reached the database.
+    const fail = (stage, error) => {
+      const msg = error?.message || String(error);
+      console.error(`Save failed (${stage}):`, msg);
+      setSaveError(`${stage}: ${msg}`);
+      setSaving(false);
+    };
+
     // Resolve img_url for a single entry:
     // - data URL  → upload to Supabase Storage, return public URL
     // - remote URL → pass through unchanged
@@ -6541,29 +7009,62 @@ export default function App() {
       return Promise.resolve(e._imgUrl);
     };
 
-    await supabase.from("projects").upsert({
-      id:        projectId,
-      user_id:   user.id,
-      name:      projectName || "Untitled Project",
-      nodes:     nodesVal,
-      positions: posVal,
-    });
+    try {
+      const { error: projErr } = await supabase.from("projects").upsert({
+        id:        projectId,
+        user_id:   user.id,
+        name:      projectName || "Untitled Project",
+        nodes:     nodesVal,
+        positions: posVal,
+      });
+      if (projErr) return fail("project", projErr);
 
-    // Flatten all kinds, resolve images in parallel, then upsert
-    const allKinds = [
-      ...(bibleVal.characters||[]).map(e=>({ ...e, kind:"character" })),
-      ...(bibleVal.objects||[]).map(e=>({ ...e, kind:"object"    })),
-      ...(bibleVal.locations||[]).map(e=>({ ...e, kind:"location" })),
-    ];
-    const resolvedUrls = await Promise.all(allKinds.map(resolveImgUrl));
+      // Flatten all kinds, resolve images in parallel
+      const allKinds = [
+        ...(bibleVal.characters||[]).map(e=>({ ...e, kind:"character" })),
+        ...(bibleVal.objects||[]).map(e=>({ ...e, kind:"object"    })),
+        ...(bibleVal.locations||[]).map(e=>({ ...e, kind:"location" })),
+      ];
+      const resolvedUrls = await Promise.all(allKinds.map(resolveImgUrl));
 
-    await supabase.from("bible_entries").delete().eq("user_id", user.id).eq("project_id", projectId);
-    const allEntries = allKinds.map((e, i) => {
-      const { _imgUrl, ...rest } = e;
-      return { ...rest, user_id: user.id, project_id: projectId, img_url: resolvedUrls[i] };
-    });
-    if (allEntries.length) await supabase.from("bible_entries").upsert(allEntries);
-    setSaving(false);
+      // Whitelist the real bible_entries columns. Client entries carry UI-only
+      // fields (_prev, assetId, _savedUrl…) that PostgREST rejects, and the
+      // client id (e_abc123) is not a uuid — the database generates it.
+      const allEntries = allKinds.map((e, i) => ({
+        user_id:     user.id,
+        project_id:  projectId,
+        kind:        e.kind,
+        name:        e.name || "",
+        tag:         e.tag || "",
+        description: e.description || "",
+        notes:       e.notes || "",
+        img_url:     resolvedUrls[i] || "",
+      }));
+
+      // Read the previous generation's ids BEFORE writing so the destructive
+      // delete can run last, and only once the insert actually landed. The old
+      // delete-then-insert order wiped the bible for good whenever the second
+      // call failed — and it ran on every autosave, every 3 seconds.
+      const { data: prevRows, error: readErr } = await supabase
+        .from("bible_entries").select("id")
+        .eq("user_id", user.id).eq("project_id", projectId);
+      if (readErr) return fail("bible read", readErr);
+
+      if (allEntries.length) {
+        const { error: insErr } = await supabase.from("bible_entries").insert(allEntries);
+        if (insErr) return fail("bible write", insErr);
+      }
+      if (prevRows?.length) {
+        const { error: delErr } = await supabase.from("bible_entries")
+          .delete().in("id", prevRows.map(r => r.id));
+        if (delErr) return fail("bible cleanup", delErr);
+      }
+
+      setSaveError("");
+      setSaving(false);
+    } catch (e) {
+      fail("save", e);
+    }
   }, [user]);
 
   // Auto-save 3 s after any change (nodes, pos, bible)
@@ -6578,13 +7079,25 @@ export default function App() {
 
   // Load a project from Supabase
   const loadProject = async (project) => {
-    const { data } = await supabase.from("projects").select("*").eq("id", project.id).single();
-    if (!data) return;
+    const { data, error } = await supabase.from("projects").select("*").eq("id", project.id).single();
+    if (error || !data) {
+      setSaveError(`load: ${error?.message || "project not found"}`);
+      return;
+    }
+    // Fetch the bible BEFORE applying any state. If this fails after the project
+    // has been switched, the autosave effect writes the PREVIOUS project's bible
+    // into the newly opened one and then deletes its real entries.
+    const { data: bEntries, error: bErr } = await supabase
+      .from("bible_entries").select("*").eq("project_id", project.id);
+    if (bErr) {
+      setSaveError(`load (bible): ${bErr.message}`);
+      return;
+    }
+
     setNodes(data.nodes?.length ? data.nodes : [mkScene()]);
     setPos(data.positions || {});
     // Load bible — fetch remote images and convert to data URLs so generation
     // code (which filters for "data:") works immediately after reload.
-    const { data: bEntries } = await supabase.from("bible_entries").select("*").eq("project_id", project.id);
     if (bEntries) {
       const hydrate = async (e) => {
         let _imgUrl = e.img_url || "";
@@ -6608,6 +7121,7 @@ export default function App() {
       ]);
       setBible({ characters, objects, locations });
     }
+    setSaveError("");
     setCurrentProject({ id: project.id, name: project.name });
     setProjectPickerOpen(false);
   };
@@ -6677,6 +7191,7 @@ export default function App() {
     scenes.forEach(s => {
       const sc = mkScene();
       sc.sceneText      = s.sceneText      || "";
+      sc.sceneSummary   = s.summary        || "";
       sc.cinematicStyle = s.cinematicStyle || "drama";
       sc.shotCount      = s.shotCount      || 3;
       sc.sceneHeading   = s.heading        || "";
@@ -6728,6 +7243,10 @@ export default function App() {
           setNodes(prev => prev.map(n =>
             n.id === targetId ? {...n, shotId: fromId} : n
           ));
+        } else if (fromType === T.SHOT && targetType === T.SEEDANCE) {
+          setNodes(prev => prev.map(n =>
+            n.id === targetId ? {...n, shotId: fromId} : n
+          ));
         } else if (fromType === T.IMAGE && targetType === T.KLING) {
           // Add IMAGE as visual reference for Kling image-to-video
           setNodes(prev => prev.map(n => {
@@ -6744,10 +7263,17 @@ export default function App() {
             if (ids.includes(fromId)) return n; // no duplicate
             return {...n, refNodeIds: [...ids, fromId]};
           }));
+        } else if (fromType === T.IMAGE && targetType === T.SEEDANCE) {
+          setNodes(prev => prev.map(n => {
+            if (n.id !== targetId) return n;
+            const ids = n.refNodeIds || [];
+            if (ids.includes(fromId) || ids.length >= 9) return n;
+            return {...n, refNodeIds:[...ids, fromId]};
+          }));
         } else if (targetType === T.LLM) {
           // Any node can wire into an LLM node as its target
           setNodes(prev => prev.map(n => n.id === targetId ? {...n, targetNodeId: fromId} : n));
-        } else if ((fromType === T.VEO || fromType === T.KLING) && targetType === T.VIDEOEDIT) {
+        } else if ((fromType === T.VEO || fromType === T.KLING || fromType === T.SEEDANCE) && targetType === T.VIDEOEDIT) {
           // Add video node to VideoEdit's clip list (no duplicates)
           setNodes(prev => prev.map(n => {
             if (n.id !== targetId) return n;
@@ -6760,7 +7286,7 @@ export default function App() {
           setNodes(prev => prev.map(n =>
             n.id === targetId ? {...n, audioNodeId: fromId} : n
           ));
-        } else if ((fromType === T.KLING || fromType === T.VEO || fromType === T.CLIP) && targetType === T.AUDIO) {
+        } else if ((fromType === T.KLING || fromType === T.VEO || fromType === T.SEEDANCE || fromType === T.CLIP) && targetType === T.AUDIO) {
           // Wire a video into the Audio node for video-to-music analysis
           setNodes(prev => prev.map(n =>
             n.id === targetId ? {...n, videoNodeId: fromId} : n
@@ -6788,9 +7314,9 @@ export default function App() {
   }, [pan, zoom]);
 
   const spawnNode = (type) => {
-    const n = type===T.SCENE?mkScene():type===T.SHOT?mkShot(null):type===T.KLING?mkKling():type===T.VEO?mkVeo():type===T.LLM?mkLlm():type===T.VIDEOEDIT?mkVideoEdit():type===T.SCRIPT?mkScript():type===T.AUDIO?mkAudio():type===T.CLIP?mkClip():mkImage(null);
+    const n = type===T.SCENE?mkScene():type===T.SHOT?mkShot(null):type===T.KLING?mkKling():type===T.VEO?mkVeo():type===T.SEEDANCE?mkSeedance():type===T.LLM?mkLlm():type===T.VIDEOEDIT?mkVideoEdit():type===T.SCRIPT?mkScript():type===T.AUDIO?mkAudio():type===T.CLIP?mkClip():mkImage(null);
     // Estimated card widths per node type
-    const NODE_W = { [T.SCENE]:380, [T.SHOT]:300, [T.IMAGE]:220, [T.KLING]:290, [T.VEO]:290, [T.LLM]:280, [T.VIDEOEDIT]:420, [T.SCRIPT]:320, [T.AUDIO]:280, [T.CLIP]:260 };
+    const NODE_W = { [T.SCENE]:380, [T.SHOT]:300, [T.IMAGE]:220, [T.KLING]:290, [T.VEO]:290, [T.SEEDANCE]:300, [T.LLM]:280, [T.VIDEOEDIT]:420, [T.SCRIPT]:320, [T.AUDIO]:280, [T.CLIP]:260 };
     const GAP = 40;
     const cw = cvRef.current?.offsetWidth||800;
     const ch = cvRef.current?.offsetHeight||600;
@@ -6853,15 +7379,19 @@ export default function App() {
         const linkedScene = n.sceneId ? lNodes.find(x=>x.id===n.sceneId) : (linkedShot?.sceneId ? lNodes.find(x=>x.id===linkedShot.sceneId) : null);
         const sb = linkedScene?.bible || [];
         const shb = linkedShot?.bible || [];
-        const allB = [
-          ...shb,
-          ...sb.filter(s=>!shb.find(b=>b.tag===s.tag)),
-        ];
+        // Same merge + entityTags filter the single-image path uses. The old
+        // hand-rolled merge ignored entityTags, so characters absent from the
+        // shot leaked in as references and could bleed into the frame.
+        const allB = bibleEntriesForShot(linkedShot, shb, sb, flat);
         const refs = allB.map(bibleToRef).filter(Boolean);
-        let prompt = n.prompt;
+        // Keep the scene look on batch renders too, otherwise a batch of
+        // storyboards drifts apart from the single-image ones.
+        const styleLine = sceneLookLine(linkedScene);
+        const seeded = styleLine && !n.prompt.startsWith(styleLine) ? `${styleLine} ${n.prompt}` : n.prompt;
+        let prompt = expandTagsInPrompt(seeded, allB, new Set(refs.map(r => r.tag)));
         if (refs.length > 0) {
           const desc = refs.map(r=>`${r.tag} (${r.kind}: ${r.name})`).join(", ");
-          prompt = `VISUAL REFERENCE IMAGES PROVIDED — maintain exact appearance of: ${desc}.\n\n${n.prompt}`;
+          prompt = `VISUAL REFERENCE IMAGES PROVIDED — maintain exact appearance of: ${desc}.\n\n${prompt}`;
         }
         const url = await aiImage(prompt, refs, n.aspect_ratio||"1:1", n.resolution||"1K");
         updNode(n.id, { generatedUrl: url });
@@ -6985,13 +7515,18 @@ export default function App() {
       return { ...patched, compiledText: compileShotText(patched) };
     });
 
-    // Store coherence report on the scene node so SceneCard can display it
-    if (coherence) updNode(sceneNode.id, { directorCoherence: coherence });
+    // Store coherence report on the scene node so SceneCard can display it.
+    // A null result means the director pass failed — record that instead of
+    // leaving the user to assume the breakdown was reviewed when it wasn't.
+    updNode(sceneNode.id, {
+      directorCoherence: coherence || (directorResult === null ? { failed: true } : null),
+    });
 
     // Create a paired Image node for each shot, pre-seeded with the compiled prompt
+    const sceneStyleLine = sceneLookLine(sceneNode);
     const newImages = finalShots.map(s => ({
       ...mkImage(s.sceneId, s.id),
-      prompt: s.compiledText || "",
+      prompt: compileShotForImage(s, sceneStyleLine),
     }));
 
     setNodes(prev=>[...prev,...finalShots,...newImages]);
@@ -7052,6 +7587,31 @@ export default function App() {
     finalShots.forEach(s=>front(s.id));
   };
 
+  // Re-run only the director review over the shots that already exist.
+  const onRetryDirector = async (sceneNode) => {
+    const shots = nodesRef.current
+      .filter(n => n.type === T.SHOT && n.sceneId === sceneNode.id)
+      .sort((a,b) => (a.index||0) - (b.index||0));
+    if (!shots.length) return;
+    const directorResult = await aiDirectorPass(sceneNode, shots, shotModel);
+    if (!directorResult) {
+      updNode(sceneNode.id, { directorCoherence: { failed: true } });
+      return;
+    }
+    (directorResult.shots || []).forEach(ann => {
+      const target = shots.find(s => s.index === ann.index);
+      if (!target) return;
+      const patched = {
+        ...target,
+        directorNote:    ann.directorNote || "",
+        directorQuality: ann.quality      || "good",
+        directorIssue:   ann.issue        || "",
+      };
+      updNode(target.id, { ...patched, compiledText: compileShotText(patched) });
+    });
+    updNode(sceneNode.id, { directorCoherence: directorResult.coherence || null });
+  };
+
   // Retry a single flagged shot — replaces it in-place with an improved version.
   const onRetrySingleShot = async (shotNode) => {
     const sceneNode = nodes.find(n=>n.id===shotNode.sceneId);
@@ -7105,11 +7665,25 @@ export default function App() {
     });
     return out;
   });
+  const seedanceEdges = nodes.filter(n=>n.type===T.SEEDANCE).flatMap(sn=>{
+    const out = [];
+    if (sn.shotId && pos[sn.shotId] && pos[sn.id]) {
+      const fp=pos[sn.shotId], tp=pos[sn.id];
+      out.push({ id:`sed-shot-${sn.id}`, fx:fp.x+268, fy:fp.y+50, tx:tp.x, ty:tp.y+44, color:th.dark?"#22d3ee66":"rgba(0,0,0,0.2)" });
+    }
+    (sn.refNodeIds||[]).forEach((rid,i)=>{
+      if (pos[rid] && pos[sn.id]) {
+        const fp=pos[rid], tp=pos[sn.id];
+        out.push({ id:`sed-ref-${sn.id}-${rid}`, fx:fp.x+220, fy:fp.y+50, tx:tp.x, ty:tp.y+110+i*14, color:th.dark?"#22d3ee33":"rgba(0,0,0,0.1)" });
+      }
+    });
+    return out;
+  });
   const videoEditEdges = nodes.filter(n=>n.type===T.VIDEOEDIT).flatMap(ve=>
     (ve.videoNodeIds||[]).filter((vid,i)=>pos[vid]&&pos[ve.id]).map((vid,i)=>{
       const fp=pos[vid], tp=pos[ve.id];
       const srcNode = nodes.find(x=>x.id===vid);
-      const srcW = srcNode ? 290 : 220;
+      const srcW = srcNode?.type===T.SEEDANCE ? 300 : srcNode ? 290 : 220;
       return { id:`ved-${ve.id}-${vid}`, fx:fp.x+srcW, fy:fp.y+44, tx:tp.x, ty:tp.y+44+i*14, color: th.dark?"rgba(255,255,255,0.18)":"rgba(0,0,0,0.18)" };
     })
   );
@@ -7121,7 +7695,7 @@ export default function App() {
   const videoAudioEdges = nodes.filter(n=>n.type===T.AUDIO && n.videoNodeId && pos[n.videoNodeId] && pos[n.id]).map(an=>{
     const vp=pos[an.videoNodeId], ap=pos[an.id];
     const srcNode = nodes.find(x=>x.id===an.videoNodeId);
-    const srcW = srcNode?.type===T.CLIP ? 260 : 290;
+    const srcW = srcNode?.type===T.CLIP ? 260 : srcNode?.type===T.SEEDANCE ? 300 : 290;
     return { id:`vidaud-${an.id}`, fx:vp.x+srcW, fy:vp.y+44, tx:ap.x, ty:ap.y+44, color:"#10b98177" };
   });
   // Clip node → VideoEdit edges
@@ -7134,7 +7708,7 @@ export default function App() {
       return { id:`clp-${ve.id}-${vid}`, fx:fp.x+260, fy:fp.y+44, tx:tp.x, ty:tp.y+44+i*14, color:`#3b82f677` };
     })
   );
-  const edges = [...sceneEdges, ...shotEdges, ...klingEdges, ...veoEdges, ...veoFrameEdges, ...videoEditEdges, ...audioEdges, ...videoAudioEdges, ...clipEdges];
+  const edges = [...sceneEdges, ...shotEdges, ...klingEdges, ...veoEdges, ...veoFrameEdges, ...seedanceEdges, ...videoEditEdges, ...audioEdges, ...videoAudioEdges, ...clipEdges];
 
   const TOOLS = [
     { type:T.SCRIPT,   icon:ScrollText,  label:"SCRIPT", color:"#94a3b8", desc:"Script node — write, upload or generate a script and split into scenes" },
@@ -7143,6 +7717,7 @@ export default function App() {
     { type:T.IMAGE,    icon:ImageIcon,   label:"IMAGE",  color:"#a3e635", desc:"Image prompt" },
     { type:T.KLING,    icon:null, brandText:"Kling", label:"KLING",  color:"#f97316", desc:"Kling video node" },
     { type:T.VEO,      icon:null, brandText:"Veo",   label:"VEO",    color:"#a855f7", desc:"Veo 3.1 video node" },
+    { type:T.SEEDANCE, icon:null, brandText:"Seedance", label:"SEEDANCE", color:"#22d3ee", desc:"Seedance 2.0 video node" },
     { type:T.LLM,      icon:Bot,         label:"AI",     color:"#6366f1", desc:"AI command node — edits any connected node" },
     { type:T.VIDEOEDIT,icon:Scissors,    label:"EDIT",   color:"#64748b", desc:"Video Edit — trim, arrange and export clips" },
     { type:T.AUDIO,    icon:Music,       label:"AUDIO",  color:"#10b981", desc:"Audio Track — detect BPM and snap video cuts to beats" },
@@ -7229,7 +7804,14 @@ export default function App() {
             </button>
           )}
           {saving && <span style={{ fontSize:10, color:th.t4, letterSpacing:"0.08em" }}>Saving…</span>}
-          {!saving && currentProject && <span style={{ fontSize:10, color:th.t4, letterSpacing:"0.08em" }}>Auto-saved</span>}
+          {!saving && saveError && (
+            <span title={saveError}
+              style={{ fontSize:10, color:"#f87171", letterSpacing:"0.08em", fontWeight:700,
+                maxWidth:260, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+              ⚠ Save failed — {saveError}
+            </span>
+          )}
+          {!saving && !saveError && currentProject && <span style={{ fontSize:10, color:th.t4, letterSpacing:"0.08em" }}>Auto-saved</span>}
           {/* Generate All Images */}
           {nodes.some(n=>n.type===T.IMAGE && !n.generatedUrl && n.prompt?.trim()) && (
             <button onClick={()=>batchGenerate()}
@@ -7328,11 +7910,12 @@ export default function App() {
               const imgLinkedScene = n.type===T.IMAGE ? (nodes.find(x=>x.id===(n.sceneId||(imgLinkedShot && imgLinkedShot.sceneId)))||null) : null;
               return (
                 <Drag key={n.id} id={n.id} x={p.x} y={p.y} onMove={moveNode} z={z} zoom={zoom} onFocus={()=>{setSelId(n.id);front(n.id);}}>
-                  {n.type===T.SCENE&&<SceneCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onGenShots={onGenShots} onGenVersionB={onGenVersionB} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={p} model={shotModel} sceneStats={getSceneShotStats(nodes,n.id)} onExport={()=>exportScene(n)} />}
+                  {n.type===T.SCENE&&<SceneCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onGenShots={onGenShots} onGenVersionB={onGenVersionB} onRetryDirector={onRetryDirector} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={p} model={shotModel} sceneStats={getSceneShotStats(nodes,n.id)} onExport={()=>exportScene(n)} />}
                   {n.type===T.SHOT&&<ShotCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} sceneBible={nodes.find(x=>x.id===n.sceneId)?.bible||[]} linkedScene={nodes.find(x=>x.id===n.sceneId)||null} onLink={sceneId=>linkShot(n.id,sceneId)} onStartWire={startWire} nodePos={p} sceneStats={getSceneShotStats(nodes,n.sceneId)} globalBible={globalBibleFlat} onRetrySingleShot={onRetrySingleShot} />}
                   {n.type===T.IMAGE&&<ImageCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} linkedShot={imgLinkedShot} linkedScene={imgLinkedScene} onUnlinkShot={()=>updNode(n.id,{shotId:null,prompt:""})} onStartWire={startWire} nodePos={p} globalBible={globalBibleFlat} onSaveToBible={saveToBible} />}
                   {n.type===T.KLING&&<KlingCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={p} globalBible={globalBibleFlat} />}
                   {n.type===T.VEO&&<VeoCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={p} globalBible={globalBibleFlat} />}
+                  {n.type===T.SEEDANCE&&<SeedanceCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onStartWire={startWire} nodePos={p} globalBible={globalBibleFlat} />}
                   {n.type===T.LLM&&<LlmCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} onUpdateNode={updNode} />}
                   {n.type===T.VIDEOEDIT&&<VideoEditCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} allNodes={nodes} audioNode={nodes.find(x=>x.id===n.audioNodeId)||null} />}
                   {n.type===T.AUDIO&&<AudioTrackCard node={n} sel={isSel} upd={p=>updNode(n.id,p)} onDel={()=>delNode(n.id)} onStartWire={startWire} nodePos={p} allNodes={nodes} />}
@@ -7544,4 +8127,3 @@ export default function App() {
     </ThemeCtx.Provider>
   );
 }
-

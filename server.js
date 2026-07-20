@@ -6,10 +6,13 @@ const crypto   = require("crypto");
 const fs       = require("fs");
 const path     = require("path");
 const os       = require("os");
-const { exec } = require("child_process");
+const { execFile } = require("child_process");
 const multer   = require("multer");
+const rateLimit = require("express-rate-limit");
 const { createClient } = require("@supabase/supabase-js");
 // Vite loaded dynamically in dev mode only (see start())
+
+const isProd = process.env.NODE_ENV === "production";
 
 // ── SUPABASE ───────────────────────────────────────────────────────────────────
 const SUPABASE_URL         = process.env.SUPABASE_URL;
@@ -40,6 +43,26 @@ async function getUserId(req) {
   return data?.user?.id || null;
 }
 
+// Gate for every route that spends provider credits or touches user data.
+// Without it these proxies are an open relay for anyone who knows the URL.
+async function requireAuth(req, res, next) {
+  if (!supabaseAdmin) {
+    return res.status(500).json({ error: "Server auth not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing)" });
+  }
+  const token = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
+  if (!token) return res.status(401).json({ error: "Unauthorized — sign in required" });
+  try {
+    const { data } = await supabaseAdmin.auth.getUser(token);
+    const userId = data?.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized — invalid or expired session" });
+    req.userId    = userId;
+    req.userToken = token;
+    next();
+  } catch (_) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+}
+
 // Multer memory storage for asset uploads (no local disk)
 const uploadMem = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
@@ -51,10 +74,38 @@ ASSET_TYPES.forEach(t => {
 });
 const VEO_CACHE = path.join(__dirname, ".veo-cache");
 if (!fs.existsSync(VEO_CACHE)) fs.mkdirSync(VEO_CACHE, { recursive: true });
+const SEEDANCE_CACHE = path.join(__dirname, ".seedance-cache");
+if (!fs.existsSync(SEEDANCE_CACHE)) fs.mkdirSync(SEEDANCE_CACHE, { recursive: true });
 
 const app = express();
-app.use(cors({ origin: "*" }));
-app.use(express.json({ limit: "30mb" }));
+
+// In production only the deployed frontend may call the API from a browser.
+// ALLOWED_ORIGIN is a comma-separated list, e.g. "https://cartasis.com,https://www.cartasis.com".
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGIN || "")
+  .split(",").map(s => s.trim()).filter(Boolean);
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);          // same-origin / curl / server-to-server
+    if (!isProd) return cb(null, true);          // dev: any localhost port
+    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    return cb(new Error("Not allowed by CORS"));
+  },
+}));
+app.use(express.json({ limit: "64mb" }));
+
+// Blanket throttle on the API surface, with a much tighter budget for the
+// routes that cost real money per call.
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 300,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: "Too many requests — slow down." },
+});
+const generationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 30,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: "Generation rate limit reached — try again in a few minutes." },
+});
+app.use("/api", apiLimiter);
 
 function post(hostname, path, headers, body) {
   return new Promise((resolve, reject) => {
@@ -105,7 +156,7 @@ function klingJWT() {
 }
 
 // POST /api/kling/video  — create video generation task
-app.post("/api/kling/video", async (req, res) => {
+app.post("/api/kling/video", requireAuth, generationLimiter, async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   try {
     const r = await post("api-singapore.klingai.com", "/v1/videos/omni-video",
@@ -115,7 +166,7 @@ app.post("/api/kling/video", async (req, res) => {
 });
 
 // GET /api/kling/video/:taskId  — poll task status
-app.get("/api/kling/video/:taskId", async (req, res) => {
+app.get("/api/kling/video/:taskId", requireAuth, async (req, res) => {
   if (!process.env.KLING_ACCESS_KEY) return res.status(500).send("KLING_ACCESS_KEY not set");
   try {
     const r = await get("api-singapore.klingai.com", `/v1/videos/omni-video/${req.params.taskId}`,
@@ -124,7 +175,40 @@ app.get("/api/kling/video/:taskId", async (req, res) => {
   } catch (e) { res.status(500).send(e.message); }
 });
 
-app.post("/api/messages", async (req, res) => {
+// Seedance 2.0 via BytePlus ModelArk. Base URL and model can be overridden
+// for accounts using a different activated endpoint.
+function seedanceApi(pathname) {
+  const base = new URL(process.env.SEEDANCE_API_BASE_URL || "https://ark.ap-southeast.bytepluses.com/api/v3");
+  return { hostname: base.hostname, path: `${base.pathname.replace(/\/$/, "")}${pathname}` };
+}
+
+app.post("/api/seedance/video", requireAuth, generationLimiter, async (req, res) => {
+  const key = process.env.SEEDANCE_API_KEY;
+  if (!key) return res.status(500).send("SEEDANCE_API_KEY not set");
+  try {
+    const endpoint = seedanceApi("/contents/generations/tasks");
+    const body = {
+      ...req.body,
+      model: process.env.SEEDANCE_MODEL_ID || req.body.model || "dreamina-seedance-2-0-260128",
+    };
+    const r = await post(endpoint.hostname, endpoint.path,
+      { "Authorization": `Bearer ${key}` }, body);
+    res.status(r.status).send(r.data);
+  } catch (e) { res.status(500).send(e.message); }
+});
+
+app.get("/api/seedance/video/:taskId", requireAuth, async (req, res) => {
+  const key = process.env.SEEDANCE_API_KEY;
+  if (!key) return res.status(500).send("SEEDANCE_API_KEY not set");
+  try {
+    const endpoint = seedanceApi(`/contents/generations/tasks/${encodeURIComponent(req.params.taskId)}`);
+    const r = await get(endpoint.hostname, endpoint.path,
+      { "Authorization": `Bearer ${key}` });
+    res.status(r.status).send(r.data);
+  } catch (e) { res.status(500).send(e.message); }
+});
+
+app.post("/api/messages", requireAuth, async (req, res) => {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return res.status(500).send("ANTHROPIC_API_KEY not set");
   try {
@@ -133,7 +217,7 @@ app.post("/api/messages", async (req, res) => {
   } catch (e) { res.status(500).send(e.message); }
 });
 
-app.post("/api/oai/messages", async (req, res) => {
+app.post("/api/oai/messages", requireAuth, async (req, res) => {
   const key = process.env.OPENAI_API_KEY;
   if (!key) return res.status(500).send("OPENAI_API_KEY not set");
   try {
@@ -145,13 +229,15 @@ app.post("/api/oai/messages", async (req, res) => {
       model: req.body.model,
       input,
       max_output_tokens: req.body.max_tokens || 4000,
+      // This proxy rebuilds the body, so anything not copied here is dropped.
+      ...(req.body.temperature !== undefined ? { temperature: req.body.temperature } : {}),
     };
     const r = await post("api.openai.com", "/v1/responses", { "Authorization": `Bearer ${key}` }, body);
     res.status(r.status).send(r.data);
   } catch (e) { res.status(500).send(e.message); }
 });
 
-app.post("/api/gemini/image", async (req, res) => {
+app.post("/api/gemini/image", requireAuth, generationLimiter, async (req, res) => {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(500).send("GEMINI_API_KEY not set");
   try {
@@ -180,7 +266,7 @@ app.post("/api/gemini/image", async (req, res) => {
 
 // ── Veo 3.1 Video Generation ─────────────────────────────────────────────────
 // POST /api/veo/video — start generation (returns operation name for polling)
-app.post("/api/veo/video", async (req, res) => {
+app.post("/api/veo/video", requireAuth, generationLimiter, async (req, res) => {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(500).send("GEMINI_API_KEY not set");
   try {
@@ -192,7 +278,7 @@ app.post("/api/veo/video", async (req, res) => {
 });
 
 // GET /api/veo/video?op=OPERATION_NAME — poll operation status
-app.get("/api/veo/video", async (req, res) => {
+app.get("/api/veo/video", requireAuth, async (req, res) => {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(500).send("GEMINI_API_KEY not set");
   const opName = req.query.op;
@@ -223,14 +309,73 @@ function downloadToBuffer(url, redirectsLeft = 5) {
   });
 }
 
+// Persist Seedance output immediately because ModelArk output URLs expire after 24 hours.
+app.get("/api/seedance/download", requireAuth, async (req, res) => {
+  const videoUrl = req.query.url;
+  if (!videoUrl) return res.status(400).send("Missing url param");
+  try {
+    const parsed = new URL(videoUrl);
+    const trustedHost = parsed.hostname.endsWith(".volces.com") ||
+      parsed.hostname.endsWith(".bytepluses.com") ||
+      parsed.hostname.endsWith(".byteplus.com");
+    if (parsed.protocol !== "https:" || !trustedHost) return res.status(400).send("Untrusted Seedance video URL");
+
+    const fileId = crypto.createHash("sha1").update(videoUrl).digest("hex");
+    const storagePath = `seedance-cache/${fileId}.mp4`;
+
+    if (supabaseAdmin) {
+      const { data: existing } = await supabaseAdmin.storage
+        .from(ASSET_BUCKET).list("seedance-cache", { search: `${fileId}.mp4` });
+      if (existing && existing.length > 0) {
+        const { data: urlData } = supabaseAdmin.storage.from(ASSET_BUCKET).getPublicUrl(storagePath);
+        return res.json({ url: urlData.publicUrl });
+      }
+      const buffer = await downloadToBuffer(videoUrl);
+      const { error: upErr } = await supabaseAdmin.storage.from(ASSET_BUCKET)
+        .upload(storagePath, buffer, { contentType: "video/mp4", upsert: true });
+      if (upErr) throw upErr;
+      const { data: urlData } = supabaseAdmin.storage.from(ASSET_BUCKET).getPublicUrl(storagePath);
+      return res.json({ url: urlData.publicUrl });
+    }
+
+    const localPath = path.join(SEEDANCE_CACHE, `${fileId}.mp4`);
+    if (!fs.existsSync(localPath)) fs.writeFileSync(localPath, await downloadToBuffer(videoUrl));
+    return res.json({ url: `/api/seedance/file/${fileId}.mp4` });
+  } catch (e) {
+    console.error("[seedance/download]", e.message);
+    res.status(500).send(e.message);
+  }
+});
+
+// Cached ids are sha1 hashes — anything else is a traversal attempt.
+// Not behind requireAuth: these URLs are consumed by <video> tags, which
+// cannot send an Authorization header. The id check is the security boundary.
+const CACHE_ID_RE = /^[a-f0-9]{40}\.mp4$/;
+
+app.get("/api/seedance/file/:id", (req, res) => {
+  if (!CACHE_ID_RE.test(req.params.id)) return res.status(400).send("Invalid file id");
+  if (!fs.existsSync(path.join(SEEDANCE_CACHE, req.params.id))) return res.status(404).send("Video not found");
+  res.sendFile(req.params.id, { root: SEEDANCE_CACHE });
+});
+
 // GET /api/veo/download?uri=VIDEO_URI
 // Downloads the Veo video from Google, stores in Supabase Storage (or local cache),
 // then returns the public URL as JSON { url } and also redirects to it.
-app.get("/api/veo/download", async (req, res) => {
+app.get("/api/veo/download", requireAuth, async (req, res) => {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(500).send("GEMINI_API_KEY not set");
   const videoUri = req.query.uri;
   if (!videoUri) return res.status(400).send("Missing uri param");
+  // The GEMINI_API_KEY is appended to this URI below — without a host allowlist
+  // an arbitrary uri would send the key straight to an attacker's server.
+  try {
+    const parsedUri = new URL(String(videoUri));
+    if (parsedUri.protocol !== "https:" || parsedUri.hostname !== "generativelanguage.googleapis.com") {
+      return res.status(400).send("Untrusted Veo video URI");
+    }
+  } catch (_) {
+    return res.status(400).send("Malformed uri param");
+  }
   try {
     const fileId      = crypto.createHash("sha1").update(videoUri).digest("hex");
     const storagePath = `veo-cache/${fileId}.mp4`;
@@ -275,9 +420,9 @@ app.get("/api/veo/download", async (req, res) => {
 
 // GET /api/veo/file/:id — serve a locally cached Veo video (fallback / backward compat)
 app.get("/api/veo/file/:id", (req, res) => {
-  const filePath = path.join(VEO_CACHE, req.params.id);
-  if (!fs.existsSync(filePath)) return res.status(404).send("Video not found");
-  res.sendFile(filePath);
+  if (!CACHE_ID_RE.test(req.params.id)) return res.status(400).send("Invalid file id");
+  if (!fs.existsSync(path.join(VEO_CACHE, req.params.id))) return res.status(404).send("Video not found");
+  res.sendFile(req.params.id, { root: VEO_CACHE });
 });
 
 // ── Video Edit Export ─────────────────────────────────────────────────────────
@@ -299,9 +444,19 @@ function downloadToTemp(url) {
   });
 }
 
-app.post("/api/videoedit/export", async (req, res) => {
-  const { clips, format } = req.body;
-  if (!clips || !clips.length) return res.status(400).send("No clips");
+// Every numeric field reaching the ffmpeg filter graph must be a finite,
+// non-negative number — these values are interpolated into the filter string.
+function finiteNonNegative(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
+
+app.post("/api/videoedit/export", requireAuth, async (req, res) => {
+  const { clips, format = "720p" } = req.body;
+  if (!Array.isArray(clips) || !clips.length) return res.status(400).send("No clips");
+  if (!["1080p", "720p"].includes(format)) return res.status(400).send("Invalid format");
   const scale = format === "1080p" ? "1920:1080" : "1280:720";
   const tmpFiles = [];
   const outFile  = path.join(os.tmpdir(), `export_${Date.now()}.mp4`);
@@ -309,11 +464,20 @@ app.post("/api/videoedit/export", async (req, res) => {
     // Resolve each clip URL to a local file path
     const resolved = [];
     for (const clip of clips) {
-      if (!clip.url) throw new Error("Clip missing videoUrl — generate video first");
+      if (!clip || !clip.url) throw new Error("Clip missing videoUrl — generate video first");
+
+      const trimStart = finiteNonNegative(clip.trimStart, 0);
+      const trimEnd   = finiteNonNegative(clip.trimEnd, 0);
+      const duration  = finiteNonNegative(clip.duration, 8);
+      if (trimStart === null || trimEnd === null || duration === null) {
+        return res.status(400).send("trimStart, trimEnd and duration must be finite non-negative numbers");
+      }
+
       let filePath;
       if (clip.url.includes("/api/veo/file/")) {
-        // Legacy local cache path
-        const fileId = clip.url.replace(/.*\/api\/veo\/file\//, "");
+        // Legacy local cache path — ids are sha1 hashes, reject anything else
+        const fileId = clip.url.replace(/.*\/api\/veo\/file\//, "").replace(/\.mp4$/, "");
+        if (!/^[a-f0-9]{40}$/.test(fileId)) return res.status(400).send("Invalid clip file id");
         filePath = path.join(VEO_CACHE, `${fileId}.mp4`);
         if (!fs.existsSync(filePath)) throw new Error(`VEO video not cached locally: ${fileId} — please regenerate`);
       } else {
@@ -321,15 +485,24 @@ app.post("/api/videoedit/export", async (req, res) => {
         filePath = await downloadToTemp(clip.url);
         tmpFiles.push(filePath);
       }
-      resolved.push({ path: filePath, trimStart: clip.trimStart || 0, trimEnd: clip.trimEnd || 0, duration: clip.duration || 8 });
+      resolved.push({ path: filePath, trimStart, trimEnd, duration });
     }
-    // Build ffmpeg filter_complex for trim + scale + concat
-    const inputs = resolved.map(c => `-i "${c.path}"`).join(" ");
-    const runCmd = (cmd) => new Promise((resolve, reject) =>
-      exec(cmd, { maxBuffer: 64*1024*1024 }, (err, _out, stderr) =>
+    // execFile spawns ffmpeg directly — no shell, so no quoting/injection surface.
+    const runFfmpeg = (args) => new Promise((resolve, reject) =>
+      execFile("ffmpeg", args, { maxBuffer: 64*1024*1024 }, (err, _out, stderr) =>
         err ? reject(new Error(stderr || err.message)) : resolve()
       )
     );
+    const buildArgs = (filter, withAudio) => {
+      const args = ["-y"];
+      for (const c of resolved) args.push("-i", c.path);
+      args.push("-filter_complex", filter, "-map", "[vout]");
+      if (withAudio) args.push("-map", "[aout]");
+      args.push("-c:v", "libx264", "-crf", "18", "-preset", "fast");
+      args.push(...(withAudio ? ["-c:a", "aac"] : ["-an"]));
+      args.push(outFile);
+      return args;
+    };
     // Build filter for video+audio concat
     const vFilters = resolved.map((c, i) => {
       const ss  = c.trimStart;
@@ -345,15 +518,13 @@ app.post("/api/videoedit/export", async (req, res) => {
     const concatA     = resolved.map((_,i)=>`[a${i}]`).join("");
     const filterWithA = `${vFilters};${aFilters};${concatV}${concatA}concat=n=${resolved.length}:v=1:a=1[vout][aout]`;
     const filterNoA   = `${vFilters};${concatV}concat=n=${resolved.length}:v=1:a=0[vout]`;
-    const cmdWithA    = `ffmpeg -y ${inputs} -filter_complex "${filterWithA}" -map "[vout]" -map "[aout]" -c:v libx264 -crf 18 -preset fast -c:a aac "${outFile}"`;
-    const cmdNoA      = `ffmpeg -y ${inputs} -filter_complex "${filterNoA}"  -map "[vout]" -c:v libx264 -crf 18 -preset fast -an "${outFile}"`;
     // Try with audio; if clips lack audio streams, fall back to video-only
     try {
-      await runCmd(cmdWithA);
+      await runFfmpeg(buildArgs(filterWithA, true));
     } catch(audioErr) {
       if (audioErr.message.includes("Stream specifier") || audioErr.message.includes("matches no streams") ||
           audioErr.message.includes("Invalid stream") || audioErr.message.includes("audio")) {
-        await runCmd(cmdNoA);
+        await runFfmpeg(buildArgs(filterNoA, false));
       } else {
         throw audioErr;
       }
@@ -362,7 +533,9 @@ app.post("/api/videoedit/export", async (req, res) => {
     res.setHeader("Content-Disposition", `attachment; filename="export_${format}.mp4"`);
     const stream = fs.createReadStream(outFile);
     stream.pipe(res);
-    stream.on("end", () => {
+    // "close" fires on client abort too — "end" alone leaks temp files on disconnect.
+    res.on("close", () => {
+      stream.destroy();
       fs.unlink(outFile, ()=>{});
       tmpFiles.forEach(f => fs.unlink(f, ()=>{}));
     });
@@ -380,17 +553,29 @@ app.post("/api/videoedit/export", async (req, res) => {
 
 // ── ASSETS API (Supabase Storage) ─────────────────────────────────────────────
 
-// Serve legacy local asset files (backward compat for dev)
-app.use("/api/assets/file", express.static(ASSETS_ROOT));
+// The local-disk asset store is a dev convenience. It must never be reachable
+// in production or when Supabase is configured — previously any request that
+// simply omitted the Bearer header fell through to it, unauthenticated.
+const LOCAL_ASSETS_ENABLED = !SUPABASE_URL && !isProd;
+
+// Assets run in two modes: Supabase (auth required) or local disk (dev only).
+function assetAuth(req, res, next) {
+  if (SUPABASE_URL) return requireAuth(req, res, next);
+  if (LOCAL_ASSETS_ENABLED) return next();
+  return res.status(401).json({ error: "Unauthorized" });
+}
+
+// Serve legacy local asset files (backward compat for dev only)
+if (LOCAL_ASSETS_ENABLED) {
+  app.use("/api/assets/file", express.static(ASSETS_ROOT));
+}
 
 // List all assets — query Supabase assets table, fallback to local disk
-app.get("/api/assets/list", async (req, res) => {
-  const token = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
-  if (SUPABASE_URL && token) {
+app.get("/api/assets/list", assetAuth, async (req, res) => {
+  if (SUPABASE_URL) {
     try {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: "Unauthorized" });
-      const sb = supabaseFor(token);
+      const userId = req.userId;
+      const sb = supabaseFor(req.userToken);
       const { data, error } = await sb.from("assets").select("*")
         .eq("user_id", userId).order("created_at", { ascending: false });
       if (error) throw error;
@@ -426,27 +611,25 @@ app.get("/api/assets/list", async (req, res) => {
 });
 
 // Upload binary asset (images / videos / audio) — Supabase Storage, fallback to local disk
-app.post("/api/assets/upload/:type", uploadMem.single("file"), async (req, res) => {
+app.post("/api/assets/upload/:type", assetAuth, uploadMem.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
   const type = req.params.type;
   if (!ASSET_TYPES.includes(type)) return res.status(400).json({ error: "Invalid asset type" });
-  const token = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
 
-  if (SUPABASE_URL && token) {
+  if (SUPABASE_URL) {
     try {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const userId = req.userId;
       const safe = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
       const storagePath = `${userId}/${type}/${Date.now()}_${safe}`;
       // Upload via admin client so we bypass storage RLS (path scoped by userId)
-      const client = supabaseAdmin || supabaseFor(token);
+      const client = supabaseAdmin || supabaseFor(req.userToken);
       const { error: upErr } = await client.storage.from(ASSET_BUCKET)
         .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
       if (upErr) throw upErr;
       const { data: urlData } = client.storage.from(ASSET_BUCKET).getPublicUrl(storagePath);
       const publicUrl = urlData.publicUrl;
       // Save metadata to assets table
-      const sb = supabaseFor(token);
+      const sb = supabaseFor(req.userToken);
       const { data: row, error: dbErr } = await sb.from("assets").insert({
         user_id: userId, type, name: req.file.originalname,
         storage_path: storagePath, url: publicUrl, size: req.file.size,
@@ -464,16 +647,14 @@ app.post("/api/assets/upload/:type", uploadMem.single("file"), async (req, res) 
 });
 
 // Save / update a text asset
-app.post("/api/assets/text", async (req, res) => {
+app.post("/api/assets/text", assetAuth, async (req, res) => {
   const { name, content, id } = req.body;
   if (!name || content === undefined) return res.status(400).json({ error: "name and content required" });
-  const token = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
 
-  if (SUPABASE_URL && token) {
+  if (SUPABASE_URL) {
     try {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: "Unauthorized" });
-      const sb = supabaseFor(token);
+      const userId = req.userId;
+      const sb = supabaseFor(req.userToken);
       if (id) {
         // Update existing
         const { data: row, error } = await sb.from("assets")
@@ -499,16 +680,14 @@ app.post("/api/assets/text", async (req, res) => {
 });
 
 // Delete an asset
-app.delete("/api/assets/:type/:assetId", async (req, res) => {
+app.delete("/api/assets/:type/:assetId", assetAuth, async (req, res) => {
   const { type, assetId } = req.params;
   if (!ASSET_TYPES.includes(type)) return res.status(400).json({ error: "Invalid type" });
-  const token = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
 
-  if (SUPABASE_URL && token) {
+  if (SUPABASE_URL) {
     try {
-      const userId = await getUserId(req);
-      if (!userId) return res.status(401).json({ error: "Unauthorized" });
-      const sb = supabaseFor(token);
+      const userId = req.userId;
+      const sb = supabaseFor(req.userToken);
       // Fetch the row first to get storage_path
       const { data: row } = await sb.from("assets").select("storage_path")
         .eq("id", assetId).eq("user_id", userId).single();
@@ -520,8 +699,14 @@ app.delete("/api/assets/:type/:assetId", async (req, res) => {
       return res.json({ ok: true });
     } catch(e) { return res.status(500).json({ error: e.message }); }
   }
-  // Local fallback (assetId is filename in local mode)
-  const filePath = path.join(ASSETS_ROOT, type, assetId);
+  // Local fallback (assetId is filename in local mode).
+  // basename() strips any traversal segments; the resolve() check is a second
+  // barrier so an unlink can never escape the assets root.
+  const typeRoot = path.join(ASSETS_ROOT, type);
+  const filePath = path.resolve(typeRoot, path.basename(assetId));
+  if (!filePath.startsWith(path.resolve(typeRoot) + path.sep)) {
+    return res.status(400).json({ error: "Invalid asset id" });
+  }
   try {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     res.json({ ok: true });
@@ -542,7 +727,7 @@ function parsePdf(buffer) {
   });
 }
 
-app.post("/api/script/extract", multerMem.single("file"), async (req, res) => {
+app.post("/api/script/extract", requireAuth, multerMem.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
   const { originalname, buffer } = req.file;
   const ext = path.extname(originalname).toLowerCase();
@@ -562,7 +747,7 @@ app.post("/api/script/extract", multerMem.single("file"), async (req, res) => {
 });
 
 // ── SCRIPT: generate full script from idea ────────────────────────────────────
-app.post("/api/script/generate", async (req, res) => {
+app.post("/api/script/generate", requireAuth, generationLimiter, async (req, res) => {
   const { idea, format = "screenplay" } = req.body;
   if (!idea) return res.status(400).json({ error: "idea is required" });
 
@@ -578,6 +763,7 @@ app.post("/api/script/generate", async (req, res) => {
       { model: "claude-opus-4-5", max_tokens: 4096,
         messages: [{ role: "user", content: prompt }] }
     );
+    if (r.status !== 200) return res.status(r.status).json({ error: `Anthropic ${r.status}: ${String(r.data).slice(0, 300)}` });
     const body = JSON.parse(r.data);
     const text = body.content?.[0]?.text || "";
     res.json({ script: text });
@@ -585,14 +771,18 @@ app.post("/api/script/generate", async (req, res) => {
 });
 
 // ── SCRIPT: split script into scenes ─────────────────────────────────────────
-app.post("/api/script/split", async (req, res) => {
+app.post("/api/script/split", requireAuth, generationLimiter, async (req, res) => {
   const { script } = req.body;
   if (!script) return res.status(400).json({ error: "script is required" });
 
+  // sceneText must stay VERBATIM: the shot breakdown downstream is forbidden from
+  // inventing anything not present in it, so summarising here silently throws away
+  // the dialogue and action detail the whole pipeline depends on.
   const prompt = `You are a script breakdown assistant. Given the following script, extract each scene and return a JSON array. Each item must have:
 - "heading": the scene heading or title (e.g. "INT. CAFÉ - DAY" or "SCENE 1: The Arrival")
-- "sceneText": a 2–4 sentence description of what happens in the scene, suitable for a storyboard brief
-- "shotCount": suggested number of shots (integer, between 2 and 6)
+- "sceneText": the FULL VERBATIM text of this scene from the script — all action lines and all dialogue, unabridged. Do not summarize, do not paraphrase, do not omit dialogue. Copy the scene exactly as written.
+- "summary": a 2-3 sentence summary for display purposes only
+- "shotCount": suggested number of shots (integer, between 2 and 6), based on the number of distinct narrative beats in the scene
 - "cinematicStyle": one of: drama, thriller, action, noir, sci-fi, epic-fantasy, documentary, comedy
 
 Return ONLY valid JSON array, no markdown, no explanation.
@@ -603,9 +793,10 @@ ${script}`;
   try {
     const r = await post("api.anthropic.com", "/v1/messages",
       { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      { model: "claude-opus-4-5", max_tokens: 2048,
+      { model: "claude-opus-4-5", max_tokens: 8192,
         messages: [{ role: "user", content: prompt }] }
     );
+    if (r.status !== 200) return res.status(r.status).json({ error: `Anthropic ${r.status}: ${String(r.data).slice(0, 300)}` });
     const body = JSON.parse(r.data);
     let text = body.content?.[0]?.text || "[]";
     // Strip any accidental markdown fences
@@ -621,7 +812,7 @@ ${script}`;
 // POST /api/elevenlabs/video-to-music
 // Body: { videoUrl: string, description?: string, tags?: string[], duration?: number }
 // Server downloads the video, sends as multipart to ElevenLabs, streams audio back
-app.post("/api/elevenlabs/video-to-music", async (req, res) => {
+app.post("/api/elevenlabs/video-to-music", requireAuth, generationLimiter, async (req, res) => {
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) return res.status(500).json({ error: "ELEVENLABS_API_KEY not set" });
   const { videoUrl, description = "", tags = [] } = req.body;
@@ -694,7 +885,7 @@ app.post("/api/elevenlabs/video-to-music", async (req, res) => {
 // POST /api/elevenlabs/music
 // Body: { prompt: string, tags: string[] }
 // Returns: audio/mpeg binary streamed directly from ElevenLabs
-app.post("/api/elevenlabs/music", (req, res) => {
+app.post("/api/elevenlabs/music", requireAuth, generationLimiter, (req, res) => {
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) return res.status(500).json({ error: "ELEVENLABS_API_KEY not set" });
 
@@ -744,10 +935,10 @@ app.post("/api/elevenlabs/music", (req, res) => {
 app.get("/health", (req, res) => res.json({ ok: true, node: process.version,
   anthropic: !!process.env.ANTHROPIC_API_KEY, openai: !!process.env.OPENAI_API_KEY,
   gemini: !!process.env.GEMINI_API_KEY, kling: !!process.env.KLING_ACCESS_KEY,
+  seedance: !!process.env.SEEDANCE_API_KEY,
   elevenlabs: !!process.env.ELEVENLABS_API_KEY }));
 
 const PORT = process.env.PORT || 3000;
-const isProd = process.env.NODE_ENV === "production";
 
 async function start() {
   if (isProd) {
@@ -773,6 +964,7 @@ async function start() {
     console.log(`   ANTHROPIC : ${process.env.ANTHROPIC_API_KEY  ? "✓" : "✗ not set"}`);
     console.log(`   GEMINI    : ${process.env.GEMINI_API_KEY     ? "✓" : "✗ not set"}`);
     console.log(`   KLING     : ${process.env.KLING_ACCESS_KEY   ? "✓" : "✗ not set"}`);
+    console.log(`   SEEDANCE  : ${process.env.SEEDANCE_API_KEY  ? "✓" : "✗ not set"}`);
     console.log(`\n   Open http://localhost:${PORT}\n`);
   });
 }

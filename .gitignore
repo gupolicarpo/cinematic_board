@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .veo-cache/
+.seedance-cache/
 assets/images/
 assets/videos/
 assets/audio/
